@@ -160,7 +160,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     const std::map<uint64, DissasmFunctionEntry>* functionEntries;
     const std::set<uint64>* codeLocations; // Settings::AddCodeLocation (file offsets): never function starts
     const std::vector<LandingPad>* landingPads; // Settings::AddLandingPads (file offsets): the exception handling of GCC / clang
-    const std::map<uint64, uint64>* codeRanges; // Settings::AddCodeRange (file offset -> size): the FDEs of ELF
+    const std::map<uint64, uint64>* codeRanges; // Settings::AddCodeRange (file offset -> size): the FDEs of ELF, the ARM64 fragments of PE
     std::function<const MemoryMappingEntry*(const X86OperandsInfo&)> findImport;
     std::function<std::optional<uint64>(uint64)> addressToFileOffset;
 
@@ -297,6 +297,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // ARM64: the anchors of the jump tables (adr x9, anchor; ldrsw x8, [x10, w0, uxtw #2]; add x8, x9, x8, lsl #2; br x8), relative: code of
     // the function of the switch (MSVC puts it after a case, the cases on both sides of it), not a function whose address is taken
     std::unordered_set<uint64> switchAnchors;
+    // ARM64: the targets of the br through an address built by adrp + add (the veneers to the far cold code), relative: jumps, not the
+    // address of a function taken by the add
+    std::unordered_set<uint64> farJumpTargets;
     std::vector<bool> blockStarts; // the instructions that start a block, by relative address
     std::optional<uint64> returnedAddress; // mov eax, offset X: an address taken only when the next instruction is not a ret
     // 32 bit x86 PIC: the value of ebx (the global offset table, VA) set by call $+5; pop ebx / call __x86.get_pc_thunk.bx, then add ebx, imm;
@@ -534,6 +537,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         addressTakenTargets.clear();
         dataPointerTargets.clear();
         switchAnchors.clear();
+        farJumpTargets.clear();
         computedGotoTargets.clear();
         x86FuncletsOfParent.clear();
         helperFrameStarts.clear();
@@ -1291,6 +1295,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     targets.push_back(labelBase + target);
                 }
                 AddSwitchTargets(insn->address, from, targets);
+                // ARM64: the cases keep the bound of the index (a switch inside a case on the same index)
+                if (isArm64)
+                    for (const uint64 target : targets)
+                        if (target - labelBase > insn->address && target - labelBase < codeSize)
+                            adrpTracker.AddCaseBound(target - labelBase, table->count, table->indexRegister);
                 if (!targets.empty() && table->entrySize > 0) // tbb / tbh / ldr pc, [pc, rN, lsl #2]: the table follows the jump
                     AddTable(insn->address, from, labelBase + table->table, table->entrySize, targets, insnArch == DissasmArch::Thumb);
             }
@@ -1300,6 +1309,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 const auto anchorOffset = zone->GetFileOffsetOfAddress(anchor.value());
                 if (anchorOffset.has_value() && callsMap.insert({ anchorOffset.value(), true }).second)
                     callsFound.emplace_back(anchorOffset.value(), zone->GetLabelName("loc_", anchor.value()));
+            }
+            // br x16 after adrp x16 / add x16: a jump to that address (its target a label, a chunk of the function when it is elsewhere)
+            if (const auto farJump = isArm64 ? adrpTracker.TakeFarJump() : std::nullopt; farJump.has_value() && farJump.value() < codeSize) {
+                farJumpTargets.insert(farJump.value());
+                pairOperands.directTarget = farJump.value();
             }
             // a prologue at a block start: a function (a candidate until the end of the sweep: a shrink wrapped prologue is reached by a
             // conditional branch of its own function)
@@ -1571,8 +1585,13 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         std::vector<size_t> pending;
         std::unordered_set<size_t> seen;
         for (size_t index = 0; index < functionStarts.size(); index++) {
-            const uint64 start     = functionStarts[index];
-            const uint64 nextStart = std::min<uint64>(index + 1 < functionStarts.size() ? functionStarts[index + 1] : codeSize, codeSize);
+            const uint64 start = functionStarts[index];
+            uint64 nextStart   = std::min<uint64>(index + 1 < functionStarts.size() ? functionStarts[index + 1] : codeSize, codeSize);
+            // a code range of the plugin after the start (an FDE, a separated fragment of ARM64 .pdata: the cold code of another function)
+            // is the code of another function or fragment, as a function start
+            if (codeRanges)
+                if (const auto range = codeRanges->upper_bound(codeStart + start); range != codeRanges->end() && range->first - codeStart < nextStart)
+                    nextStart = range->first - codeStart;
             const auto firstPad    = std::upper_bound(landingPadSources.begin(), landingPadSources.end(), std::make_pair(start, UINT64_MAX));
             uint64 limit           = start;    // the code of the function is before it
             auto scan              = firstPad; // the pads before it are its own (once its own, a pad stays its own: the end only grows)
@@ -1790,7 +1809,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     {
         constexpr uint32 MAX_BLOCK_RECORDS = 4096;
         constexpr uint32 MAX_PASSES        = 8;
-        if (IsArmArch(arch) || functionStarts.empty() || functionEnds.size() != functionStarts.size())
+        if ((IsArmArch(arch) && arch != DissasmArch::Arm64) || functionStarts.empty() || functionEnds.size() != functionStarts.size())
             return;
         // the function whose code (its body up to its end, its chunks) contains an address
         const auto bodyOwner = [this](uint64 address) -> std::optional<uint64> {
@@ -1802,10 +1821,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 return (chunk - 1)->function;
             return std::nullopt;
         };
-        // a jump; the address of a code location taken by the code (lea rdx, loc_X; call _local_unwind: the code goes on there)
+        // a jump; the address of a code location taken by the code (lea rdx, loc_X; call _local_unwind: the code goes on there), the add of
+        // an ARM64 veneer (adrp x16; add x16, x16, #off; br x16)
         const auto isJump = [this](const DissasmXref& xref) {
             return xref.kind == DissasmXrefKind::Jump || xref.kind == DissasmXrefKind::ConditionalJump || xref.kind == DissasmXrefKind::Switch ||
-                   (xref.kind == DissasmXrefKind::Offset && xref.to >= labelBase && IsCodeLocation(xref.to - labelBase));
+                   (xref.kind == DissasmXrefKind::Offset && xref.to >= labelBase &&
+                    (IsCodeLocation(xref.to - labelBase) || farJumpTargets.contains(xref.to - labelBase)));
         };
         struct ColdBlock {
             uint64 start, end;
@@ -2559,8 +2580,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         // the code whose address is taken, by the code or by the pointers of the data zones (the virtual methods of the vtables, the
         // callbacks): a function when it starts a block
         // (not a case of a switch, an absolute jump table of GCC in .rodata; not the target of a conditional jump, inside a function; not
-        // the anchor of an ARM64 jump table)
+        // the anchor of an ARM64 jump table, the target of a veneer)
         AddDataZonePointerTargets();
+        // the targets of the veneers: jumps, not addresses taken (not the code of the function whose range they are in: ComputeFunctionEnds)
+        addressTakenTargets.erase(
+              std::remove_if(addressTakenTargets.begin(), addressTakenTargets.end(), [this](uint64 target) { return farJumpTargets.contains(target); }),
+              addressTakenTargets.end());
         std::sort(dataPointerTargets.begin(), dataPointerTargets.end()); // IsTakenAddress
         dataPointerTargets.erase(std::unique(dataPointerTargets.begin(), dataPointerTargets.end()), dataPointerTargets.end());
         if (!addressTakenTargets.empty()) {

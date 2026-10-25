@@ -769,11 +769,13 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
                 break;
             if ((function.BeginAddress & ~1u) == 0)
                 continue;
-            uint64 length    = 0;
+            uint64 length     = 0;
+            bool fragment     = false; // ARM64: a separated part of a function (its cold code): its unwind codes start with end_c
             const uint32 flag = function.UnwindData & 3;
-            if (flag == 1 || flag == 2) // packed unwind data
-                length = static_cast<uint64>((function.UnwindData >> 2) & 0x7FF) * lengthUnit;
-            else if (flag == 0) {
+            if (flag == 1 || flag == 2) { // packed unwind data (2: code without prologue and epilogue, a separated part of a function)
+                length   = static_cast<uint64>((function.UnwindData >> 2) & 0x7FF) * lengthUnit;
+                fragment = machine == PE::MachineType::ARM64 && flag == 2;
+            } else if (flag == 0) {
                 uint32 header       = 0;
                 const auto xdataFa = pe->RVAToFA(function.UnwindData);
                 if (xdataFa != PE_INVALID_ADDRESS && data.Copy<uint32>(xdataFa, header))
@@ -787,13 +789,21 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
                     codeWords = (extension >> 16) & 0xFF;
                     position += 4;
                 }
-                if (machine == PE::MachineType::ARM64 && xdataFa != PE_INVALID_ADDRESS && ((header >> 20) & 1) && length > 0) {
-                    const uint64 codes = position + (((header >> 21) & 1) ? 0 : 4ull * epilogs);
+                // the codes: the prologue then the epilogs; a fragment without prologue (MSVC's cold code after the other functions, reached by
+                // a jump of its function or a veneer) starts with end_c (0xE5)
+                const uint64 codes = position + (((header >> 21) & 1) ? 0 : 4ull * epilogs);
+                uint8 firstCode    = 0;
+                fragment = machine == PE::MachineType::ARM64 && xdataFa != PE_INVALID_ADDRESS && codeWords > 0 && data.Copy<uint8>(codes, firstCode) && firstCode == 0xE5;
+                if (machine == PE::MachineType::ARM64 && xdataFa != PE_INVALID_ADDRESS && ((header >> 20) & 1) && length > 0 && !fragment)
                     handled.push_back({ function.BeginAddress, function.BeginAddress + static_cast<uint32>(length), codes + 4ull * codeWords + 4 });
-                }
             } else
-                continue; // 3: a reserved form
+                continue; // 3: reserved (MSVC: its veneers, the RVA of the entry whose unwind data they share)
             const auto fa = pe->RVAToFA(function.BeginAddress & ~1u);
+            if (fa != PE_INVALID_ADDRESS && fragment) {
+                settings.AddCodeRange(fa, length); // a chunk of its function, not a function start
+                settings.AddInstructionBoundary(fa); // as a function entry is (the bytes of a table before it never run into it)
+                continue;
+            }
             if (fa != PE_INVALID_ADDRESS)
                 settings.AddFunctionEntry(fa, {}, DissasmViewer::FunctionEntryType::ExceptionData, length);
             functionStarts.insert(function.BeginAddress & ~1u);

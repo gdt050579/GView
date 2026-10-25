@@ -1490,6 +1490,9 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
     // on the stack (stp x3, x4, [sp, #0x18] after stp x19, x20, [sp, #-0x40]!): va_start walks from there on. The slots from the sp of the
     // entry, their register
     std::vector<std::pair<int64, uint32>> variadicHomes;
+    // ARM64EC: a variadic function moves x4 (the stack arguments of the x64 convention: sub x4, x4, #0x10) and stores the homes through it
+    // (stp x2, x3, [x4]) in its prologue; its homes are the ones of x0 .. x3 (the x64 home space), x_k at -(4 - k) * 8
+    bool movesStackArguments    = false;
     int64 frameRegisterAtEntry  = 0; // x29 - the sp of the entry (0 without a frame register: the offsets are from the sp of the entry)
     const uint8* data           = code;
     size_t size                 = static_cast<size_t>(std::min<uint64>(codeSize, limitAddress - codeAddress));
@@ -1592,13 +1595,18 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
                 settingUp = true;
                 continue;
             }
-            // the prologue: sub sp, stp / str of the saved registers, pacibsp, bti
-            bool savesOnStack = false;
+            // the prologue: sub sp, stp / str of the saved registers, pacibsp, bti; ARM64EC: sub x4, x4, #N, the stores through x4
+            bool savesOnStack = false, storesThroughX4 = false;
             if (current.id == ARM64_INS_STP || current.id == ARM64_INS_STR)
-                for (uint8 index = 0; index < arm64.op_count; index++)
+                for (uint8 index = 0; index < arm64.op_count; index++) {
                     savesOnStack |= arm64.operands[index].type == ARM64_OP_MEM && arm64.operands[index].mem.base == ARM64_REG_SP;
+                    storesThroughX4 |= arm64.operands[index].type == ARM64_OP_MEM && arm64.operands[index].mem.base == ARM64_REG_X4;
+                }
+            const bool movesX4 = (current.id == ARM64_INS_SUB || current.id == ARM64_INS_ADD) && isRegister(0, ARM64_REG_X4) && isRegister(1, ARM64_REG_X4) &&
+                                 immediateAt(2).has_value();
+            movesStackArguments |= movesX4;
             const bool isPrologue = spChange != 0 || savesOnStack || current.id == ARM64_INS_PACIBSP || current.id == ARM64_INS_PACIASP ||
-                                    current.id == ARM64_INS_BTI;
+                                    current.id == ARM64_INS_BTI || movesX4 || (movesStackArguments && storesThroughX4);
             if (isPrologue && decodedInstructions < MAX_PROLOGUE_INSTRUCTIONS) {
                 bool pair             = false;
                 const uint16 saveSize = savesOnStack ? Arm64AccessSize(current, pair) : 0;
@@ -1623,7 +1631,8 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
                                 if (value.type != ARM64_OP_REG || value.reg < ARM64_REG_X0 || value.reg > ARM64_REG_X7)
                                     continue;
                                 const uint32 number = static_cast<uint32>(value.reg - ARM64_REG_X0);
-                                if (slot + 8 * stored == -8 * static_cast<int64>(8 - number))
+                                if (slot + 8 * stored == -8 * static_cast<int64>(8 - number) ||
+                                    (movesStackArguments && number <= 3 && slot + 8 * stored == -8 * static_cast<int64>(4 - number)))
                                     variadicHomes.emplace_back(slot + 8 * stored, number);
                             }
                         }

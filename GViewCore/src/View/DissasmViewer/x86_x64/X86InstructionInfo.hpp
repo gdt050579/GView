@@ -7,6 +7,7 @@
 #include <functional>
 #include <optional>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace GView::View::DissasmViewer
@@ -110,6 +111,7 @@ struct Arm64JumpTable {
     AppCUI::uint32 count;
     bool absolute = false; // 32 bit ARM (ldr pc, [pc, r0, lsl #2]): the entries are the VAs of the cases; entrySize 0 (add pc, pc, r0,
                            // lsl #2): no table, the case i is at base + (i << shift)
+    int indexRegister = -1; // ARM64: the register that indexes the table (ldrsw x8, [x9, w10, uxtw #2]: w10), -1 unknown
 };
 
 // ARM64: a prologue at a block start (stp x29, x30, [sp, #-N]! / sub sp, sp, #N / pacibsp / paciasp / bti c): a function start
@@ -147,6 +149,17 @@ class Arm64AdrpTracker
         anchor.reset();
         return value;
     }
+    // the address the br given to the last Next goes to, built by adrp + add / adr (the veneer of MSVC to the far cold code of a function:
+    // adrp x16, page; add x16, x16, #off; br x16): a jump there
+    std::optional<AppCUI::uint64> TakeFarJump()
+    {
+        auto value = farJump;
+        farJump.reset();
+        return value;
+    }
+    // a case of a switch read (relative address): the index register keeps its bound there, up to a write of it (a switch inside the
+    // case on the same index: MSVC checks it once, before the first br)
+    void AddCaseBound(AppCUI::uint64 target, AppCUI::uint32 count, int indexRegister);
     void Reset();
 
   private:
@@ -154,6 +167,11 @@ class Arm64AdrpTracker
         AppCUI::uint64 table;
         AppCUI::uint8 size;
         bool isSigned;
+        int index; // the register of the index
+    };
+    struct CaseBound {
+        AppCUI::uint32 count;
+        int indexRegister;
     };
     struct Value {
         std::optional<AppCUI::uint64> page;    // adrp
@@ -167,9 +185,15 @@ class Arm64AdrpTracker
     std::array<Value, 31> registers{};
     AppCUI::uint64 addressBase;
     std::optional<AppCUI::uint64> compared; // cmp w0, #N: N
+    int comparedRegister = -1;              // its register
     std::optional<AppCUI::uint32> bound;    // b.hi after the cmp: the number of cases
+    // the bounds of the index registers at a block, by address: a case of a switch read (AddCaseBound), the target of b.ls / b.lo after a
+    // cmp (taken in range: MSVC's switch in a block of its own)
+    std::unordered_map<AppCUI::uint64, CaseBound> caseBounds;
+    std::optional<CaseBound> inheritedBound; // the one of the case being decoded
     std::optional<Arm64JumpTable> jumpTable;
     std::optional<AppCUI::uint64> anchor;
+    std::optional<AppCUI::uint64> farJump;
 };
 
 // 32 bit ARM: a prologue at a block start (push {..., lr} / stmdb sp!, {..., lr}): a function start
