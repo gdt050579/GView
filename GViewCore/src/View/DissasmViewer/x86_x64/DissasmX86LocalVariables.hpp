@@ -86,6 +86,10 @@ bool AddX64FuncletSlots(csh detailHandle, const uint8* code, size_t codeSize, ui
 // is): the slots it uses through x29 added to the variables of `frame` (the frame of its function) that it does not have; read up to its
 // ret, an unconditional branch or another write of x29. False when the frame would have too many
 bool AddArm64FuncletSlots(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, DissasmFunctionFrame& frame);
+// ARM64: a cold chunk of a function (DetectColdBlocks: MSVC's separated code, run on the frame of the function at the depth of its body):
+// the slots it uses through sp (frame.stackOffset) and x29 added to the variables of `frame` that it does not have; read up to a write of
+// sp or x29 (an epilogue). False when the frame would have too many
+bool AddArm64ChunkSlots(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, DissasmFunctionFrame& frame);
 // a chunk of an x64 function without a frame register (its cold code: the chained unwind data elsewhere): its stack from `entryDelta` (the
 // depth of the body of the function), with the callee saved aliases of the function live there (`entryAliases`: the biased rbp of MSVC);
 // frame.variables receives its slots (in the offsets of the frame of the function, named as the ones of the function). False when its
@@ -171,6 +175,9 @@ struct Arm64FrameOperand {
 // [sp], #0x10); `frameRegister`: x29, fp (r11) or r7
 bool FindArm64FrameOperand(std::string_view operands, Arm64FrameOperand& result);
 bool FindArmFrameOperand(std::string_view operands, std::string_view frameRegister, Arm64FrameOperand& result);
+// Finds the address of a slot in the operands of an add: x0, sp, #0x10 / x1, x29, #0x18 (not a shifted immediate; not sp or the frame
+// register as the destination: the frame setup add x29, sp, #0x10, the release add sp, sp, #0x40)
+bool FindArmAddressOperand(std::string_view operands, std::string_view frameRegister, Arm64FrameOperand& result);
 
 // 32 bit ARM (the mode of the function: `thumb`): push {..., r11, lr}; mov r11, sp / add r11, sp, #M (ARM) or push {r7, lr}; mov r7, sp
 // (Thumb), then the slots of the frame register and of sp (in frame register offsets), as AnalyzeArm64FunctionFrame; a function without

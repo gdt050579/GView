@@ -516,13 +516,16 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     std::string stackJoiner;
     bool alignedStackOffset = false; // through esp in an aligned frame (and esp, -8): not the saved registers / the return address
     bool armStackOperand    = false; // ARM: a slot of the frame found in the operands
+    bool armAddress         = false; // ARM64: add x0, sp, #0x10: the address of the slot
     if (zone && !zone->localVariables.Empty() && zone->IsArmCode()) {
         // ARM: [x29, #var_8] / [fp, #var_8] / [r7, #var_8] / [sp, #var_10] / [sp] -> [sp, #var_18]
         function = zone->FindFrameOfAddress(address); // a chunk: the frame of its function
         Arm64FrameOperand slot{};
         const std::string_view frameRegister =
               zone->IsArm64Code() ? std::string_view("x29") : (function && function->frameRegister == 11 ? std::string_view("fp") : std::string_view("r7"));
-        const bool frameOperandFound = function && FindArmFrameOperand(text, frameRegister, slot);
+        // the address of a slot (ARM64: add x0, sp, #0x10), as the lea of x86
+        armAddress                   = function && zone->IsArm64Code() && strcmp(mnemonic, "add") == 0 && FindArmAddressOperand(text, frameRegister, slot);
+        const bool frameOperandFound = function && (armAddress || FindArmFrameOperand(text, frameRegister, slot));
         // an ARM64 funclet: its x29 is the frame of its function, its slots the variables of that frame
         if (frameOperandFound && !slot.isStackPointerBased && function->frameRegisterOf.has_value())
             if (const auto* owner = zone->localVariables.FindFunctionByStart(function->frameRegisterOf.value()))
@@ -591,7 +594,7 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     // its own stack, its x29 the frame of its function); no return address on the stack
     const bool armCode   = zone && zone->IsArmCode();
     const bool armSlot   = armCode && zone->IsArm64Code() && armStackOperand && function && address >= function->startAddress && address < function->endAddress;
-    const bool namesSlot = !variable && function && zone && (!armCode || armSlot) && decimalMask == 0 && !alignedStackOffset;
+    const bool namesSlot = !variable && function && zone && (!armCode || armSlot) && decimalMask == 0 && !alignedStackOffset && !armAddress;
     char savedSlot[24]   = {};
     if (namesSlot && function->IsSavedRegisterSlot(frameOperand.frameOffset))
         snprintf(savedSlot, sizeof(savedSlot), "var_s%X", static_cast<unsigned int>(frameOperand.frameOffset - function->savedRegistersOffset));
@@ -634,7 +637,7 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     std::string name = variable->name;
     if (variable->structure)
         name += FormatApiStructureMember(
-              *variable->structure, static_cast<uint32>(frameOperand.frameOffset - variable->frameOffset), strcmp(mnemonic, "lea") != 0);
+              *variable->structure, static_cast<uint32>(frameOperand.frameOffset - variable->frameOffset), strcmp(mnemonic, "lea") != 0 && !armAddress);
     std::string rewritten;
     rewritten.reserve(text.size() + name.size() + 3u);
     rewritten.append(text.substr(0, frameOperand.replaceStart));

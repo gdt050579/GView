@@ -12941,3 +12941,130 @@ TEST_CASE("Arm64SwitchBoundOnBranch", "[Dissasm]Arm64")
     DissasmTestInstance otherRegister(file.data(), file.size(), false, layout);
     REQUIRE_FALSE(otherRegister.zone->switchJumps.contains(0x20));
 }
+
+TEST_CASE("Arm64SlotAddressOperands", "[Dissasm]Arm64")
+{
+    // the address of a slot (add x0, sp, #0x10 / add x1, x29, #0x18): the name of its variable, as lea [rsp + 0x38 + var_18] on x64; not
+    // the frame setup (add x29, sp, #0x20), not the release of the frame (add sp, sp, #0x40)
+    std::vector<unsigned char> file;
+    const auto word = [&file](uint32 value) {
+        for (int index = 0; index < 4; index++)
+            file.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    };
+    word(0xD10103FF); // 0x00: sub sp, sp, #0x40
+    word(0xA9027BFD); // 0x04: stp x29, x30, [sp, #0x20]
+    word(0x910083FD); // 0x08: add x29, sp, #0x20             (the frame: not renamed)
+    word(0x910043E0); // 0x0c: add x0, sp, #0x10               (the address of var_30)
+    word(0x94000009); // 0x10: bl 0x34
+    word(0xF9400BE8); // 0x14: ldr x8, [sp, #0x10]             (var_30)
+    word(0x910063A1); // 0x18: add x1, x29, #0x18             (the address of var_8)
+    word(0xA9427BFD); // 0x1c: ldp x29, x30, [sp, #0x20]
+    word(0x910103FF); // 0x20: add sp, sp, #0x40
+    word(0xD65F03C0); // 0x24: ret
+    file.resize(0x34, 0);
+    word(0xD65F03C0); // 0x34: ret
+    file.resize(0x40, 0);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::ARM64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000008  add    x29, sp, #0x20").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000000c  add    x0, sp, #var_30").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000014  ldr    x8, [sp, #var_30]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000018  add    x1, x29, #var_8").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000020  add    sp, sp, #0x40").size() > 0);
+}
+
+TEST_CASE("Arm64SwitchBoundThroughJump", "[Dissasm]Arm64")
+{
+    // MSVC: the bound of the index is checked in the hot code (cmp w0, #2; b.hi default), then a jump to the switch in the far cold code:
+    // the jump carries the bound of the register, unless the register is written before it
+    std::vector<unsigned char> file;
+    const auto word = [&file](uint32 value) {
+        for (int index = 0; index < 4; index++)
+            file.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    };
+    word(0x7100081F); // 0x00: cmp w0, #2
+    word(0x54000068); // 0x04: b.hi 0x10                     (3 cases)
+    word(0xD503201F); // 0x08: nop
+    word(0x1400000D); // 0x0c: b 0x40                        (the switch, far)
+    word(0x52800000); // 0x10: mov w0, #0                    (the default)
+    word(0xD65F03C0); // 0x14: ret
+    file.resize(0x40, 0);
+    word(0x10000209); // 0x40: adr x9, 0x80                  (the table)
+    word(0x3860692B); // 0x44: ldrb w11, [x9, x0]
+    word(0x1000006A); // 0x48: adr x10, 0x54                 (the anchor)
+    word(0x8B0B094A); // 0x4c: add x10, x10, x11, lsl #2
+    word(0xD61F0140); // 0x50: br x10
+    word(0xD65F03C0); // 0x54: case 0: ret
+    word(0xD65F03C0); // 0x58: case 1: ret
+    word(0xD65F03C0); // 0x5c: case 2: ret
+    const uint64 codeSize = file.size();
+    file.resize(0x80, 0);
+    file.insert(file.end(), { 0x00, 0x01, 0x02 }); // 0x80: the cases, in instructions from the anchor
+    file.resize(0x88, 0x00);
+
+    ZoneLayout layout;
+    layout.size                = codeSize;
+    layout.entryPoint          = 0;
+    layout.language            = DisassemblyLanguage::ARM64;
+    layout.addressToFileOffset = [](uint64 address) { return std::optional<uint64>(address); };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    const auto& zone          = *dissasmInstance.zone;
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(zone.switchJumps.contains(0x50));
+    REQUIRE(zone.switchJumps.at(0x50) == 3);
+    REQUIRE(zone.GetLabelNameAt(0x58) == "loc_58");
+    REQUIRE(zone.GetLabelNameAt(0x5C) == "loc_5C");
+
+    // the index written before the jump (mov w0, #7): no bound
+    file[8]  = 0xE0;
+    file[9]  = 0x00;
+    file[10] = 0x80;
+    file[11] = 0x52;
+    DissasmTestInstance written(file.data(), file.size(), false, layout);
+    REQUIRE_FALSE(written.zone->switchJumps.contains(0x50));
+}
+
+TEST_CASE("Arm64ColdChunkSlots", "[Dissasm]Arm64")
+{
+    // the cold code of a function after another function (a chunk: DetectColdBlocks) runs on the frame of the function at the depth of its
+    // body: a slot only the chunk uses is a variable of the frame too
+    std::vector<unsigned char> file;
+    const auto word = [&file](uint32 value) {
+        for (int index = 0; index < 4; index++)
+            file.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    };
+    word(0xA9BE7BFD); // 0x00: stp x29, x30, [sp, #-0x20]!
+    word(0x910003FD); // 0x04: mov x29, sp
+    word(0xB40001C0); // 0x08: cbz x0, 0x40                 (the cold code)
+    word(0xF9000BE0); // 0x0c: str x0, [sp, #0x10]          (var_10)
+    word(0xA8C27BFD); // 0x10: ldp x29, x30, [sp], #0x20
+    word(0xD65F03C0); // 0x14: ret
+    file.resize(0x38, 0);
+    word(0x52800000); // 0x38: mov w0, #0                   (another function)
+    word(0xD65F03C0); // 0x3c: ret
+    word(0xF9000FFF); // 0x40: str xzr, [sp, #0x18]         (var_8: only the cold code uses it)
+    word(0xF9400BE1); // 0x44: ldr x1, [sp, #0x10]          (var_10)
+    word(0x17FFFFF2); // 0x48: b 0x10
+    file.resize(0x60, 0);
+    ZoneLayout layout;
+    layout.size                       = file.size();
+    layout.entryPoint                 = 0;
+    layout.language                   = DisassemblyLanguage::ARM64;
+    layout.functionEntries[0x38].size = 8;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const auto& zone          = *dissasmInstance.zone;
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(std::find(zone.functionChunks.begin(), zone.functionChunks.end(), DissasmFunctionChunk{ 0x40, 0x4C, 0x00 }) != zone.functionChunks.end());
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(CheckFrameVariables(*frame, { { -0x10, 8, "var_10" }, { -0x8, 8, "var_8" } }));
+    REQUIRE(FindListingLine(listing, "0x00000040  str    xzr, [sp, #var_8]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000044  ldr    x1, [sp, #var_10]").size() > 0);
+}

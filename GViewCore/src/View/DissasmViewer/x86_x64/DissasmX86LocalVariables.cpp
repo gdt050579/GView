@@ -1828,9 +1828,105 @@ bool GView::View::DissasmViewer::AddArm64FuncletSlots(csh detailHandle, const ui
     return added.empty() || MergeFrameVariables(frame, std::move(added));
 }
 
+bool GView::View::DissasmViewer::AddArm64ChunkSlots(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, DissasmFunctionFrame& frame)
+{
+    if (!code || codeSize < 4)
+        return true;
+    const std::unique_ptr<cs_insn, CsInsnDeleter> insn(cs_malloc(detailHandle));
+    if (!insn || !insn->detail)
+        return true;
+    std::vector<FrameAccess> accesses;
+    const uint8* data = code;
+    size_t size       = codeSize;
+    uint64 address    = codeAddress;
+    while (size >= 4 && cs_disasm_iter(detailHandle, &data, &size, &address, insn.get())) {
+        const cs_arm64& arm64 = insn->detail->arm64;
+        bool isPair           = false;
+        const uint16 access   = Arm64AccessSize(*insn, isPair);
+        bool endsDepth        = arm64.writeback; // ldp x19, x20, [sp], #0x40 of an epilogue
+        for (uint8 index = 0; index < arm64.op_count; index++) {
+            const cs_arm64_op& op = arm64.operands[index];
+            if (op.type == ARM64_OP_REG && (op.access & CS_AC_WRITE) && (op.reg == ARM64_REG_SP || op.reg == ARM64_REG_X29))
+                endsDepth = true; // add sp, sp, #0x40 / ldp x29, x30: the depth of the body ends
+            if (op.type != ARM64_OP_MEM || op.mem.index != ARM64_REG_INVALID || arm64.writeback || access == 0)
+                continue;
+            int64 offset = 0;
+            if (op.mem.base == ARM64_REG_SP)
+                offset = op.mem.disp + frame.stackOffset;
+            else if (op.mem.base == ARM64_REG_X29 && frame.usesFrameRegister && !(op.mem.disp >= 0 && op.mem.disp < 16))
+                offset = op.mem.disp + frame.frameRegisterOffset;
+            else
+                continue;
+            if (offset < -MAX_FRAME_DISPLACEMENT || offset > MAX_FRAME_DISPLACEMENT || (!frame.usesFrameRegister && offset >= 0))
+                continue; // a function without a frame register: the slots of its caller
+            accesses.push_back({ static_cast<int32>(offset), access });
+            if (isPair)
+                accesses.push_back({ static_cast<int32>(offset + access), access });
+        }
+        if (endsDepth)
+            break;
+    }
+    if (!CompactAccesses(accesses))
+        return false;
+    std::vector<DissasmLocalVariable> added;
+    for (const auto& slot : accesses) {
+        if (frame.IsSavedRegisterSlot(slot.frameOffset) || frame.FindVariableContaining(slot.frameOffset))
+            continue;
+        DissasmLocalVariable variable{ slot.frameOffset, slot.size, {} };
+        FormatDefaultLocalVariableName(slot.frameOffset, true, variable.name);
+        added.push_back(std::move(variable));
+    }
+    return added.empty() || MergeFrameVariables(frame, std::move(added));
+}
+
 bool GView::View::DissasmViewer::FindArm64FrameOperand(std::string_view operands, Arm64FrameOperand& result)
 {
     return FindArmFrameOperand(operands, "x29", result);
+}
+
+bool GView::View::DissasmViewer::FindArmAddressOperand(std::string_view operands, std::string_view frameRegister, Arm64FrameOperand& result)
+{
+    const size_t comma = operands.find(", ");
+    if (comma == std::string_view::npos)
+        return false;
+    const std::string_view destination = operands.substr(0, comma);
+    if (destination == "sp" || destination == frameRegister)
+        return false;
+    for (int pass = 0; pass < 2; pass++) {
+        const std::string_view base = pass == 0 ? frameRegister : std::string_view("sp");
+        size_t position             = comma + 2;
+        if (operands.substr(position, base.size()) != base || operands.substr(position + base.size(), 3) != ", #")
+            continue;
+        position += base.size() + 3;
+        const size_t replaceStart = position;
+        const bool isHex          = operands.substr(position, 2) == "0x";
+        if (isHex)
+            position += 2;
+        uint64 value  = 0;
+        uint32 digits = 0;
+        for (; position < operands.size(); position++, digits++) {
+            const char c = operands[position];
+            uint32 digit = 0;
+            if (c >= '0' && c <= '9')
+                digit = static_cast<uint32>(c - '0');
+            else if (isHex && c >= 'a' && c <= 'f')
+                digit = static_cast<uint32>(c - 'a' + 10);
+            else
+                return false; // a shifted immediate (#1, lsl #12)
+            value = value * (isHex ? 16 : 10) + digit;
+            if (value > 0x7FFFFFFF)
+                return false;
+        }
+        if (digits == 0)
+            return false;
+        result.replaceStart        = static_cast<uint32>(replaceStart);
+        result.replaceEnd          = static_cast<uint32>(position);
+        result.displacement        = static_cast<int32>(value);
+        result.isStackPointerBased = pass == 1;
+        result.needsSeparator      = false;
+        return true;
+    }
+    return false;
 }
 
 bool GView::View::DissasmViewer::FindArmFrameOperand(std::string_view operands, std::string_view frameRegister, Arm64FrameOperand& result)

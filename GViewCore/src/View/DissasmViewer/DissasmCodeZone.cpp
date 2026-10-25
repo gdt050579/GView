@@ -3365,6 +3365,20 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
     }
 
+    // ARM64: the cold chunks of the function (DetectColdBlocks: MSVC's separated cold code) run on its frame at the depth of its body: their
+    // slots are variables of the frame (AddArm64ChunkSlots of DissasmX86LocalVariables)
+    void AddArm64ColdChunkSlots(DissasmFunctionFrame& frame)
+    {
+        const auto [first, last] = coldChunksOf.equal_range(frame.startAddress);
+        for (auto it = first; it != last; ++it) {
+            const auto& chunk = coldChunks[it->second];
+            const auto bytes  = obj->GetData().CopyToBuffer(
+                  codeStart + chunk.start, static_cast<uint32>(std::min<uint64>(chunk.end - chunk.start, DISSASM_MAX_ANALYZED_FUNCTION_SIZE)), false);
+            if (bytes.IsValid() && !GView::View::DissasmViewer::AddArm64ChunkSlots(detailHandle, bytes.GetData(), bytes.GetLength(), chunk.start, frame))
+                return;
+        }
+    }
+
     // ARM64: the frames of the funclets name their x29 slots with the variables of their function (DissasmFunctionFrame::frameRegisterOf);
     // a funclet without a frame of its own gets one (no slot of its own)
     void LinkArm64FuncletFrames()
@@ -5314,6 +5328,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         bool readOtherCode = false;
         if (analyzed && functionArch == DissasmArch::Arm64 && arm64FuncletsOfParent.contains(relativeAddress)) {
             AddArm64FuncletSlots(frame); // ARM64 SEH / C++ EH: the slots of the frame the funclets use through x29
+            readOtherCode = true;
+        }
+        if (analyzed && functionArch == DissasmArch::Arm64 && coldChunksOf.contains(relativeAddress)) {
+            AddArm64ColdChunkSlots(frame); // the cold blocks of the function (DetectColdBlocks)
             readOtherCode = true;
         }
         if (analyzed && functionArch == DissasmArch::X64 && funcletsOfParent.contains(relativeAddress)) {

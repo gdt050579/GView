@@ -191,6 +191,9 @@ class Arm64AdrpTracker
     // cmp (taken in range: MSVC's switch in a block of its own)
     std::unordered_map<AppCUI::uint64, CaseBound> caseBounds;
     std::optional<CaseBound> inheritedBound; // the one of the case being decoded
+    // the bound of b.hi with its register, up to a write of it: a jump (b, a veneer) carries it to its target (MSVC: the switch in the far
+    // cold code, its bound checked in the hot code)
+    std::optional<CaseBound> heldBound;
     std::optional<Arm64JumpTable> jumpTable;
     std::optional<AppCUI::uint64> anchor;
     std::optional<AppCUI::uint64> farJump;
