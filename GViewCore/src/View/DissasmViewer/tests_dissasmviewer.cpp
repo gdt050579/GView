@@ -13433,3 +13433,89 @@ TEST_CASE("CertificateServicesErrorPrototypes", "[Dissasm]Thunks")
     REQUIRE(FindListingLine(listing, "push   0x1633012e").ends_with("; dwLineFile = file 0x12E, line 5683"));
     REQUIRE(FindListingLine(listing, "push   edi").ends_with("; pwszData"));
 }
+
+TEST_CASE("SdkLongTailPrototypes", "[Dissasm]Help")
+{
+    // the declarations of the SDK the samples call without a prototype (each 3 times or more), the shapes of a few without one (StrToID of
+    // DirectUI); the 64 bit arguments of 32 bit x86 (DWORDLONG, TRACEHANDLE) take two slots
+    const auto* strToId = FindApiPrototype("StrToID");
+    REQUIRE(strToId != nullptr);
+    REQUIRE(std::string_view(strToId->returnType) == "ATOM");
+    REQUIRE(std::string_view(strToId->params[0].name) == "psz");
+    REQUIRE(FindApiPrototype("__imp_RtlComputeCrc32")->params.size() == 3);
+    REQUIRE(FindApiPrototype("ExtractIconExW")->params.size() == 5);
+    REQUIRE(FindApiPrototype("j_LCMapStringW") != nullptr);
+    REQUIRE(GetX86StdcallPushes(*FindApiPrototype("VerifyVersionInfoW")) == std::optional<uint32>(4));
+    REQUIRE(!GetX86StdcallPushes(*FindApiPrototype("EtwTraceMessage")).has_value());
+    REQUIRE(FindApiPrototype("FsRtlDissectName") == nullptr); // a UNICODE_STRING by value: not in the table
+
+    std::vector<unsigned char> file;
+    const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x28 });       // 0x00: sub rsp, 0x28
+    file.insert(file.end(), { 0x48, 0x89, 0xD9 });             // 0x04: mov rcx, rbx      (psz)
+    call(0x200);                                               // 0x07: call StrToID
+    file.insert(file.end(), { 0x44, 0x8B, 0xC6 });             // 0x0d: mov r8d, esi      (Length)
+    file.insert(file.end(), { 0x48, 0x89, 0xFA });             // 0x10: mov rdx, rdi      (Buffer)
+    file.insert(file.end(), { 0x31, 0xC9 });                   // 0x13: xor ecx, ecx      (PartialCrc)
+    call(0x208);                                               // 0x15: call RtlComputeCrc32
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x28, 0xC3 }); // 0x1b: add rsp, 0x28; ret
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "StrToID", MemoryMappingType::FunctionMapping } },
+                                { 0x208, { "RtlComputeCrc32", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000004  mov    rcx, rbx").ends_with("; psz"));
+    REQUIRE(FindListingLine(listing, "0x0000000d  mov    r8d, esi").ends_with("; Length"));
+    REQUIRE(FindListingLine(listing, "0x00000010  mov    rdx, rdi").ends_with("; Buffer"));
+    REQUIRE(FindListingLine(listing, "0x00000013  xor    ecx, ecx").ends_with("; PartialCrc"));
+}
+
+TEST_CASE("GlibcInternalPrototypes", "[Dissasm]Help")
+{
+    // the internal functions of the GNU C library its own code calls most (the buffers of printf, mpn, the scratch buffers, NSS, XDR)
+    REQUIRE(FindApiPrototype("__printf_buffer_putc_1") != nullptr);
+    REQUIRE(std::string_view(FindApiPrototype("__printf_buffer_putc_1")->params[1].name) == "ch");
+    REQUIRE(FindApiPrototype("__syscall_cancel")->params.size() == 7);
+    REQUIRE(std::string_view(FindApiPrototype("__syscall_cancel")->params[6].name) == "nr");
+    REQUIRE(std::string_view(FindApiPrototype("__libc_scratch_buffer_grow_preserve")->returnType) == "bool");
+    REQUIRE(FindApiPrototype("__argp_fmtstream_printf")->prototype.find("...") != std::string_view::npos);
+
+    std::vector<unsigned char> file;
+    const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x28 });       // 0x00: sub rsp, 0x28
+    file.insert(file.end(), { 0x44, 0x89, 0xE9 });             // 0x04: mov ecx, r13d     (the test zone: rcx first) -> wp
+    file.insert(file.end(), { 0x48, 0x89, 0xCA });             // 0x07: mov rdx, rcx      (up)
+    file.insert(file.end(), { 0x4D, 0x89, 0xE0 });             // 0x0a: mov r8, r12       (usize)
+    file.insert(file.end(), { 0x41, 0x89, 0xD9 });             // 0x0d: mov r9d, ebx      (cnt)
+    call(0x200);                                               // 0x10: call __mpn_lshift
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x28, 0xC3 }); // 0x16: add rsp, 0x28; ret
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "__mpn_lshift", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000007  mov    rdx, rcx").ends_with("; up"));
+    REQUIRE(FindListingLine(listing, "0x0000000a  mov    r8, r12").ends_with("; usize"));
+    REQUIRE(FindListingLine(listing, "0x0000000d  mov    r9d, ebx").ends_with("; cnt"));
+}

@@ -1007,20 +1007,88 @@ void AddDissasmDelayImports(DissasmViewer::Settings& settings, Reference<PE::PEF
     }
 }
 
+// ARM64X: the load config of the x64 view of the image (the one an x64 process maps): the dynamic value relocations of ARM64X (symbol 6 of the
+// DVRT the load config points to) give the load config directory of the optional header another RVA in that view, a load config with the
+// CFG pointers its x64 code calls through (call cs:__guard_dispatch_icall_fptr) and its own tables; 0 when the image has none
+uint32 ReadArm64XLoadConfig(Reference<PE::PEFile> pe, GView::Utils::DataCache& data)
+{
+    constexpr uint32 DVRT_OFFSET        = 224; // DynamicValueRelocTableOffset, DynamicValueRelocTableSection of the 64 bit load config
+    constexpr uint32 DVRT_SECTION       = 228;
+    constexpr uint64 ARM64X_RELOCATIONS = 6; // IMAGE_DYNAMIC_RELOCATION_ARM64X
+    constexpr uint32 MAX_DVRT_SIZE      = 0x100000;
+    if (!pe->hdr64 || static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine) != PE::MachineType::ARM64)
+        return 0;
+    const auto& directory = pe->GetDirectory(PE::DirectoryType::Config);
+    const auto config     = directory.VirtualAddress != 0 ? pe->RVAToFA(directory.VirtualAddress) : PE_INVALID_ADDRESS;
+    uint32 configSize     = 0;
+    uint32 dvrtOffset     = 0;
+    uint16 dvrtSection    = 0;
+    if (config == PE_INVALID_ADDRESS || !data.Copy<uint32>(config, configSize) || configSize < DVRT_SECTION + 2 ||
+        !data.Copy<uint32>(config + DVRT_OFFSET, dvrtOffset) || !data.Copy<uint16>(config + DVRT_SECTION, dvrtSection) || dvrtSection == 0 ||
+        dvrtSection > pe->nrSections)
+        return 0;
+    const auto table = pe->RVAToFA(static_cast<uint64>(pe->sect[dvrtSection - 1].VirtualAddress) + dvrtOffset);
+    uint32 version = 0, size = 0;
+    if (table == PE_INVALID_ADDRESS || !data.Copy<uint32>(table, version) || !data.Copy<uint32>(table + 4, size) || version != 1 || size > MAX_DVRT_SIZE)
+        return 0;
+    // the RVA of DataDirectory[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG].VirtualAddress: the signature, the file header, 112 bytes of the 64 bit
+    // optional header before its directories
+    const uint64 directoryField = static_cast<uint64>(pe->dos.e_lfanew) + 4 + 20 + 112 + 8 * 10;
+    const uint64 end            = table + 8 + size;
+    for (uint64 position = table + 8; position + 12 <= end;) {
+        uint64 symbol      = 0;
+        uint32 relocations = 0;
+        if (!data.Copy<uint64>(position, symbol) || !data.Copy<uint32>(position + 8, relocations) || position + 12 + relocations > end)
+            return 0;
+        const uint64 blocksEnd = position + 12 + relocations;
+        // the blocks of a base relocation: the RVA of a page, the size of the block, then 16 bit entries (the offset in the page, the type, a
+        // meta value): 0 zero fills, 1 assigns the value of 1 << meta bytes after it, 2 adds the delta of 4 bytes after it
+        for (uint64 block = position + 12; symbol == ARM64X_RELOCATIONS && block + 8 <= blocksEnd;) {
+            uint32 page = 0, blockSize = 0;
+            if (!data.Copy<uint32>(block, page) || !data.Copy<uint32>(block + 4, blockSize) || blockSize < 8 || block + blockSize > blocksEnd)
+                break;
+            for (uint64 entry = block + 8; entry + 2 <= block + blockSize;) {
+                uint16 value = 0;
+                if (!data.Copy<uint16>(entry, value))
+                    break;
+                entry += 2;
+                const uint32 type = (value >> 12) & 3, meta = value >> 14;
+                uint32 assigned   = 0;
+                if (type == 1 && meta == 2 && static_cast<uint64>(page) + (value & 0xFFF) == directoryField && data.Copy<uint32>(entry, assigned))
+                    return assigned != directory.VirtualAddress ? assigned : 0;
+                entry += type == 1 ? (1u << meta) : (type == 2 ? 4u : 0u);
+            }
+            block += blockSize;
+        }
+        position = blocksEnd;
+    }
+    return 0;
+}
+
 // The load config directory (_load_config_used), named like IDA:
 // - the variables it points to: the security cookie of /GS (mov rax, cs:__security_cookie in every protected function), the pointers of
 //   the Control Flow Guard that the indirect calls go through (call cs:__guard_dispatch_icall_fptr), the tables (__guard_fids_table, ...)
 // - the functions: every valid target of an indirect call (the CFG function table: RVAs, with flag bytes after them), the exception
 //   handlers of a 32 bit image (the SafeSEH table)
-void AddDissasmLoadConfig(DissasmViewer::Settings& settings, Reference<PE::PEFile> pe, GView::Utils::DataCache& data)
+// (`configRVA`: the directory, or the load config of the x64 view of an ARM64X image, ReadArm64XLoadConfig: `name` _load_config_used_x64;
+// `named`: the variables and tables a load config named before, a pointer or a table of both views keeps its name and is read once, the
+// others of the second one get `suffix`: __guard_dispatch_icall_fptr_x64)
+void AddDissasmLoadConfig(
+      DissasmViewer::Settings& settings,
+      Reference<PE::PEFile> pe,
+      GView::Utils::DataCache& data,
+      uint32 configRVA,
+      std::string_view name,
+      std::string_view suffix,
+      std::unordered_set<uint64>& named)
 {
-    const auto& directory = pe->GetDirectory(PE::DirectoryType::Config);
-    const auto start      = directory.VirtualAddress != 0 ? pe->RVAToFA(directory.VirtualAddress) : PE_INVALID_ADDRESS;
+    const auto before     = named;
+    const auto start      = configRVA != 0 ? pe->RVAToFA(configRVA) : PE_INVALID_ADDRESS;
     uint32 size           = 0; // the first field: the size of the structure (it grows with the Windows versions)
     if (start == PE_INVALID_ADDRESS || !data.Copy<uint32>(start, size))
         return;
     const bool is64 = pe->hdr64;
-    settings.AddMemoryMapping(directory.VirtualAddress, "_load_config_used", DissasmViewer::MemoryMappingType::TextMapping);
+    settings.AddMemoryMapping(configRVA, name, DissasmViewer::MemoryMappingType::TextMapping);
     struct ConfigField {
         uint32 offset32, offset64;
         std::string_view name;
@@ -1105,7 +1173,7 @@ void AddDissasmLoadConfig(DissasmViewer::Settings& settings, Reference<PE::PEFil
             { P, Type::Pointer, "CastGuardOsDeterminedFailureMode" },
             { P, Type::Pointer, "GuardMemcpyFunctionPointer" },
         };
-        const uint64 directoryVA = pe->imageBase + directory.VirtualAddress;
+        const uint64 directoryVA = pe->imageBase + configRVA;
         uint32 offset            = 0;
         const auto addFields     = [&](const auto& fields) {
             for (const auto& field : fields) {
@@ -1130,8 +1198,8 @@ void AddDissasmLoadConfig(DissasmViewer::Settings& settings, Reference<PE::PEFil
     };
     for (const auto& field : fields) {
         const uint64 va = readField(field.offset32, field.offset64);
-        if (va > pe->imageBase)
-            settings.AddMemoryMapping(va - pe->imageBase, field.name, DissasmViewer::MemoryMappingType::TextMapping);
+        if (va > pe->imageBase && named.insert(va).second)
+            settings.AddMemoryMapping(va - pe->imageBase, std::string(field.name) + std::string(suffix), DissasmViewer::MemoryMappingType::TextMapping);
     }
     // the CFG function table: an RVA for every valid target of an indirect call, followed by the flag bytes of GuardFlags (bits 28..31)
     constexpr uint32 MAX_TABLE_ENTRIES = 0x100000;
@@ -1156,7 +1224,7 @@ void AddDissasmLoadConfig(DissasmViewer::Settings& settings, Reference<PE::PEFil
         for (const auto& table : tables) {
             const uint64 tableVA = readField(table.table32, table.table64);
             const uint64 count   = readField(table.count32, table.count64);
-            if (tableVA <= pe->imageBase || count > MAX_TABLE_ENTRIES)
+            if (tableVA <= pe->imageBase || count > MAX_TABLE_ENTRIES || before.contains(tableVA))
                 continue;
             const auto tableFa = table.locations ? pe->RVAToFA(tableVA - pe->imageBase) : PE_INVALID_ADDRESS;
             for (uint64 index = 0; index < count; index++) {
@@ -1170,7 +1238,8 @@ void AddDissasmLoadConfig(DissasmViewer::Settings& settings, Reference<PE::PEFil
             }
         }
     }
-    if (flagsOffset + 4 <= size && data.Copy<uint32>(start + flagsOffset, guardFlags) && functionTable > pe->imageBase && functionCount <= MAX_TABLE_ENTRIES) {
+    if (flagsOffset + 4 <= size && data.Copy<uint32>(start + flagsOffset, guardFlags) && functionTable > pe->imageBase && functionCount <= MAX_TABLE_ENTRIES &&
+        !before.contains(functionTable)) {
         const uint32 entrySize = 4 + ((guardFlags >> 28) & 0xF);
         const auto tableFa     = pe->RVAToFA(functionTable - pe->imageBase);
         for (uint64 index = 0; tableFa != PE_INVALID_ADDRESS && index < functionCount; index++) {
@@ -1558,7 +1627,11 @@ UInt16 e_res[4];)");
     }
     AddDissasmFunctionEntries(settings, pe, win->GetObject()->GetData());
     AddDissasmDelayImports(settings, pe, win->GetObject()->GetData(), filePath);
-    AddDissasmLoadConfig(settings, pe, win->GetObject()->GetData());
+    std::unordered_set<uint64> configVariables;
+    AddDissasmLoadConfig(
+          settings, pe, win->GetObject()->GetData(), pe->GetDirectory(PE::DirectoryType::Config).VirtualAddress, "_load_config_used", {}, configVariables);
+    if (const uint32 x64Config = ReadArm64XLoadConfig(pe, win->GetObject()->GetData()); x64Config != 0) // ARM64X: the one of its x64 code
+        AddDissasmLoadConfig(settings, pe, win->GetObject()->GetData(), x64Config, "_load_config_used_x64", "_x64", configVariables);
     AddDissasmDirectoryFields(settings, pe, win->GetObject()->GetData());
 
     win->CreateViewer(settings);
