@@ -1000,7 +1000,8 @@ static void AnnounceKnownFunctionCall(DissasmInsnExtractLineParams& params, cons
 
 static void AnnounceKnownFunctionCall(DissasmInsnExtractLineParams& params, std::string_view functionName)
 {
-    AnnounceKnownFunctionCall(params, FindApiPrototype(functionName));
+    const auto* prototype = FindApiPrototype(functionName);
+    AnnounceKnownFunctionCall(params, prototype ? prototype : params.zone->FindMethodPrototype(functionName)); // GCC: a method its code tells
 }
 
 // the label of an address (VA) in another code zone of the file; empty when no analyzed zone has a label there

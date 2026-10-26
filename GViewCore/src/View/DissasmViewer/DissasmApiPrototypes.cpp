@@ -3,7 +3,9 @@
 
 #include <algorithm>
 #include <deque>
+#include <map>
 #include <memory>
+#include <mutex>
 
 using namespace GView::View::DissasmViewer;
 
@@ -2136,6 +2138,306 @@ const PrototypeTable& GetPrototypeTable()
     }();
     return table;
 }
+
+// the parenthesis that opens the parameters of a demangled name, the one at `close` closes them (operator(), a pointer to a function among
+// them); npos when they do not match
+size_t FindParametersOpen(std::string_view text, size_t close)
+{
+    uint32 depth = 0;
+    for (size_t index = close + 1; index-- > 0;) {
+        if (text[index] == ')')
+            depth++;
+        else if (text[index] == '(' && --depth == 0)
+            return index;
+    }
+    return std::string_view::npos;
+}
+
+// the parameters of a demangled name split at the commas outside of <>, () and [] (std::map<int, char>, void (*)(int, int)); none for (void)
+std::vector<std::string_view> SplitDemangledParameters(std::string_view parameters)
+{
+    std::vector<std::string_view> result;
+    uint32 depth = 0;
+    size_t start = 0;
+    for (size_t index = 0; index <= parameters.size(); index++) {
+        const char c = index < parameters.size() ? parameters[index] : ',';
+        if (c == '<' || c == '(' || c == '[')
+            depth++;
+        else if ((c == '>' || c == ')' || c == ']') && depth > 0)
+            depth--;
+        else if (c == ',' && (depth == 0 || index == parameters.size())) {
+            result.push_back(Trim(parameters.substr(start, index - start)));
+            start = index + 1;
+        }
+    }
+    if (result.size() == 1 && (result[0].empty() || result[0] == "void"))
+        result.clear();
+    return result;
+}
+
+// the scope of a qualified name (std::locale::~locale: std::locale), before its last :: outside of the template arguments; empty for none
+std::string_view ScopeOfName(std::string_view name)
+{
+    if (const auto op = name.find("::operator"); op != std::string_view::npos)
+        return name.substr(0, op); // operator< / operator>>: not template arguments
+    size_t last  = std::string_view::npos;
+    uint32 depth = 0;
+    for (size_t index = 0; index + 1 < name.size(); index++) {
+        if (name[index] == '<')
+            depth++;
+        else if (name[index] == '>' && depth > 0)
+            depth--;
+        else if (depth == 0 && name[index] == ':' && name[index + 1] == ':')
+            last = index++;
+    }
+    return last == std::string_view::npos ? std::string_view() : name.substr(0, last);
+}
+
+std::string_view WithoutTemplateArguments(std::string_view name)
+{
+    return name.substr(0, std::min(name.find('<'), name.size()));
+}
+
+// GCC: a constructor / destructor (std::locale::~locale: the last scope is its class, without the template arguments)
+bool IsConstructorOrDestructor(std::string_view functionName, std::string_view scope)
+{
+    const std::string_view outer     = ScopeOfName(scope);
+    const std::string_view className = WithoutTemplateArguments(outer.empty() ? scope : scope.substr(outer.size() + 2));
+    const std::string_view own       = WithoutTemplateArguments(functionName.substr(scope.size() + 2));
+    return !className.empty() && (own == className || (own.size() == className.size() + 1 && own.front() == '~' && own.substr(1) == className));
+}
+
+// MSVC: a class / struct / union passed or returned by value (not a pointer or a reference to it)
+bool IsClassByValue(std::string_view type)
+{
+    return (type.starts_with("class ") || type.starts_with("struct ") || type.starts_with("union ")) && !type.ends_with('*') && !type.ends_with('&');
+}
+
+// GCC: a parameter that takes one integer register of System V (a pointer, a reference, an integer; not a float, nor a class by value)
+bool IsIntegerRegisterParameter(std::string_view type)
+{
+    static constexpr std::string_view INTEGERS[] = { "bool",     "char",          "signed char", "unsigned char",     "wchar_t", "char8_t",
+                                                     "char16_t", "char32_t",      "short",       "unsigned short",    "int",     "unsigned int",
+                                                     "long",     "unsigned long", "long long",   "unsigned long long" };
+    return type.ends_with('*') || type.ends_with('&') || std::find(std::begin(INTEGERS), std::end(INTEGERS), type) != std::end(INTEGERS);
+}
+
+// the prototype a demangled C++ name tells, its parameters named by their types (IDA: ; unsigned int), null when it does not tell its
+// arguments surely:
+// - MSVC (public: long __cdecl DirectUI::Element::SetLayoutPos(int)): a method (an access, not static) takes this first (__thiscall of 32
+//   bit x86: in ecx, no pushed argument), then the address of what it returns when that is a class / struct / union (result); none for a
+//   function or a static method returning one by value (in rax or not: its size), the other conventions, a class passed by value (several
+//   pushes on 32 bit x86), a pointer to a function returned
+// - GCC (std::locale::~locale(), std::runtime_error::runtime_error(char const*)): the constructors and the destructors only (the name of
+//   Itanium tells neither a static method nor what a method returns through a hidden pointer before this); its parameters up to the first
+//   one that takes no integer register of System V (a float, a class by value), none of a stream (a virtual base: the VTT after this)
+std::unique_ptr<DissasmUserPrototype> MakeDemangledPrototype(std::string_view name)
+{
+    // the number of a name given twice (std::ios_base::~ios_base()_1), the qualifiers after the parameters (const, &, __ptr64)
+    size_t end = name.size();
+    while (end > 0 && name[end - 1] >= '0' && name[end - 1] <= '9')
+        end--;
+    if (end < name.size() && end > 1 && name[end - 1] == '_' && name[end - 2] == ')')
+        name = name.substr(0, end - 1);
+    const auto close = name.rfind(')');
+    if (close == std::string_view::npos || std::any_of(name.begin() + close + 1, name.end(), [](char c) {
+            return !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == ' ' || c == '&');
+        }))
+        return nullptr;
+    const auto open = FindParametersOpen(name, close);
+    if (open == std::string_view::npos || open == 0)
+        return nullptr;
+    const std::string_view head = Trim(name.substr(0, open));
+    if (head.empty() || head.front() == '[' || (head.find('(') != std::string_view::npos && !head.ends_with("operator()")))
+        return nullptr; // [thunk]:, a pointer to a function returned
+    const auto parameters = SplitDemangledParameters(name.substr(open + 1, close - open - 1));
+
+    // MSVC: the access, static / virtual, the return type, the convention before the name
+    std::string_view rest = head;
+    bool member = false, isStatic = false;
+    for (const std::string_view access : { std::string_view("public: "), std::string_view("protected: "), std::string_view("private: ") })
+        if (rest.starts_with(access)) {
+            member = true;
+            rest.remove_prefix(access.size());
+        }
+    if (rest.starts_with("static "))
+        isStatic = true;
+    if (rest.starts_with("static ") || rest.starts_with("virtual "))
+        rest.remove_prefix(rest.find(' ') + 1);
+    std::string_view convention;
+    size_t conventionStart = std::string_view::npos;
+    for (const std::string_view candidate : { std::string_view("__cdecl"),
+                                              std::string_view("__thiscall"),
+                                              std::string_view("__stdcall"),
+                                              std::string_view("__fastcall"),
+                                              std::string_view("__vectorcall"),
+                                              std::string_view("__clrcall") })
+        for (size_t found = rest.find(candidate); found != std::string_view::npos; found = rest.find(candidate, found + 1))
+            if ((found == 0 || rest[found - 1] == ' ') && found + candidate.size() < rest.size() && rest[found + candidate.size()] == ' ' &&
+                (conventionStart == std::string_view::npos || found > conventionStart)) {
+                conventionStart = found;
+                convention      = candidate;
+            }
+
+    auto prototype      = std::make_unique<DissasmUserPrototype>();
+    auto& details       = prototype->details;
+    details.demangled   = true;
+    const auto& unnamed = prototype->strings.emplace_back();
+    std::string text;
+    std::string_view functionName;
+    std::vector<std::string_view> kept; // the parameters with their argument known
+    bool variadic = false;
+    if (!convention.empty()) {
+        if (convention != "__cdecl" && convention != "__thiscall" && convention != "__stdcall")
+            return nullptr;
+        const std::string_view returnType = Trim(rest.substr(0, conventionStart));
+        functionName                      = Trim(rest.substr(conventionStart + convention.size()));
+        const bool hasThis                = member && !isStatic;
+        const std::string_view scope      = ScopeOfName(functionName);
+        if (functionName.empty() || (hasThis && scope.empty()) || (IsClassByValue(returnType) && !hasThis))
+            return nullptr;
+        details.callerCleansStack = convention == "__cdecl";
+        text = (returnType.empty() ? std::string() : std::string(returnType) + " ") + std::string(convention) + " " + std::string(functionName) + "(";
+        if (hasThis) {
+            const auto& thisType = prototype->strings.emplace_back(std::string(scope) + "*");
+            text += thisType + " this";
+            if (convention != "__thiscall") // __thiscall: this in ecx
+                details.params.push_back({ "this", thisType.c_str() });
+        }
+        if (IsClassByValue(returnType)) { // the address of what a method returns (after this)
+            const auto& resultType = prototype->strings.emplace_back(std::string(returnType) + "*");
+            text += ", " + resultType + " result";
+            details.params.push_back({ "result", resultType.c_str() });
+        } else if (returnType != "void") {
+            details.returnType = prototype->strings.emplace_back(returnType);
+        }
+        for (const auto parameter : parameters) {
+            if (IsClassByValue(parameter))
+                return nullptr;
+            if (parameter == "...") {
+                variadic = true;
+                break;
+            }
+            kept.push_back(parameter);
+        }
+        for (const auto parameter : parameters)
+            text += (text.ends_with('(') ? "" : ", ") + std::string(parameter);
+    } else {
+        // GCC: a constructor / destructor, no return type (a space outside of the template arguments)
+        uint32 depth = 0;
+        for (const char c : head) {
+            if (c == '<')
+                depth++;
+            else if (c == '>' && depth > 0)
+                depth--;
+            else if (c == ' ' && depth == 0)
+                return nullptr;
+        }
+        if (member || isStatic)
+            return nullptr;
+        functionName                 = head;
+        const std::string_view scope = ScopeOfName(functionName);
+        if (scope.empty())
+            return nullptr;
+        if (!IsConstructorOrDestructor(functionName, scope))
+            return nullptr;
+        const std::string_view outer     = ScopeOfName(scope);
+        const std::string_view className = WithoutTemplateArguments(outer.empty() ? scope : scope.substr(outer.size() + 2));
+        details.callerCleansStack        = true;
+        const auto& thisType             = prototype->strings.emplace_back(std::string(scope) + "*");
+        text                             = std::string(functionName) + "(" + thisType + " this";
+        details.params.push_back({ "this", thisType.c_str() });
+        bool known = !className.ends_with("stream"); // a stream: the VTT of its virtual base after this
+        for (const auto parameter : parameters) {
+            text += ", " + std::string(parameter);
+            variadic = variadic || parameter == "...";
+            known    = known && !variadic && IsIntegerRegisterParameter(parameter); // the registers of the ones after it: not known
+            if (known)
+                kept.push_back(parameter);
+        }
+    }
+    for (const auto parameter : kept)
+        details.params.push_back({ unnamed.c_str(), prototype->strings.emplace_back(parameter).c_str() });
+    if (variadic && !text.ends_with("..."))
+        text += text.ends_with('(') ? "..." : ", ...";
+    details.prototype    = prototype->strings.emplace_back(text + ")");
+    details.functionName = prototype->strings.emplace_back(functionName);
+    return prototype;
+}
+
+// the prototypes of the demangled names met (MakeDemangledPrototype), the names without one too (null); not past 0x10000 names (a hostile
+// file: then none)
+const AsmFunctionDetails* FindDemangledPrototype(std::string_view name)
+{
+    constexpr size_t MAX_NAMES     = 0x10000;
+    constexpr size_t MAX_NAME_SIZE = 0x1000;
+    static std::mutex lock;
+    static std::map<std::string, std::unique_ptr<DissasmUserPrototype>, std::less<>> known;
+    if (name.size() > MAX_NAME_SIZE)
+        return nullptr;
+    const std::lock_guard<std::mutex> guard(lock);
+    if (const auto found = known.find(name); found != known.end())
+        return found->second ? &found->second->details : nullptr;
+    if (known.size() >= MAX_NAMES)
+        return nullptr;
+    const auto& added = known.emplace(std::string(name), MakeDemangledPrototype(name)).first->second;
+    return added ? &added->details : nullptr;
+}
+
+// GCC: a demangled name that is no constructor / destructor, operator new / delete or name of MSVC (GetGccMethodParameters): the function
+// (after the return type of a template: std::basic_istream<char, ...>& std::ws<char, ...>(...)), the qualifiers after its parameters, the
+// parameters (each in one integer register of System V, 6 at most)
+struct GccMethodName {
+    std::string_view functionName;
+    std::string_view qualifiers;
+    std::vector<std::string_view> parameters;
+};
+
+std::optional<GccMethodName> ParseGccMethodName(std::string_view name)
+{
+    size_t end = name.size();
+    while (end > 0 && name[end - 1] >= '0' && name[end - 1] <= '9')
+        end--;
+    if (end < name.size() && end > 1 && name[end - 1] == '_' && name[end - 2] == ')')
+        name = name.substr(0, end - 1);
+    const auto close = name.rfind(')');
+    if (close == std::string_view::npos || !OperatorKey(name).empty() ||
+        std::any_of(name.begin() + close + 1, name.end(), [](char c) { return !((c >= 'a' && c <= 'z') || c == ' ' || c == '&'); }))
+        return std::nullopt;
+    const auto open = FindParametersOpen(name, close);
+    if (open == std::string_view::npos || open == 0)
+        return std::nullopt;
+    const std::string_view head = Trim(name.substr(0, open));
+    if (head.empty() || head.front() == '[' || (head.find('(') != std::string_view::npos && !head.ends_with("operator()")) || head.starts_with("public: ") ||
+        head.starts_with("protected: ") || head.starts_with("private: "))
+        return std::nullopt;
+    for (const std::string_view convention : { std::string_view("__cdecl "),
+                                               std::string_view("__thiscall "),
+                                               std::string_view("__stdcall "),
+                                               std::string_view("__fastcall "),
+                                               std::string_view("__vectorcall "),
+                                               std::string_view("__clrcall ") })
+        if (const auto found = head.find(convention); found != std::string_view::npos && (found == 0 || head[found - 1] == ' '))
+            return std::nullopt;
+    // the return type of a template: before the last space outside of the template arguments (not after operator: operator bool)
+    size_t nameStart = 0;
+    uint32 depth     = 0;
+    for (size_t index = 0; index < std::min(head.find("operator"), head.size()); index++) {
+        if (head[index] == '<')
+            depth++;
+        else if (head[index] == '>' && depth > 0)
+            depth--;
+        else if (head[index] == ' ' && depth == 0)
+            nameStart = index + 1;
+    }
+    GccMethodName parsed{ head.substr(nameStart), name.substr(close + 1), SplitDemangledParameters(name.substr(open + 1, close - open - 1)) };
+    if (const auto scope = ScopeOfName(parsed.functionName); !scope.empty() && IsConstructorOrDestructor(parsed.functionName, scope))
+        return std::nullopt; // MakeDemangledPrototype
+    if (parsed.functionName.empty() || parsed.parameters.size() > 6 ||
+        std::any_of(parsed.parameters.begin(), parsed.parameters.end(), [](std::string_view parameter) { return !IsIntegerRegisterParameter(parameter); }))
+        return std::nullopt; // a float, a class by value, ...: the registers after it not known
+    return parsed;
+}
 } // namespace
 
 const AsmFunctionDetails* GView::View::DissasmViewer::FindApiPrototype(std::string_view name)
@@ -2157,6 +2459,8 @@ const AsmFunctionDetails* GView::View::DissasmViewer::FindApiPrototype(std::stri
         const auto found = byName.find(key);
         return found != byName.end() ? found->second : nullptr;
     }
+    if (name.find('(') != std::string_view::npos) // another demangled C++ name: what its form tells (MakeDemangledPrototype)
+        return FindDemangledPrototype(name);
     if (const auto found = byName.find(name); found != byName.end())
         return found->second;
     if (name.size() > 2 && name.starts_with("Zw")) { // the Zw functions are the Nt ones
@@ -2184,8 +2488,8 @@ void GView::View::DissasmViewer::ForEachApiPrototype(const std::function<void(co
 bool GView::View::DissasmViewer::IsWideX86Type(std::string_view type)
 {
     static constexpr std::string_view WIDE_TYPES[] = {
-        "__int64", "long long",     "unsigned long long", "LONGLONG",  "ULONGLONG",  "DWORD64", "QWORD", "int64_t",   "uint64_t",
-        "double",  "LARGE_INTEGER", "ULARGE_INTEGER",     "REGHANDLE", "POOL_FLAGS", "ULONG64", "POINT", "DWORDLONG", "TRACEHANDLE"
+        "__int64",       "long long",      "unsigned long long", "LONGLONG",   "ULONGLONG", "DWORD64", "QWORD",     "int64_t",     "uint64_t",        "double",
+        "LARGE_INTEGER", "ULARGE_INTEGER", "REGHANDLE",          "POOL_FLAGS", "ULONG64",   "POINT",   "DWORDLONG", "TRACEHANDLE", "unsigned __int64"
     };
     return std::find(std::begin(WIDE_TYPES), std::end(WIDE_TYPES), Trim(type)) != std::end(WIDE_TYPES);
 }
@@ -2195,8 +2499,8 @@ std::optional<uint32> GView::View::DissasmViewer::GetX86StdcallPushes(const AsmF
     const std::string_view name = prototype.functionName;
     const bool lowercase        = std::all_of(name.begin(), name.end(), [](char c) { return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'; });
     if (prototype.prototype.find("...") != std::string_view::npos || (lowercase && (GetApiCategories(name) & API_NETWORK) == 0) ||
-        name.starts_with("operator "))
-        return std::nullopt; // cdecl: the C run-time, the variadic APIs, the operators of C++
+        name.starts_with("operator ") || prototype.callerCleansStack)
+        return std::nullopt; // cdecl: the C run-time, the variadic APIs, the operators of C++, the __cdecl functions of C++
     uint32 pushes = 0;
     for (const auto& parameter : prototype.params)
         pushes += IsWideX86Type(parameter.type) ? 2u : 1u;
@@ -2208,6 +2512,51 @@ std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::ParseApi
     auto prototype = std::make_shared<DissasmUserPrototype>();
     if (!ParsePrototypeText(prototype->strings, std::string(Trim(text)), prototype->details, false))
         return nullptr;
+    return prototype;
+}
+
+std::optional<uint32> GView::View::DissasmViewer::GetGccMethodParameters(std::string_view name)
+{
+    const auto parsed = name.find('(') != std::string_view::npos ? ParseGccMethodName(name) : std::nullopt;
+    return parsed.has_value() ? std::optional<uint32>(static_cast<uint32>(parsed->parameters.size())) : std::nullopt;
+}
+
+std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::MakeGccMethodPrototype(std::string_view name, int32 highestRead)
+{
+    const auto parsed = ParseGccMethodName(name);
+    if (!parsed.has_value())
+        return nullptr;
+    // the arguments before its parameters: 1 is this for a const method, the address of what it returns for a function without a scope,
+    // else either (a static method / a function of a namespace returning a class); 2 are that address, then this
+    const int32 hidden           = highestRead + 1 - static_cast<int32>(parsed->parameters.size());
+    const std::string_view scope = ScopeOfName(parsed->functionName);
+    const bool isConst           = parsed->qualifiers.find("const") != std::string_view::npos;
+    if (hidden < 1 || hidden > 2 || (scope.empty() && (hidden == 2 || isConst)))
+        return nullptr;
+    auto prototype            = std::make_shared<DissasmUserPrototype>();
+    auto& details             = prototype->details;
+    details.demangled         = true;
+    details.callerCleansStack = true;
+    const auto& unnamed       = prototype->strings.emplace_back();
+    const auto& thisType      = prototype->strings.emplace_back(std::string(scope) + "*");
+    std::string text          = std::string(parsed->functionName) + "(";
+    if (hidden == 2 || scope.empty()) { // the address of what it returns (a function: no this)
+        details.params.push_back({ "result", unnamed.c_str() });
+        text += hidden == 2 ? "void* result, " : "void* result";
+    }
+    if (hidden == 2 || isConst) {
+        details.params.push_back({ "this", thisType.c_str() });
+        text += thisType + " this";
+    } else if (!scope.empty()) { // this, or the address of what a static method / a function of a namespace returns
+        details.params.push_back({ unnamed.c_str(), unnamed.c_str() });
+        text += "a1";
+    }
+    for (const auto parameter : parsed->parameters) {
+        details.params.push_back({ unnamed.c_str(), prototype->strings.emplace_back(parameter).c_str() });
+        text += ", " + std::string(parameter);
+    }
+    details.prototype    = prototype->strings.emplace_back(text + ")" + std::string(parsed->qualifiers));
+    details.functionName = prototype->strings.emplace_back(parsed->functionName);
     return prototype;
 }
 

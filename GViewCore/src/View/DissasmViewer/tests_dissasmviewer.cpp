@@ -32,6 +32,14 @@ class DummyType : public GView::TypeInterface
     void RunCommand(std::string_view) override
     {
     }
+    bool UpdateKeys(GView::KeyboardControlsInterface*) override
+    {
+        return true;
+    }
+    GView::Utils::JsonBuilderInterface* GetSmartAssistantContext(const std::string_view&, std::string_view) override
+    {
+        return nullptr;
+    }
     ~DummyType() override
     {
     }
@@ -303,6 +311,7 @@ struct ZoneLayout {
     bool isUninitialized = false;                             // an uninitialized data zone (start: its file offset, labelAddressBase: its VA)
     std::map<uint64, DissasmDataField> dataFields;            // the fields of the structures of the data, by VA
     std::unordered_map<uint64, std::string> boundSymbols;     // Mach-O: the symbols of the pointers dyld binds, by RVA
+    bool systemV = false; // x64: the System V calling convention (the content type of an ELF: not a PE)
 };
 
 // the RVA (and the VA) of an offset is the offset
@@ -329,6 +338,7 @@ class DissasmTestInstance
     SettingsData settingsData; // the imports of the layout
     TestIdentityTranslation translation;
     DissasmCodeZoneInitData lastInitData{};
+    DummyType systemVType; // the content type of a System V zone (not a PE)
 
     DissasmTestInstance(const unsigned char* binaryData, size_t binaryDataSize, bool enableLocalVariables = false, ZoneLayout layout = {})
         : enableLocalVariables(enableLocalVariables), layout(layout)
@@ -358,7 +368,7 @@ class DissasmTestInstance
             return false;
         }
 
-        objects.push_back(GView::Object(GView::Object::Type::MemoryBuffer, std::move(cache), nullptr, "dummy", "loc", 1));
+        objects.push_back(GView::Object(GView::Object::Type::MemoryBuffer, std::move(cache), layout.systemV ? &systemVType : nullptr, "dummy", "loc", 1));
 
         initDissasmCodeZone(&objects[0]);
         return true;
@@ -13518,4 +13528,261 @@ TEST_CASE("GlibcInternalPrototypes", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x00000007  mov    rdx, rcx").ends_with("; up"));
     REQUIRE(FindListingLine(listing, "0x0000000a  mov    r8, r12").ends_with("; usize"));
     REQUIRE(FindListingLine(listing, "0x0000000d  mov    r9d, ebx").ends_with("; cnt"));
+}
+
+TEST_CASE("CxxDemangledPrototypes", "[Dissasm]Help")
+{
+    // the prototypes the demangled C++ names tell: the methods of MSVC (this, the address of a class returned, __thiscall: this in ecx), the
+    // constructors / destructors of GCC; not what a name does not tell surely (a static method returning a class, a pointer to a function
+    // returned, a method of GCC that is no constructor)
+    const auto* initialize = FindApiPrototype("public: long __cdecl DirectUI::ClassInfoBase::Initialize(struct HINSTANCE__*, unsigned short const *, bool, "
+                                              "struct DirectUI::PropertyInfo const *const *, unsigned int)");
+    REQUIRE(initialize != nullptr);
+    REQUIRE(std::string_view(initialize->functionName) == "DirectUI::ClassInfoBase::Initialize");
+    REQUIRE(std::string_view(initialize->returnType) == "long");
+    REQUIRE(initialize->params.size() == 6);
+    REQUIRE(std::string_view(initialize->params[0].name) == "this");
+    REQUIRE(std::string_view(initialize->params[0].type) == "DirectUI::ClassInfoBase*");
+    REQUIRE(std::string_view(initialize->params[1].name).empty());
+    REQUIRE(std::string_view(initialize->params[1].type) == "struct HINSTANCE__*");
+    REQUIRE(std::string_view(initialize->params[4].type) == "struct DirectUI::PropertyInfo const *const *");
+    const auto* classInfo = FindApiPrototype("public: static struct DirectUI::IClassInfo * __cdecl DirectUI::Element::GetClassInfoPtr(void)");
+    REQUIRE(classInfo != nullptr);
+    REQUIRE(classInfo->params.empty());
+    REQUIRE(std::string_view(classInfo->returnType) == "struct DirectUI::IClassInfo *");
+    const auto* desiredSize = FindApiPrototype("public: struct tagSIZE __cdecl DirectUI::Element::_UpdateDesiredSize(int, int, class DirectUI::Surface *)");
+    REQUIRE(desiredSize != nullptr);
+    REQUIRE(desiredSize->params.size() == 5);
+    REQUIRE(std::string_view(desiredSize->params[1].name) == "result");
+    REQUIRE(std::string_view(desiredSize->params[1].type) == "struct tagSIZE*");
+    REQUIRE(std::string_view(desiredSize->returnType).empty());
+    REQUIRE(FindApiPrototype("public: static class UID __cdecl DirectUI::Button::Click(void)") == nullptr);
+    REQUIRE(FindApiPrototype("void (__cdecl * __cdecl _set_se_translator(void (__cdecl *)(unsigned int, struct _EXCEPTION_POINTERS *)))(unsigned int, "
+                             "struct _EXCEPTION_POINTERS *)") == nullptr);
+    REQUIRE(FindApiPrototype("public: void __cdecl Foo::Set(struct tagRECT)") == nullptr);
+    REQUIRE(FindApiPrototype("public: void __fastcall Foo::Set(int)") == nullptr);
+    // 32 bit x86: __thiscall takes this in ecx and pops its pushes, __cdecl does not
+    const auto* copy = FindApiPrototype("j_public: __thiscall exception::exception(char const *const &)");
+    REQUIRE(copy != nullptr);
+    REQUIRE(copy->params.size() == 1);
+    REQUIRE(GetX86StdcallPushes(*copy) == 1u);
+    REQUIRE(GetX86StdcallPushes(*FindApiPrototype("public: virtual __thiscall exception::~exception(void)")) == 0u);
+    const auto* lengthError = FindApiPrototype("void __cdecl std::_Xlength_error(char const *)");
+    REQUIRE(lengthError != nullptr);
+    REQUIRE(lengthError->params.size() == 1);
+    REQUIRE(!GetX86StdcallPushes(*lengthError).has_value());
+    // GCC: the constructors and the destructors
+    const auto* destructor = FindApiPrototype("j_std::locale::~locale()");
+    REQUIRE(destructor != nullptr);
+    REQUIRE(destructor->params.size() == 1);
+    REQUIRE(std::string_view(destructor->params[0].type) == "std::locale*");
+    REQUIRE(!GetX86StdcallPushes(*destructor).has_value());
+    REQUIRE(FindApiPrototype("j_std::ios_base::~ios_base()_1") != nullptr);
+    const auto* constructor = FindApiPrototype("std::runtime_error::runtime_error(char const*)");
+    REQUIRE(constructor != nullptr);
+    REQUIRE(constructor->params.size() == 2);
+    REQUIRE(std::string_view(constructor->params[1].type) == "char const*");
+    REQUIRE(FindApiPrototype("std::basic_ios<char, std::char_traits<char> >::basic_ios(std::basic_streambuf<char, std::char_traits<char> >*)")->params.size() == 2);
+    REQUIRE(FindApiPrototype("std::basic_istream<char, std::char_traits<char> >::basic_istream(std::basic_streambuf<char, std::char_traits<char> >*)")
+                  ->params.size() == 1); // a virtual base: the VTT
+    REQUIRE(FindApiPrototype("Point::Point(double, int)")->params.size() == 1);
+    REQUIRE(FindApiPrototype("Name::Name(std::string, int)")->params.size() == 1);
+    REQUIRE(FindApiPrototype("std::locale::id::_M_id() const") == nullptr);
+    REQUIRE(FindApiPrototype("std::__throw_bad_cast()") == nullptr);
+    REQUIRE(FindApiPrototype("mayThrow(int)") == nullptr);
+    // names made of the pieces of the forms (unbalanced parentheses and template arguments): a prototype or none, never a crash
+    static constexpr std::string_view PIECES[] = { "(",    ")",     "<",       ">",          ",",        "::",      "*",       "&",  " ",
+                                                   "~",    "[",     "]",       "`",          "Foo",      "void",    "__cdecl", "_1", "...",
+                                                   "int",  "const", "class ",  "operator",   "public: ", "static ", "__thiscall " };
+    std::mt19937 random(0x9714u);
+    for (uint32 attempt = 0; attempt < 3000; attempt++) {
+        std::string name;
+        for (uint32 piece = random() % 24; piece > 0; piece--)
+            name += PIECES[random() % std::size(PIECES)];
+        if (const auto* prototype = FindApiPrototype(name)) {
+            REQUIRE(!std::string_view(prototype->prototype).empty());
+            for (const auto& parameter : prototype->params)
+                REQUIRE((parameter.name && parameter.type));
+        }
+    }
+
+    std::vector<unsigned char> file;
+    const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x38 });             // 0x00: sub rsp, 0x38
+    file.insert(file.end(), { 0x48, 0x89, 0xD9 });                   // 0x04: mov rcx, rbx         (this)
+    file.insert(file.end(), { 0xBA, 0x01, 0x00, 0x00, 0x00 });       // 0x07: mov edx, 1           (unsigned short)
+    call(0x200);                                                     // 0x0c: call DirectUI::Element::FindDescendent
+    file.insert(file.end(), { 0x48, 0x89, 0xC1 });                   // 0x12: mov rcx, rax         (this)
+    call(0x208);                                                     // 0x15: call DirectUI::Element::~Element
+    file.insert(file.end(), { 0x48, 0x89, 0xD9 });                   // 0x1b: mov rcx, rbx         (this)
+    file.insert(file.end(), { 0x48, 0x8D, 0x54, 0x24, 0x20 });       // 0x1e: lea rdx, [rsp + 0x20] (result)
+    file.insert(file.end(), { 0x41, 0xB8, 0x01, 0x00, 0x00, 0x00 }); // 0x23: mov r8d, 1           (int)
+    file.insert(file.end(), { 0x41, 0xB9, 0x02, 0x00, 0x00, 0x00 }); // 0x29: mov r9d, 2           (int)
+    call(0x210);                                                     // 0x2f: call DirectUI::Element::_UpdateDesiredSize
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x38, 0xC3 });       // 0x35: add rsp, 0x38; ret
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports = { { 0x200, { "public: class DirectUI::Element * __cdecl DirectUI::Element::FindDescendent(unsigned short)", MemoryMappingType::FunctionMapping } },
+                       { 0x208, { "public: virtual __cdecl DirectUI::Element::~Element(void)", MemoryMappingType::FunctionMapping } },
+                       { 0x210,
+                         { "public: struct tagSIZE __cdecl DirectUI::Element::_UpdateDesiredSize(int, int, class DirectUI::Surface *)",
+                           MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000004  mov    rcx, rbx").ends_with("; this"));
+    REQUIRE(FindListingLine(listing, "0x00000007  mov    edx, 1").ends_with("; unsigned short"));
+    REQUIRE(FindListingLine(listing, "0x00000012  mov    rcx, rax").ends_with("; this"));
+    REQUIRE(FindListingLine(listing, "0x0000001b  mov    rcx, rbx").ends_with("; this"));
+    REQUIRE(FindListingLine(listing, "0x0000001e  lea    rdx, ").ends_with("; result"));
+    REQUIRE(FindListingLine(listing, "0x00000023  mov    r8d, 1").ends_with("; int"));
+    REQUIRE(FindListingLine(listing, "0x00000029  mov    r9d, 2").ends_with("; int"));
+}
+
+TEST_CASE("CxxObjectsOfMethods", "[Dissasm]Help")
+{
+    // the objects of C++ methods (9t): the slot whose address is passed as this is an object of the class (a lock on the stack), the slot
+    // whose value is passed holds a pointer to one; typed, not named this. 32 bit x86 __thiscall: this in ecx
+    std::vector<unsigned char> file;
+    const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x48 });       // 0x00: sub rsp, 0x48
+    file.insert(file.end(), { 0x48, 0x8D, 0x4C, 0x24, 0x20 }); // 0x04: lea rcx, [rsp + 0x20]           (this: the lock)
+    call(0x200);                                               // 0x09: call Foo::Lock::Lock
+    file.insert(file.end(), { 0x48, 0x8B, 0x4C, 0x24, 0x30 }); // 0x0f: mov rcx, qword ptr [rsp + 0x30] (this: a pointer)
+    call(0x208);                                               // 0x14: call Foo::Element::Release
+    file.insert(file.end(), { 0x48, 0x8D, 0x4C, 0x24, 0x20 }); // 0x1a: lea rcx, [rsp + 0x20]           (this)
+    call(0x210);                                               // 0x1f: call Foo::Lock::~Lock
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x48, 0xC3 }); // 0x25: add rsp, 0x48; ret
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "public: __cdecl Foo::Lock::Lock(void)", MemoryMappingType::FunctionMapping } },
+                                { 0x208, { "public: void __cdecl Foo::Element::Release(void)", MemoryMappingType::FunctionMapping } },
+                                { 0x210, { "public: __cdecl Foo::Lock::~Lock(void)", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000004  lea    rcx, ").ends_with("; this"));
+    REQUIRE(FindListingLine(listing, "this of Foo::Lock::Lock").ends_with("; Foo::Lock, this of Foo::Lock::Lock"));
+    REQUIRE(FindListingLine(listing, "this of Foo::Element::Release").ends_with("; Foo::Element*, this of Foo::Element::Release"));
+    REQUIRE(listing.find(" this = ") == std::string::npos);
+
+    // 32 bit x86: lea ecx, [ebp - 8] before the pushes of a __thiscall method
+    std::vector<unsigned char> code = {
+        0x55,                         // 0x00: push ebp
+        0x8B, 0xEC,                   // 0x01: mov ebp, esp
+        0x83, 0xEC, 0x08,             // 0x03: sub esp, 8
+        0x8D, 0x4D, 0xF8,             // 0x06: lea ecx, [ebp - 8]   (this)
+        0x6A, 0x01,                   // 0x09: push 1               (int)
+        0x56,                         // 0x0b: push esi             (char const *const &)
+        0xE8, 0x0F, 0x00, 0x00, 0x00, // 0x0c: call 0x20 (the thunk of exception::exception)
+        0x8B, 0xE5,                   // 0x11: mov esp, ebp
+        0x5D,                         // 0x13: pop ebp
+        0xC3,                         // 0x14: ret
+    };
+    code.resize(0x20, 0xCC);
+    code.insert(code.end(), { 0xFF, 0x25, 0x80, 0x10, 0x40, 0x00 }); // 0x20: jmp dword ptr [0x401080]
+    code.resize(0x40, 0xCC);
+    ZoneLayout layout32;
+    layout32.size       = code.size();
+    layout32.entryPoint = 0;
+    layout32.imports    = { { 0x401080, { "public: __thiscall exception::exception(char const *const &, int)", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance instance32(code.data(), code.size(), false, layout32);
+    const std::string listing32 = instance32.GetListing();
+    INFO(listing32);
+    REQUIRE(FindListingLine(listing32, "0x00000006  lea    ecx, ").ends_with("; this"));
+    REQUIRE(FindListingLine(listing32, "0x00000009  push   1").ends_with("; int"));
+    REQUIRE(FindListingLine(listing32, "0x0000000b  push   esi").ends_with("; char const *const &"));
+}
+
+TEST_CASE("GccMethodsByTheirCode", "[Dissasm]Help")
+{
+    // GCC: the name of a method tells neither a static method nor the address of a class it returns before this; the highest argument
+    // register its entry reads does: one more than its parameters (this for a const method), two more (the address of the result, then this)
+    REQUIRE(GetGccMethodParameters("Foo::size(long) const") == std::optional<uint32>(1));
+    REQUIRE(GetGccMethodParameters("j_std::basic_istream<char, std::char_traits<char> >& std::ws<char, std::char_traits<char> >(std::basic_istream<char, "
+                                   "std::char_traits<char> >&)") == std::optional<uint32>(1));
+    REQUIRE(!GetGccMethodParameters("std::locale::~locale()").has_value());         // a destructor: its name tells
+    REQUIRE(!GetGccMethodParameters("Foo::scale(double) const").has_value());       // a float: its register not an integer one
+    REQUIRE(!GetGccMethodParameters("std::__throw_out_of_range_fmt(char const*, ...)").has_value()); // variadic
+    REQUIRE(!GetGccMethodParameters("public: long __cdecl Foo::Bar(int)").has_value());
+    REQUIRE(!GetGccMethodParameters("operator delete(void*, unsigned long)").has_value());
+    REQUIRE(MakeGccMethodPrototype("Foo::size(long) const", 0) == nullptr); // reads only rdi: this or the long not known
+    const auto size = MakeGccMethodPrototype("Foo::size(long) const", 1);
+    REQUIRE(size != nullptr);
+    REQUIRE(size->details.params.size() == 2);
+    REQUIRE(std::string_view(size->details.params[0].name) == "this");
+    REQUIRE(std::string_view(size->details.params[0].type) == "Foo*");
+    REQUIRE(std::string_view(size->details.params[1].type) == "long");
+    const auto name = MakeGccMethodPrototype("Foo::name() const", 1);
+    REQUIRE(name != nullptr);
+    REQUIRE(std::string_view(name->details.params[0].name) == "result");
+    REQUIRE(std::string_view(name->details.params[1].name) == "this");
+    REQUIRE(std::string_view(MakeGccMethodPrototype("make(int)", 1)->details.params[0].name) == "result"); // a function: no this
+    REQUIRE(std::string_view(MakeGccMethodPrototype("Foo::set(int)", 1)->details.params[0].name).empty()); // this or a result
+    REQUIRE(MakeGccMethodPrototype("Foo::set(int)", 3) == nullptr);
+
+    std::vector<unsigned char> file = {
+        0x53,                         // 0x00: push rbx
+        0x48, 0x83, 0xEC, 0x20,       // 0x01: sub rsp, 0x20
+        0xBE, 0x05, 0x00, 0x00, 0x00, // 0x05: mov esi, 5                (long)
+        0x48, 0x89, 0xDF,             // 0x0a: mov rdi, rbx              (this)
+        0xE8, 0x2E, 0x00, 0x00, 0x00, // 0x0d: call 0x40                 Foo::size(long) const
+        0x48, 0x89, 0xDE,             // 0x12: mov rsi, rbx              (this)
+        0x48, 0x8D, 0x7C, 0x24, 0x10, // 0x15: lea rdi, [rsp + 0x10]     (result)
+        0xE8, 0x41, 0x00, 0x00, 0x00, // 0x1a: call 0x60                 Foo::name() const
+        0xBF, 0x07, 0x00, 0x00, 0x00, // 0x1f: mov edi, 7                (static or not: not known)
+        0xE8, 0x57, 0x00, 0x00, 0x00, // 0x24: call 0x80                 Foo::make(int)
+        0xBE, 0x09, 0x00, 0x00, 0x00, // 0x29: mov esi, 9                (int)
+        0x48, 0x89, 0xDF,             // 0x2e: mov rdi, rbx              (this or a result)
+        0xE8, 0x6A, 0x00, 0x00, 0x00, // 0x31: call 0xa0                 Foo::set(int)
+        0x48, 0x83, 0xC4, 0x20,       // 0x36: add rsp, 0x20
+        0x5B,                         // 0x3a: pop rbx
+        0xC3,                         // 0x3b: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x48, 0x8B, 0x47, 0x08, 0x48, 0x01, 0xF0, 0xC3 }); // 0x40: mov rax, [rdi + 8]; add rax, rsi; ret
+    file.resize(0x60, 0xCC);
+    file.insert(file.end(), { 0x48, 0x89, 0xF8, 0x48, 0x8B, 0x16, 0x48, 0x89, 0x17, 0xC3 }); // 0x60: mov rax, rdi; mov rdx, [rsi]; mov [rdi], rdx; ret
+    file.resize(0x80, 0xCC);
+    file.insert(file.end(), { 0x89, 0xF8, 0xC3 }); // 0x80: mov eax, edi; ret
+    file.resize(0xA0, 0xCC);
+    file.insert(file.end(), { 0x89, 0x37, 0xC3 }); // 0xa0: mov [rdi], esi; ret
+    file.resize(0xC0, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.systemV         = true;
+    layout.functionEntries = { { 0x40, { "Foo::size(long) const", 8 } },
+                               { 0x60, { "Foo::name() const", 10 } },
+                               { 0x80, { "Foo::make(int)", 3 } },
+                               { 0xA0, { "Foo::set(int)", 3 } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000005  mov    esi, 5").ends_with("; long"));
+    REQUIRE(FindListingLine(listing, "0x0000000a  mov    rdi, rbx").ends_with("; this"));
+    REQUIRE(FindListingLine(listing, "0x00000012  mov    rsi, rbx").ends_with("; this"));
+    REQUIRE(FindListingLine(listing, "0x00000015  lea    rdi, ").ends_with("; result"));
+    REQUIRE(FindListingLine(listing, "0x0000001f  mov    edi, 7").find(';') == std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000029  mov    esi, 9").ends_with("; int"));
+    REQUIRE(FindListingLine(listing, "0x0000002e  mov    rdi, rbx").find(';') == std::string_view::npos);
 }

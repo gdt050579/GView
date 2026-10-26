@@ -18,6 +18,18 @@ using GView::Utils::GStatus;
 
 constexpr uint64 DISSASM_MAX_ANALYZED_FUNCTION_SIZE = 0x1000000; // 16 MB, larger functions are analyzed only partially
 
+// a method of GCC told by its code (AddGccMethodPrototypes) by the name of its function or of one of its thunks (j_std::istream::ignore(long))
+static const AsmFunctionDetails* FindMethodPrototypeByName(
+      const std::map<std::string, std::shared_ptr<const DissasmUserPrototype>, std::less<>>& prototypes, std::string_view name)
+{
+    if (prototypes.empty())
+        return nullptr;
+    while (name.size() > 2 && name.starts_with("j_"))
+        name.remove_prefix(2);
+    const auto found = prototypes.find(name);
+    return found != prototypes.end() ? &found->second->details : nullptr;
+}
+
 // The lines of the zone, counted by a linear sweep (DecodeX86Line) that stops at a deadline and continues later: a big zone shows its first
 // lines before the end of its code is read. A cached offset (file offset, line) is kept every DISSASM_INSTRUCTION_OFFSET_MARGIN bytes.
 // The code is decoded from the start of the zone: every decoded address (and every branch target) is relative to it. An undecodable byte
@@ -234,8 +246,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::unordered_map<uint64, std::pair<size_t, std::string_view>> comOutputs; // a call: its parameter that receives an interface, which one
     std::unordered_set<uint64> cfgCheckCalls;                  // x86: the CFG checks of the calls of the methods (they take no argument)
     std::unordered_set<uint64> knownPrototypeCalls;            // the calls through an import slot of an API with a prototype (FindApiPrototype)
+    std::unordered_set<uint64> demangledPrototypeCalls;        // the same of a demangled C++ name (its types only: no seed of the inference)
     std::unordered_map<uint64, bool> knownPrototypeTargets;    // a direct target (relative) -> its name has a prototype (NameVariablesFromCalls)
     std::map<uint64, std::shared_ptr<const DissasmUserPrototype>> inferredPrototypes; // InferPrototypes, by function start
+    std::map<std::string, std::shared_ptr<const DissasmUserPrototype>, std::less<>> methodPrototypes; // AddGccMethodPrototypes, by name
     std::vector<std::pair<uint64, std::string>> functionComparisons; // the walk of a function: its cmp of a returned value with a constant
     std::unordered_map<uint64, std::vector<std::pair<uint64, std::string>>> comparisonsByFunction; // the last walk of each function
     std::unordered_map<uint64, std::string> returnValueConstants;                                 // DissasmCodeZone::returnValueConstants
@@ -561,6 +575,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         localImports.clear();
         importCallCategories.clear();
         knownPrototypeCalls.clear();
+        demangledPrototypeCalls.clear();
         comProducerCalls.clear();
         noReturnStarts.clear();
         noReturnCalls.clear();
@@ -1516,8 +1531,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 record.noReturnImport = IsNoReturnFunctionName(import->name);
                 if (const uint32 categories = GetApiCategories(import->name); categories != 0)
                     importCallCategories[insn->address] = categories; // call [__imp_connect]
-                if (kind == FlowKind::Call && FindApiPrototype(import->name))
-                    knownPrototypeCalls.insert(insn->address);
+                if (const auto* prototype = kind == FlowKind::Call ? FindApiPrototype(import->name) : nullptr)
+                    (prototype->demangled ? demangledPrototypeCalls : knownPrototypeCalls).insert(insn->address);
                 if (kind == FlowKind::Call && FindComProducer(import->name))
                     comProducerCalls.insert(insn->address);
                 if (!record.noReturnImport && localFunctionNames.contains(import->name)) { // call [rip + fatal@GOTPCREL] (-fno-plt)
@@ -3183,7 +3198,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             }
             if (destructor.empty())
                 continue;
-            if (variable->origin.empty())
+            // the unwinding tells more than the first C++ method the object is passed to / returned by (its type kept)
+            const bool cxxOrigin = variable->origin.starts_with("this of ") ||
+                                   (variable->origin.starts_with("returned by ") && variable->origin.find("::") != std::string::npos);
+            if (variable->origin.empty() || cxxOrigin)
                 variable->origin = "destroyed on unwind by " + destructor;
             if (const std::string type = ObjectTypeFromDestructor(destructor, object.isPointer); !type.empty() && variable->type.empty() && !variable->structure) {
                 if (const auto* structure = FindApiStructure(type, true); structure && ApplyFrameStructure(frame, *variable, structure, false))
@@ -3747,7 +3765,99 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     return api ? api : &inferred->second->details;
                 }
             }
-        return FindApiPrototype(CalleeName(call, functionArch));
+        const std::string name = CalleeName(call, functionArch);
+        if (const auto* api = FindApiPrototype(name))
+            return api;
+        return FindMethodPrototypeByName(methodPrototypes, name);
+    }
+
+    // GCC (System V x64): the functions of the zone named by a demangled C++ name that is no constructor / destructor
+    // (std::istream::ignore(long)): the name tells neither a static method from a method nor the address of a class returned before this;
+    // the highest argument register the entry of the function reads tells how many arguments come before its parameters
+    // (MakeGccMethodPrototype); by the name of the function (its j_ thunks: FindMethodPrototypeByName)
+    void AddGccMethodPrototypes()
+    {
+        methodPrototypes.clear();
+        if (!hasDetailHandle || !zone->systemVCalls || functionEnds.size() != functionStarts.size())
+            return;
+        for (size_t index = 0; index < functionStarts.size(); index++) {
+            const uint64 start = functionStarts[index];
+            const auto label =
+                  std::lower_bound(callsFound.begin(), callsFound.end(), codeStart + start, [](const auto& item, uint64 value) { return item.first < value; });
+            if (label == callsFound.end() || label->first != codeStart + start)
+                continue;
+            const std::string& name = label->second;
+            if (name.find('(') == std::string::npos || name.starts_with("j_") || methodPrototypes.contains(name) || zone->GetArchAt(start) != DissasmArch::X64)
+                continue;
+            const auto parameters = GetGccMethodParameters(name);
+            if (!parameters.has_value())
+                continue;
+            if (auto prototype = MakeGccMethodPrototype(name, HighestArgumentRead(start, functionEnds[index], parameters.value())))
+                methodPrototypes.emplace(name, std::move(prototype));
+        }
+    }
+
+    // System V x64: the highest argument register (0: rdi, rsi, rdx, rcx, r8, 5: r9) the entry of a function reads before writing it, on the
+    // path that falls through its conditional jumps up to its first call / jmp / ret (one path: a parameter not read there is not seen); -1
+    // for none. xor esi, esi writes only. The walk ends once the registers that decide (the parameters and two more) are read or written
+    int32 HighestArgumentRead(uint64 start, uint64 end, uint32 parameters)
+    {
+        static constexpr int SYSTEM_V[]   = { 7, 6, 2, 1, 8, 9 };
+        constexpr uint32 MAX_INSTRUCTIONS = 64;
+        const auto data = start < end ? obj->GetData().Get(codeStart + start, static_cast<uint32>(std::min<uint64>(end - start, 0x400)), false) : BufferView{};
+        cs_insn* insn   = data.IsValid() ? cs_malloc(detailHandle) : nullptr;
+        if (!insn)
+            return -1;
+        const auto argumentOf = [](uint16 reg) {
+            const int family = GetX64RegisterFamily(reg);
+            for (int argument = 0; argument < 6; argument++)
+                if (SYSTEM_V[argument] == family)
+                    return argument;
+            return -1;
+        };
+        const uint8* bytes    = data.GetData();
+        size_t size           = data.GetLength();
+        uint64 address        = start;
+        const uint32 deciding = (1u << std::min<uint32>(parameters + 2, 6)) - 1;
+        uint32 written        = 0;
+        uint32 seen           = 0; // read or written
+        int32 highest         = -1;
+        for (uint32 count = 0; count < MAX_INSTRUCTIONS && (seen & deciding) != deciding && highest <= static_cast<int32>(parameters) &&
+                               cs_disasm_iter(detailHandle, &bytes, &size, &address, insn);
+             count++) {
+            const auto flow = GetInstructionFlow(*insn, DissasmArch::X64);
+            if (flow == X86Flow::Call || flow == X86Flow::Jump || flow == X86Flow::Return || flow == X86Flow::Interrupt || insn->id == X86_INS_UD2 ||
+                insn->id == X86_INS_HLT)
+                break;
+            cs_regs read, write;
+            uint8 readCount = 0, writeCount = 0;
+            if (!insn->detail || cs_regs_access(detailHandle, insn, read, &readCount, write, &writeCount) != CS_ERR_OK)
+                break;
+            const auto& x86 = insn->detail->x86;
+            const bool zeroing =
+                  (insn->id == X86_INS_XOR || insn->id == X86_INS_SUB || insn->id == X86_INS_PXOR || insn->id == X86_INS_XORPS || insn->id == X86_INS_XORPD) &&
+                  x86.op_count == 2 && x86.operands[0].type == X86_OP_REG && x86.operands[1].type == X86_OP_REG && x86.operands[0].reg == x86.operands[1].reg;
+            for (uint8 index = 0; index < readCount && !zeroing; index++)
+                if (const int argument = argumentOf(read[index]); argument >= 0) {
+                    if ((written & (1u << argument)) == 0)
+                        highest = std::max(highest, argument);
+                    seen |= 1u << argument;
+                }
+            for (uint8 index = 0; index < writeCount; index++)
+                if (const int argument = argumentOf(write[index]); argument >= 0) {
+                    written |= 1u << argument;
+                    seen |= 1u << argument;
+                }
+        }
+        cs_free(insn, 1);
+        return highest;
+    }
+
+    // a callee whose prototype the inference uses: not one of a demangled C++ name (its parameters have types, no names to give; what it
+    // returns would make a wrapper of every function that returns it)
+    static const AsmFunctionDetails* IsInferenceCallee(const AsmFunctionDetails* prototype)
+    {
+        return prototype && !prototype->demangled ? prototype : nullptr;
     }
 
     // the name a direct target has for the prototypes: a thunk of an import, a label of the zone, a function of another zone
@@ -3805,7 +3915,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     else
                         candidate = knownPrototypeCalls.contains(record.address) ||
                                     (outside && (inferredNow.contains(record.target) || zone->FindUserPrototype(record.target) ||
-                                                 FindApiPrototype(TargetName(record.target))));
+                                                 IsInferenceCallee(FindApiPrototype(TargetName(record.target)))));
                 }
                 if (!candidate)
                     continue;
@@ -4207,7 +4317,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 step.writes = (1u << 16) | (1u << 17); // bl __security_push_cookie / __chkstk: x16 / x17 only, the arguments stay
             } else if (flow == X86Flow::Call) {
                 step.kind   = StepKind::Call;
-                step.callee = CalleePrototype(*insn, arch);
+                step.callee = IsInferenceCallee(CalleePrototype(*insn, arch));
                 step.writes = volatileMask;
             } else if (flow == X86Flow::Jump) {
                 if (direct != NO_TARGET && inside(direct)) {
@@ -4215,7 +4325,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     step.target = direct;
                 } else {
                     step.kind   = StepKind::TailCall; // jmp sub_X / jmp [__imp_X] / b sub_X: the arguments are passed on
-                    step.callee = CalleePrototype(*insn, arch);
+                    step.callee = IsInferenceCallee(CalleePrototype(*insn, arch));
                 }
             } else if (flow == X86Flow::ConditionalJump) {
                 step.kind   = StepKind::ConditionalJump;
@@ -4575,18 +4685,19 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const uint64 direct = operands.directTarget.has_value() ? operands.directTarget.value() & addressMask : NO_TARGET;
             const bool inside   = direct >= start && direct < end;
             if (flow == X86Flow::Call) {
-                step.kind        = StepKind::Call;
-                step.callee      = CalleePrototype(*insn, DissasmArch::X86);
-                step.frameHelper = direct < codeSize && IsFrameHelper(direct);
-                step.purge       = CalleeStackPurge(*insn);
-                if (!step.purge.has_value() && step.callee)
-                    if (const auto pushes = GetX86StdcallPushes(*step.callee); pushes.has_value())
-                        step.purge = pushes.value() * 4;
+                const auto* callee = CalleePrototype(*insn, DissasmArch::X86);
+                step.kind          = StepKind::Call;
+                step.callee        = IsInferenceCallee(callee);
+                step.frameHelper   = direct < codeSize && IsFrameHelper(direct);
+                step.purge         = CalleeStackPurge(*insn);
+                if (!step.purge.has_value() && callee)
+                    if (const auto pushes = GetX86StdcallPushes(*callee); pushes.has_value())
+                        step.purge = pushes.value() * 4; // a method of __thiscall too
                 step.writes = VOLATILE_MASK;
             } else if (flow == X86Flow::Jump) {
                 step.kind   = inside ? StepKind::Jump : StepKind::TailCall;
                 step.target = inside ? direct : NO_TARGET;
-                step.callee = inside ? nullptr : CalleePrototype(*insn, DissasmArch::X86);
+                step.callee = inside ? nullptr : IsInferenceCallee(CalleePrototype(*insn, DissasmArch::X86));
             } else if (flow == X86Flow::ConditionalJump) {
                 step.kind   = StepKind::ConditionalJump;
                 step.target = inside ? direct : NO_TARGET;
@@ -5083,7 +5194,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const auto& record = flowRecords[position];
             if (record.kind != FlowKind::Call)
                 continue;
-            if (knownPrototypeCalls.contains(record.address)) {
+            if (knownPrototypeCalls.contains(record.address) || demangledPrototypeCalls.contains(record.address)) {
                 callsKnownApi = true;
                 break;
             }
@@ -5105,7 +5216,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     name                    = thunk != other->thunkImports.end() ? thunk->second : other->GetLabelNameAt(otherStart);
                 }
                 const bool userPrototype = record.target < codeSize && (zone->FindUserPrototype(record.target) != nullptr || inferredPrototypes.contains(record.target)); // Y, inferred
-                known = knownPrototypeTargets.emplace(record.target, userPrototype || (!name.empty() && FindApiPrototype(name) != nullptr)).first;
+                known = knownPrototypeTargets
+                              .emplace(
+                                    record.target,
+                                    userPrototype || (!name.empty() &&
+                                                      (FindApiPrototype(name) != nullptr || FindMethodPrototypeByName(methodPrototypes, name) != nullptr)))
+                              .first;
             }
             callsKnownApi = known->second;
         }
@@ -5134,9 +5250,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (!zone->userVariableStructures.contains({ start, variable.frameOffset }))
                 ApplyFrameStructure(frame, variable, FindApiStructure(variable.type, functionArch == DissasmArch::X64 || functionArch == DissasmArch::Arm64), false);
         };
+        // a variable typed as the object of a C++ method (this of ...): any other argument / return value tells more (a slot reused)
+        const auto unnamedOrigin = [](const DissasmLocalVariable& variable) { return variable.origin.empty() || variable.origin.starts_with("this of "); };
         const auto storeReturn = [&](std::optional<int32> offset, const AsmFunctionDetails* function) {
             auto* variable = offset.has_value() ? frame.FindVariable(offset.value()) : nullptr;
-            if (!variable || !variable->origin.empty())
+            if (!variable || !unnamedOrigin(*variable))
                 return;
             variable->type   = std::string(function->returnType);
             variable->origin = "returned by " + std::string(function->functionName);
@@ -5231,6 +5349,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     continue; // a parameter an inferred prototype does not know
                 if (std::string_view(prototype.params[index].name) == "This")
                     continue; // the object of a method: not named after it
+                const bool object = std::string_view(prototype.params[index].name) == "this"; // of a C++ method: typed, not named
                 std::optional<SlotValue> source;
                 if (const int reg = argumentRegister(index); reg >= 0 && reg < static_cast<int>(registers.size()))
                     source = registers[reg];
@@ -5241,6 +5360,13 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 if (!source.has_value())
                     continue;
                 auto* variable                 = frame.FindVariable(source->offset);
+                if (object) {
+                    if (variable && variable->origin.empty()) { // the first call that passes it: the object (lea rcx, [rsp + 0x38 + var_18]), a pointer to it
+                        variable->type   = source->isAddress ? GetPointedType(prototype.params[index].type) : std::string(prototype.params[index].type);
+                        variable->origin = "this of " + std::string(prototype.functionName);
+                    }
+                    continue;
+                }
                 const std::string_view argument = prototype.params[index].name;
                 std::string_view name           = argument;
                 if (source->isAddress && name.size() > 2 && name.starts_with("lp") && std::isalpha(static_cast<unsigned char>(name[2])))
@@ -5254,7 +5380,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 const bool formatted = formatsInto(prototype, index);
                 const bool renamed   = variable && !formatted && formattedBuffers.contains(variable->frameOffset) && IsValidLocalVariableName(name) &&
                                      !frame.HasVariableNamed(name);
-                if (variable && (variable->origin.empty() || renamed)) { // the first call that passes it
+                if (variable && (unnamedOrigin(*variable) || renamed)) { // the first call that passes it
                     variable->type   = receivesInterface ? std::string(output->second.second) + "*"
                                        : source->isAddress ? GetPointedType(prototype.params[index].type) : std::string(prototype.params[index].type);
                     variable->origin = std::string(argument) + " of " + std::string(prototype.functionName);
@@ -5760,6 +5886,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         FindArm64StackHelpers();
         ComputeApiCategories();
         InferPrototypes();
+        AddGccMethodPrototypes();
         TrackComInterfaces();
         if (!is64 && arch == DissasmArch::X86)
             MarkX86ExceptionScopes();
@@ -5845,6 +5972,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         zone->functionChunks            = std::move(chunks);
         zone->functionApiCategories     = std::move(functionApiCategories);
         zone->inferredPrototypes        = std::move(inferredPrototypes);
+        zone->methodPrototypes          = std::move(methodPrototypes);
         zone->returnValueConstants      = std::move(returnValueConstants);
         zone->interfaceCalls            = std::move(interfaceCalls);
         zone->noReturnFunctions.assign(noReturnStarts.begin(), noReturnStarts.end());
@@ -8199,6 +8327,11 @@ const AsmFunctionDetails* DissasmCodeZone::FindInferredPrototype(uint64 function
 {
     const auto found = inferredPrototypes.find(functionStart);
     return found != inferredPrototypes.end() && found->second ? &found->second->details : nullptr;
+}
+
+const AsmFunctionDetails* DissasmCodeZone::FindMethodPrototype(std::string_view name) const
+{
+    return FindMethodPrototypeByName(methodPrototypes, name);
 }
 
 const AsmFunctionDetails* DissasmCodeZone::FindFunctionPrototype(uint64 functionStart) const

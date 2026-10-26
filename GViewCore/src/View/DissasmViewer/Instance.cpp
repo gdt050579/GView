@@ -1798,6 +1798,15 @@ static std::optional<uint64> GetArgumentImmediate(const DissasmAsmPreCacheLine& 
     return std::nullopt;
 }
 
+// the comment of an argument: the name of its parameter, the type of one without a name (a demangled C++ function: IDA's ; unsigned int);
+// null for a parameter an inferred prototype does not know
+static const char* ArgumentText(const AsmFunctionDetails::NameType& parameter)
+{
+    if (parameter.name && parameter.name[0])
+        return parameter.name;
+    return parameter.type && parameter.type[0] ? parameter.type : nullptr;
+}
+
 void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* functionDetails, bool registerArguments)
 {
     // the lines prepared so far (above the call); the call line itself is not added yet
@@ -1850,8 +1859,8 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* f
                 continue;
             named[slot] = true;
             remaining--;
-            if (functionDetails->params[slot].name && functionDetails->params[slot].name[0]) // not a parameter an inferred prototype does not know
-                nameArgument(*it, functionDetails->params[slot].name);
+            if (const char* text = ArgumentText(functionDetails->params[slot])) // not a parameter an inferred prototype does not know
+                nameArgument(*it, text);
         }
         return;
     }
@@ -1861,6 +1870,23 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* f
     // the pushes such a call takes are left to it, the arguments of a known stdcall API (its prototype) or the ones its caller removes
     // after it (cdecl: pop ecx / add esp, 8 right after the call); a call that takes what is not known ends it, as a jmp / ret
     constexpr uint32 MAX_LINE_DIFF = 32;
+    // a method of MSVC (__thiscall): this in ecx, set by the last instruction that writes it before the call (mov ecx, esi / lea ecx, [ebp +
+    // var_10]); a call between them, another write (pop ecx, xor ecx, ecx, rep movsd) ends the search
+    if (functionDetails->prototype.find("__thiscall ") != std::string_view::npos)
+        for (auto it = cachedAsmLines.rbegin(); it != cachedAsmLines.rend() && startingLine - it->currentLine <= MAX_LINE_DIFF; ++it) {
+            const auto kind = static_cast<X86InstructionKind>(it->instructionKind);
+            if (it->size == 0)
+                continue;
+            if (kind == X86InstructionKind::Call || kind == X86InstructionKind::Jump || kind == X86InstructionKind::Return ||
+                std::string_view(it->mnemonic).starts_with("rep"))
+                break;
+            const std::string_view operands = it->op_str ? std::string_view(it->op_str, it->op_str_size) : std::string_view();
+            if (operands != "ecx" && !operands.starts_with("ecx, ") && !operands.starts_with("cx, ") && !operands.starts_with("cl, "))
+                continue;
+            if ((strcmp(it->mnemonic, "mov") == 0 || strcmp(it->mnemonic, "lea") == 0) && operands.starts_with("ecx, "))
+                nameArgument(*it, "this");
+            break;
+        }
     uint32 pushIndex = 0, remaining = paramsCount;
     uint32 taken           = 0;     // the pushes found later that a pop / add esp / a call took (they are not arguments of this call)
     bool cleanedUpAfter    = false; // the call met next (walking back) is a cdecl one: its pushes are counted by its clean up
@@ -1930,8 +1956,8 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* f
             continue;
         named[slot] = true;
         remaining--;
-        if (functionDetails->params[slot].name && functionDetails->params[slot].name[0])
-            nameArgument(*it, functionDetails->params[slot].name);
+        if (const char* text = ArgumentText(functionDetails->params[slot]))
+            nameArgument(*it, text);
     }
 }
 

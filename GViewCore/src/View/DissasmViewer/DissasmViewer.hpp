@@ -399,6 +399,8 @@ namespace View
             std::string_view returnType; // "HANDLE"; empty for void
             std::string_view returnName; // the name of a variable that holds its return value when not the one of its name (GetReturnValueName):
                                          // an inferred wrapper, the one of the API it returns (File for the wrapper of CreateFileW)
+            bool callerCleansStack = false; // 32 bit x86: cdecl whatever its name (a demangled C++ function of GCC or __cdecl)
+            bool demangled         = false; // told by a demangled C++ name: its types, no names for the inference
         };
         // the prototypes of the common APIs (Windows, the C run-time / POSIX; DissasmApiPrototypes.cpp): by the name of an import / a function
         // (the import prefixes, the version / stdcall suffixes, the underscore of Mach-O, Zw for Nt); null when it is not known
@@ -466,6 +468,13 @@ namespace View
         std::shared_ptr<const DissasmUserPrototype> ParseUserPrototype(std::string_view text);
         // a prototype of the tables (the COM methods: IWbemLocator::ConnectServer), parsed as the ones of the APIs (not strict)
         std::shared_ptr<const DissasmUserPrototype> ParseApiPrototype(std::string_view text);
+        // GCC (System V x64): a demangled C++ name that is no constructor / destructor (std::istream::ignore(long)): the number of its
+        // parameters when each takes one integer register (none: a float, a class by value, variadic, a name of MSVC)
+        std::optional<uint32> GetGccMethodParameters(std::string_view name);
+        // its prototype once the code of the function tells the highest argument register it reads (0: rdi .. 5: r9): one more than its
+        // parameters (this for a const method, the address of what a function returns, else one of them), two more (that address, then
+        // this); null otherwise
+        std::shared_ptr<const DissasmUserPrototype> MakeGccMethodPrototype(std::string_view name, int32 highestRead);
         // a type of parameter that takes 8 bytes of the stack in 32 bit code (__int64, double, LARGE_INTEGER, ...): two pushes
         bool IsWideX86Type(std::string_view type);
         // 32 bit: the pushes a known API takes from the stack when it returns (stdcall: its parameters, 8 byte ones twice); none for the C

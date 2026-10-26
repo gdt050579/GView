@@ -395,6 +395,10 @@ struct DissasmCodeZone : public ParseZone {
     // have no name. Register conventions (x64 Windows / System V, ARM64, ARM); by start. Recomputed by the deep scan, not saved
     std::map<uint64, std::shared_ptr<const DissasmUserPrototype>> inferredPrototypes;
     const AsmFunctionDetails* FindInferredPrototype(uint64 functionStart) const;
+    // GCC: the methods of the zone the demangled names of which do not tell their arguments, told by their code (MakeGccMethodPrototype); by
+    // the name of the function, found by the names of its thunks too (j_std::istream::ignore(long)). Recomputed by the deep scan, not saved
+    std::map<std::string, std::shared_ptr<const DissasmUserPrototype>, std::less<>> methodPrototypes;
+    const AsmFunctionDetails* FindMethodPrototype(std::string_view name) const;
     // the constants the value an API returned is compared with, named after the API (FormatApiReturnConstant: cmp eax, 0x102 after
     // WaitForSingleObject -> WAIT_TIMEOUT, cmp eax, 0xb7 after GetLastError -> ERROR_ALREADY_EXISTS); by the address of the cmp. Recomputed by
     // the deep scan (the walks of InferPrototypes), not saved
