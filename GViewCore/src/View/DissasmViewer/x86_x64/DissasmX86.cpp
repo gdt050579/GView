@@ -2527,6 +2527,8 @@ void Instance::RefreshCursorLineNumbers()
             cursorLineNumbers.instruction = std::string(user->prototype);
         else if (const auto* inferred = zone->FindInferredPrototype(asmLine.branchTarget.value())) // the one inferred from its calls
             cursorLineNumbers.instruction = std::string(inferred->prototype) + " (inferred)";
+        else if (const auto* named = zone->FindNamedPrototype(asmLine.branchTarget.value())) // its name: a C++ one (its spaces and parentheses)
+            cursorLineNumbers.instruction = std::string(named->prototype);
     if (cursorLineNumbers.instruction.empty() && (lineKind == X86InstructionKind::Call || lineKind == X86InstructionKind::Jump)) {
         // the last name of the operands: call CreateFileW / call cs:__imp_CreateFileW / jmp j_connect
         size_t end = lineOperands.size();
@@ -3216,6 +3218,7 @@ void Instance::SetFunctionPrototype()
     std::string name = zone->GetLabelNameAt(function.value());
     if (name.empty())
         name = zone->GetLabelName("sub_", function.value());
+    name = EditablePrototypeName(name); // a demangled C++ name: without its parameters
     std::string text;
     if (const auto user = zone->userPrototypes.find(function.value()); user != zone->userPrototypes.end())
         text = user->second;
@@ -3229,11 +3232,8 @@ void Instance::SetFunctionPrototype()
             text += parameter.empty() ? "int a" + std::to_string(index + 1) : std::string(inferred->params[index].type) + " " + std::string(parameter);
         }
         text += ")";
-    }
-    else if (const auto thunk = zone->thunkImports.find(function.value()); thunk != zone->thunkImports.end() && FindApiPrototype(thunk->second))
-        text = std::string(FindApiPrototype(thunk->second)->prototype);
-    else if (const auto* api = FindApiPrototype(name))
-        text = std::string(api->prototype);
+    } else if (const auto* named = zone->FindNamedPrototype(function.value())) // the API of its thunk / its name, a C++ name (its types)
+        text = named->demangled ? FormatEditablePrototype(*named) : std::string(named->prototype);
     else
         text = "int " + name + "()";
     for (;;) {

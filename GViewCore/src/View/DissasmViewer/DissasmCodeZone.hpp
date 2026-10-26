@@ -399,6 +399,9 @@ struct DissasmCodeZone : public ParseZone {
     // the name of the function, found by the names of its thunks too (j_std::istream::ignore(long)). Recomputed by the deep scan, not saved
     std::map<std::string, std::shared_ptr<const DissasmUserPrototype>, std::less<>> methodPrototypes;
     const AsmFunctionDetails* FindMethodPrototype(std::string_view name) const;
+    // the prototype of a function of the zone by its name (a call target): the import of its thunk, its label as an API (a static binary's
+    // getenv), a demangled C++ name (std::locale::~locale(), the methods of MSVC), a method of GCC its code tells; null otherwise
+    const AsmFunctionDetails* FindNamedPrototype(uint64 functionStart) const;
     // the constants the value an API returned is compared with, named after the API (FormatApiReturnConstant: cmp eax, 0x102 after
     // WaitForSingleObject -> WAIT_TIMEOUT, cmp eax, 0xb7 after GetLastError -> ERROR_ALREADY_EXISTS); by the address of the cmp. Recomputed by
     // the deep scan (the walks of InferPrototypes), not saved

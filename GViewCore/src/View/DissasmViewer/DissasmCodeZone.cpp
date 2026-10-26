@@ -8340,6 +8340,17 @@ const AsmFunctionDetails* DissasmCodeZone::FindMethodPrototype(std::string_view 
     return FindMethodPrototypeByName(methodPrototypes, name);
 }
 
+const AsmFunctionDetails* DissasmCodeZone::FindNamedPrototype(uint64 functionStart) const
+{
+    const auto thunk       = thunkImports.find(functionStart);
+    const std::string name = thunk != thunkImports.end() ? thunk->second : GetLabelNameAt(functionStart);
+    if (name.empty())
+        return nullptr;
+    if (const auto* api = FindApiPrototype(name))
+        return api;
+    return FindMethodPrototype(name);
+}
+
 const AsmFunctionDetails* DissasmCodeZone::FindFunctionPrototype(uint64 functionStart) const
 {
     if (const auto* user = FindUserPrototype(functionStart))

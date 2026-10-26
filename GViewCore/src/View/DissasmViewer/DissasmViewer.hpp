@@ -466,10 +466,17 @@ namespace View
             AsmFunctionDetails details;
         };
         std::shared_ptr<const DissasmUserPrototype> ParseUserPrototype(std::string_view text);
+        // the name of a function in a prototype of the user: a demangled name without its parameters, its qualifiers and the return type of a
+        // template (std::locale::~locale()_1: std::locale::~locale)
+        std::string EditablePrototypeName(std::string_view name);
+        // the text Y proposes for a prototype told by a demangled name (ParseUserPrototype accepts it): void when it returns nothing, every
+        // parameter named (the ones without a name a2, a3, ...: their types kept, void* when not known)
+        std::string FormatEditablePrototype(const AsmFunctionDetails& details);
         // a prototype of the tables (the COM methods: IWbemLocator::ConnectServer), parsed as the ones of the APIs (not strict)
         std::shared_ptr<const DissasmUserPrototype> ParseApiPrototype(std::string_view text);
-        // GCC (System V x64): a demangled C++ name that is no constructor / destructor (std::istream::ignore(long)): the integer registers
-        // its parameters take (a float none, std::error_code two; none known: another class by value, variadic, a name of MSVC)
+        // GCC (System V x64): a demangled C++ name that is no constructor / destructor (std::istream::ignore(long)): the integer eightbytes
+        // its parameters take, in registers then in the stack (a float none, std::error_code two; none known: another class by value,
+        // variadic, a name of MSVC)
         std::optional<uint32> GetGccMethodParameters(std::string_view name);
         // its prototype once the code of the function tells the highest argument register it reads (0: rdi .. 5: r9): one more than its
         // parameters (this for a const method, the address of what a function returns, else one of them), two more (that address, then

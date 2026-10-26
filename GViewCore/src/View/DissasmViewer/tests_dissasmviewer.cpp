@@ -13796,7 +13796,7 @@ TEST_CASE("GccParametersByValue", "[Dissasm]Help")
     REQUIRE(GetGccMethodParameters("Foo::check(std::error_code, int) const") == std::optional<uint32>(3));
     REQUIRE(GetGccMethodParameters("Foo::get(std::istreambuf_iterator<char, std::char_traits<char> >, std::istreambuf_iterator<char, "
                                    "std::char_traits<char> >, std::ios_base&, std::_Ios_Iostate&) const") == std::optional<uint32>(6));
-    REQUIRE(!GetGccMethodParameters("Foo::many(std::error_code, std::error_code, std::error_code, int)").has_value()); // 7: the stack
+    REQUIRE(GetGccMethodParameters("Foo::many(std::error_code, std::error_code, std::error_code, int)") == std::optional<uint32>(7)); // the stack (9z)
     REQUIRE(!GetGccMethodParameters("Foo::tag(std::forward_iterator_tag)").has_value());
     REQUIRE(!GetGccMethodParameters("Foo::name(std::string)").has_value());
     const auto* systemError = FindApiPrototype("std::system_error::system_error(std::error_code, char const*)");
@@ -13961,4 +13961,160 @@ TEST_CASE("SystemVPushedArguments", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x0000004d  push   rax").ends_with("; stayon_tmp"));
     REQUIRE(FindListingLine(listing, "0x0000004e  xor    r9d, r9d").ends_with("; stayon"));
     REQUIRE(FindListingLine(listing, "0x00000044  push   rbx").find(';') == std::string_view::npos);
+}
+
+TEST_CASE("GccMethodsPastTheRegisters", "[Dissasm]Help")
+{
+    // GCC past the six registers: the parameters after them are in the stack (pushed, the nearest the seventh); a class that does not fit in
+    // the registers left goes whole to the stack. With the six registers read the reads do not tell this from a result before it, the
+    // return type of a template does (two eightbytes: rax:rdx, no address of a result)
+    const std::string_view extract = "std::istreambuf_iterator<char, std::char_traits<char> > Foo::get<long>(std::istreambuf_iterator<char, "
+                                     "std::char_traits<char> >, std::istreambuf_iterator<char, std::char_traits<char> >, std::ios_base&, "
+                                     "std::_Ios_Iostate&, long&) const";
+    REQUIRE(GetGccMethodParameters(extract) == std::optional<uint32>(7));
+    const auto get = MakeGccMethodPrototype(extract, 5);
+    REQUIRE(get != nullptr);
+    REQUIRE(get->details.params.size() == 8);
+    REQUIRE(std::string_view(get->details.params[0].name) == "this");
+    REQUIRE(std::string_view(get->details.params[5].type) == "std::ios_base&");
+    REQUIRE(std::string_view(get->details.params[6].type) == "std::_Ios_Iostate&");
+    REQUIRE(std::string_view(get->details.params[7].type) == "long&");
+    REQUIRE(MakeGccMethodPrototype(extract, 1) != nullptr); // a const method of such a template: this alone whatever it reads
+    // no return type: this, or the address of a result and this (the class of two then in the stack): both read the six registers
+    REQUIRE(MakeGccMethodPrototype("Foo::get(std::istreambuf_iterator<char, std::char_traits<char> >, std::istreambuf_iterator<char, "
+                                   "std::char_traits<char> >, std::ios_base&, std::_Ios_Iostate&, long&) const",
+                                   5) == nullptr);
+    const auto* constructor = FindApiPrototype("Foo::Foo(long, long, long, long, long, long, int)");
+    REQUIRE(constructor != nullptr);
+    REQUIRE(constructor->params.size() == 8); // this, 5 registers, then the stack
+    REQUIRE(std::string_view(constructor->params[7].type) == "int");
+
+    std::vector<unsigned char> file = {
+        0x53,                         // 0x00: push rbx
+        0x48, 0x83, 0xEC, 0x08,       // 0x01: sub rsp, 8
+        0x41, 0x54,                   // 0x05: push r12                  (long&)
+        0x41, 0x55,                   // 0x07: push r13                  (std::_Ios_Iostate&)
+        0x49, 0x89, 0xE9,             // 0x09: mov r9, rbp               (std::ios_base&)
+        0x4D, 0x89, 0xF0,             // 0x0c: mov r8, r14               (the second eightbyte of the end)
+        0x4C, 0x89, 0xF9,             // 0x0f: mov rcx, r15              (the end)
+        0x31, 0xD2,                   // 0x12: xor edx, edx              (the second eightbyte of the start)
+        0x48, 0x89, 0xDE,             // 0x14: mov rsi, rbx              (the start)
+        0x48, 0x89, 0xDF,             // 0x17: mov rdi, rbx              (this)
+        0xE8, 0x61, 0x00, 0x00, 0x00, // 0x1a: call 0x80
+        0x48, 0x83, 0xC4, 0x18,       // 0x1f: add rsp, 0x18
+        0x5B,                         // 0x23: pop rbx
+        0xC3,                         // 0x24: ret
+    };
+    file.resize(0x80, 0xCC);
+    file.insert(file.end(), { 0x48, 0x8B, 0x07,   // 0x80: mov rax, qword ptr [rdi]
+                              0x48, 0x01, 0xF0,   // 0x83: add rax, rsi
+                              0x48, 0x01, 0xD0,   // 0x86: add rax, rdx
+                              0x48, 0x01, 0xC8,   // 0x89: add rax, rcx
+                              0x4C, 0x01, 0xC0,   // 0x8c: add rax, r8
+                              0x4C, 0x01, 0xC8,   // 0x8f: add rax, r9
+                              0xC3 });            // 0x92: ret
+    file.resize(0xA0, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.systemV         = true;
+    layout.functionEntries = { { 0x80, { std::string(extract), 0x13 } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000005  push   r12").ends_with("; long&"));
+    REQUIRE(FindListingLine(listing, "0x00000007  push   r13").ends_with("; std::_Ios_Iostate&"));
+    REQUIRE(FindListingLine(listing, "0x00000009  mov    r9, rbp").ends_with("; std::ios_base&"));
+    REQUIRE(FindListingLine(listing, "0x0000000c  mov    r8, r14").find(';') == std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0000000f  mov    rcx, r15").ends_with("; std::istreambuf_iterator<char, std::char_traits<char> >"));
+    REQUIRE(FindListingLine(listing, "0x00000017  mov    rdi, rbx").ends_with("; this"));
+}
+
+TEST_CASE("NamedPrototypesOfCallTargets", "[Dissasm]Help")
+{
+    // the prototype of a call target by its name for the status bar: a method of GCC its code tells, a destructor its demangled name tells,
+    // an API of a static binary; the last token of the operands (call Foo::size(long) const) is no name of them
+    std::vector<unsigned char> file = {
+        0xBE, 0x05, 0x00, 0x00, 0x00, // 0x00: mov esi, 5
+        0x48, 0x89, 0xDF,             // 0x05: mov rdi, rbx
+        0xE8, 0x33, 0x00, 0x00, 0x00, // 0x08: call 0x40                 Foo::size(long) const
+        0xE8, 0x4E, 0x00, 0x00, 0x00, // 0x0d: call 0x60                 std::locale::~locale()
+        0xE8, 0x69, 0x00, 0x00, 0x00, // 0x12: call 0x80                 strlen
+        0xC3,                         // 0x17: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x48, 0x8B, 0x47, 0x08, 0x48, 0x01, 0xF0, 0xC3 }); // 0x40: mov rax, [rdi + 8]; add rax, rsi; ret
+    file.resize(0x60, 0xCC);
+    file.insert(file.end(), { 0x48, 0x8B, 0x07, 0xC3 }); // 0x60: mov rax, [rdi]; ret
+    file.resize(0x80, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x80: xor eax, eax; ret
+    file.resize(0xA0, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.systemV         = true;
+    layout.functionEntries = { { 0x40, { "Foo::size(long) const", 8 } }, { 0x60, { "std::locale::~locale()", 4 } }, { 0x80, { "strlen", 3 } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    INFO(dissasmInstance.GetListing());
+    const auto* size = dissasmInstance.zone->FindNamedPrototype(0x40);
+    REQUIRE(size != nullptr);
+    REQUIRE(std::string_view(size->prototype) == "Foo::size(Foo* this, long) const");
+    const auto* destructor = dissasmInstance.zone->FindNamedPrototype(0x60);
+    REQUIRE(destructor != nullptr);
+    REQUIRE(std::string_view(destructor->prototype) == "std::locale::~locale(std::locale* this)");
+    REQUIRE(std::string_view(dissasmInstance.zone->FindNamedPrototype(0x80)->functionName) == "strlen");
+    REQUIRE(dissasmInstance.zone->FindNamedPrototype(0x00) == nullptr);
+}
+
+TEST_CASE("UserPrototypesOfCxxFunctions", "[Dissasm]Help")
+{
+    // Y on a C++ function: a qualified name (the ~ of a destructor, template arguments with their commas) in a prototype of the user; the
+    // text proposed from a demangled name has every parameter named and is accepted as it is
+    const auto destructor = ParseUserPrototype("void std::locale::~locale(std::locale* this)");
+    REQUIRE(destructor != nullptr);
+    REQUIRE(std::string_view(destructor->details.functionName) == "std::locale::~locale");
+    REQUIRE(destructor->details.params.size() == 1);
+    const auto clear = ParseUserPrototype(
+          "void std::basic_ios<char, std::char_traits<char> >::clear(std::basic_ios<char, std::char_traits<char> >* this, std::_Ios_Iostate state)");
+    REQUIRE(clear != nullptr);
+    REQUIRE(std::string_view(clear->details.functionName) == "std::basic_ios<char, std::char_traits<char> >::clear");
+    REQUIRE(clear->details.params.size() == 2);
+    REQUIRE(std::string_view(clear->details.params[0].type) == "std::basic_ios<char, std::char_traits<char> >*");
+    REQUIRE(std::string_view(clear->details.params[1].name) == "state");
+    REQUIRE(ParseUserPrototype("int a::(int x)") == nullptr);
+    REQUIRE(ParseUserPrototype("int a<b(int x)") == nullptr);
+    REQUIRE(ParseUserPrototype("int ::f(int x)") == nullptr);
+    REQUIRE(ParseUserPrototype("int f(std::map<int, char> m, int)") == nullptr); // a parameter without a name
+
+    REQUIRE(EditablePrototypeName("std::locale::~locale()_1") == "std::locale::~locale");
+    REQUIRE(EditablePrototypeName("Foo::size(long) const") == "Foo::size");
+    REQUIRE(EditablePrototypeName("std::basic_istream<char, std::char_traits<char> >& std::ws<char, std::char_traits<char> >(std::basic_istream<char, "
+                                  "std::char_traits<char> >&)") == "std::ws<char, std::char_traits<char> >");
+    REQUIRE(EditablePrototypeName("public: long __cdecl DirectUI::Element::SetLayoutPos(int)") == "DirectUI::Element::SetLayoutPos");
+    REQUIRE(EditablePrototypeName("sub_401000") == "sub_401000");
+
+    const std::string destructorText = FormatEditablePrototype(*FindApiPrototype("std::locale::~locale()"));
+    REQUIRE(destructorText == "void std::locale::~locale(std::locale* this)");
+    REQUIRE(ParseUserPrototype(destructorText) != nullptr);
+    const std::string methodText = FormatEditablePrototype(*FindApiPrototype("public: long __cdecl DirectUI::Element::SetLayoutPos(int)"));
+    REQUIRE(methodText == "long DirectUI::Element::SetLayoutPos(DirectUI::Element* this, int a2)");
+    REQUIRE(ParseUserPrototype(methodText)->details.params.size() == 2);
+    const auto gcc = MakeGccMethodPrototype("std::basic_ios<char, std::char_traits<char> >::clear(std::_Ios_Iostate)", 1);
+    const std::string gccText = FormatEditablePrototype(gcc->details);
+    REQUIRE(gccText == "void std::basic_ios<char, std::char_traits<char> >::clear(void* a1, std::_Ios_Iostate a2)");
+    REQUIRE(ParseUserPrototype(gccText) != nullptr);
+    // texts made of the pieces of the forms (unbalanced template arguments and parentheses): parsed or not, never a crash
+    static constexpr std::string_view PIECES[] = { "(", ")", "<", ">", ",", "::", "*", "&", " ", "~", "int", "a", "Foo", "_1", "const", "void" };
+    std::mt19937 random(0x10Bu);
+    for (uint32 attempt = 0; attempt < 3000; attempt++) {
+        std::string text;
+        for (uint32 piece = random() % 20; piece > 0; piece--)
+            text += PIECES[random() % std::size(PIECES)];
+        if (const auto parsed = ParseUserPrototype(text))
+            REQUIRE(!std::string_view(parsed->details.functionName).empty());
+        const std::string name = EditablePrototypeName(text);
+        REQUIRE(name.size() <= text.size());
+    }
 }

@@ -2137,8 +2137,47 @@ std::string OperatorKey(std::string_view text)
     return key + ')';
 }
 
-// "HANDLE CreateFileW(LPCWSTR lpFileName, ...)": the function, its parameters (the name after the last space or *, the type before it); the
-// texts are kept in `strings` (stable addresses). `strict` (a prototype of the user): every name an identifier, every parameter named
+std::vector<std::string_view> SplitDemangledParameters(std::string_view parameters);
+
+// a qualified C++ name in a prototype of the user (std::locale::~locale, std::basic_ios<char, std::char_traits<char> >::clear): identifiers
+// joined by ::, the ~ of a destructor, template arguments
+bool IsQualifiedName(std::string_view name)
+{
+    if (name.empty() || !(std::isalpha(static_cast<unsigned char>(name.front())) || name.front() == '_' || name.front() == '~') || name.back() == ':')
+        return false;
+    int32 depth = 0;
+    for (const char c : name) {
+        if (c == '<')
+            depth++;
+        else if (c == '>') {
+            if (--depth < 0)
+                return false;
+        } else if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == ':' || c == '~' ||
+                     (depth > 0 && (c == ',' || c == ' ' || c == '*' || c == '&'))))
+            return false;
+    }
+    return depth == 0;
+}
+
+// the last space or * of a text outside of its template arguments (the name after it: std::basic_ios<char, std::char_traits<char> >* this)
+size_t LastSeparatorOutsideTemplates(std::string_view text)
+{
+    size_t last  = std::string_view::npos;
+    uint32 depth = 0;
+    for (size_t index = 0; index < text.size(); index++) {
+        if (text[index] == '<')
+            depth++;
+        else if (text[index] == '>' && depth > 0)
+            depth--;
+        else if ((text[index] == ' ' || text[index] == '*') && depth == 0)
+            last = index;
+    }
+    return last;
+}
+
+// "HANDLE CreateFileW(LPCWSTR lpFileName, ...)": the function, its parameters (the name after the last space or * outside of the template
+// arguments, the type before it); the texts are kept in `strings` (stable addresses). `strict` (a prototype of the user): every name an
+// identifier (the function: a qualified C++ name too), every parameter named, the parameters split at the commas outside of <>
 bool ParsePrototypeText(std::deque<std::string>& strings, const std::string& line, AsmFunctionDetails& details, bool strict)
 {
     const auto open  = line.find('(');
@@ -2148,9 +2187,9 @@ bool ParsePrototypeText(std::deque<std::string>& strings, const std::string& lin
     const auto& text = strings.emplace_back(line);
     const std::string_view head = Trim(std::string_view(text).substr(0, open));
     const auto operatorStart    = head.find("operator "); // void* operator new[](size_t size): its name with the space
-    const auto nameStart        = operatorStart != std::string_view::npos && operatorStart > 0 ? operatorStart - 1 : head.find_last_of(" *");
+    const auto nameStart        = operatorStart != std::string_view::npos && operatorStart > 0 ? operatorStart - 1 : LastSeparatorOutsideTemplates(head);
     const std::string_view name = nameStart == std::string_view::npos ? head : head.substr(nameStart + 1);
-    if (name.empty() || (strict && !IsIdentifier(name)))
+    if (name.empty() || (strict && !IsIdentifier(name) && !IsQualifiedName(name)))
         return false;
     details.functionName = name;
     details.prototype    = text;
@@ -2160,13 +2199,19 @@ bool ParsePrototypeText(std::deque<std::string>& strings, const std::string& lin
     std::string_view parameters = std::string_view(text).substr(open + 1, close - open - 1);
     if (strict && (parameters.find('(') != std::string_view::npos || parameters.find(')') != std::string_view::npos))
         return false; // a pointer to a function as a parameter: not split by the commas
-    while (!parameters.empty()) {
-        const auto comma          = parameters.find(',');
-        const std::string_view parameter = Trim(parameters.substr(0, comma));
-        parameters                = comma == std::string_view::npos ? std::string_view() : parameters.substr(comma + 1);
+    const auto strictParameters = strict ? SplitDemangledParameters(parameters) : std::vector<std::string_view>();
+    for (size_t next = 0; strict ? next < strictParameters.size() : !parameters.empty(); next++) {
+        std::string_view parameter;
+        if (strict) {
+            parameter = strictParameters[next];
+        } else {
+            const auto comma = parameters.find(',');
+            parameter        = Trim(parameters.substr(0, comma));
+            parameters       = comma == std::string_view::npos ? std::string_view() : parameters.substr(comma + 1);
+        }
         if (parameter.empty() || parameter == "void" || parameter == "...")
             continue;
-        const auto split = parameter.find_last_of(" *");
+        const auto split = strict ? LastSeparatorOutsideTemplates(parameter) : parameter.find_last_of(" *");
         if (split == std::string_view::npos || (strict && (!IsIdentifier(parameter.substr(split + 1)) || Trim(parameter.substr(0, split + 1)).empty()))) {
             if (strict)
                 return false;
@@ -2328,19 +2373,36 @@ int32 SystemVIntegerRegisters(std::string_view type)
     return -1;
 }
 
-// GCC: the types of the integer registers of System V the parameters take, an empty type for the second one of a class of two; none when one
-// is not known or they need more than `available` registers (the ones after it in the stack)
-std::optional<std::vector<std::string_view>> SystemVRegisterTypes(const std::vector<std::string_view>& parameters, uint32 available)
-{
+// GCC: the integer registers and the stack slots of System V the parameters take after `hidden` registers (this, the address of a result),
+// their types (an empty one for the second eightbyte of a class of two): a class that does not fit in the registers left goes whole to the
+// stack, the integers after it still in registers. The parameters up to the first one not known (`complete` false), the stack slots up to
+// a long double (in the stack, aligned)
+struct SystemVSlots {
     std::vector<std::string_view> registers;
+    std::vector<std::string_view> stack;
+    bool complete = true;
+};
+
+SystemVSlots AssignSystemVSlots(const std::vector<std::string_view>& parameters, uint32 hidden)
+{
+    SystemVSlots slots;
+    bool stackKnown = true;
     for (const auto parameter : parameters) {
-        const int32 taken = SystemVIntegerRegisters(parameter);
-        if (taken < 0 || registers.size() + static_cast<uint32>(taken) > available)
-            return std::nullopt;
-        for (int32 half = 0; half < taken; half++)
-            registers.push_back(half == 0 ? parameter : std::string_view());
+        const int32 taken = parameter == "..." ? -1 : SystemVIntegerRegisters(parameter);
+        if (taken < 0) {
+            slots.complete = false;
+            break;
+        }
+        stackKnown = stackKnown && parameter != "long double";
+        auto& to   = hidden + slots.registers.size() + static_cast<uint32>(taken) <= 6 ? slots.registers : slots.stack;
+        for (int32 half = 0; half < taken && (&to == &slots.registers || stackKnown); half++)
+            to.push_back(half == 0 ? parameter : std::string_view());
+        if (&to == &slots.stack && !stackKnown) {
+            slots.complete = false;
+            break;
+        }
     }
-    return registers;
+    return slots;
 }
 
 // the prototype a demangled C++ name tells, its parameters named by their types (IDA: ; unsigned int), null when it does not tell its
@@ -2468,14 +2530,17 @@ std::unique_ptr<DissasmUserPrototype> MakeDemangledPrototype(std::string_view na
         const auto& thisType             = prototype->strings.emplace_back(std::string(scope) + "*");
         text                             = std::string(functionName) + "(" + thisType + " this";
         details.params.push_back({ "this", thisType.c_str() });
-        bool known = !className.ends_with("stream"); // a stream: the VTT of its virtual base after this
         for (const auto parameter : parameters) {
             text += ", " + std::string(parameter);
-            variadic          = variadic || parameter == "...";
-            const int32 taken = variadic ? -1 : SystemVIntegerRegisters(parameter);
-            known             = known && taken >= 0 && kept.size() + static_cast<size_t>(taken) < 6; // the registers of the ones after it: not known
-            for (int32 half = 0; known && half < taken; half++)
-                kept.push_back(half == 0 ? parameter : std::string_view()); // a class of two eightbytes: its second register without a type
+            variadic = variadic || parameter == "...";
+        }
+        if (!className.ends_with("stream")) { // a stream: the VTT of its virtual base after this
+            // the registers after this, the stack slots after the sixth (a class of two eightbytes: its second without a type)
+            const auto slots = AssignSystemVSlots(parameters, 1);
+            kept             = slots.registers;
+            if (!slots.stack.empty())
+                kept.resize(5);
+            kept.insert(kept.end(), slots.stack.begin(), slots.stack.end());
         }
     }
     for (const auto parameter : kept)
@@ -2506,14 +2571,14 @@ const AsmFunctionDetails* FindDemangledPrototype(std::string_view name)
     return added ? &added->details : nullptr;
 }
 
-// GCC: a demangled name that is no constructor / destructor, operator new / delete or name of MSVC (GetGccMethodParameters): the function
-// (after the return type of a template: std::basic_istream<char, ...>& std::ws<char, ...>(...)), the qualifiers after its parameters, the
-// parameters, the types of the integer registers of System V they take (SystemVRegisterTypes, 6 at most)
+// GCC: a demangled name that is no constructor / destructor, operator new / delete or name of MSVC (GetGccMethodParameters): the function,
+// the return type of a template before it (std::basic_istream<char, ...>& std::ws<char, ...>(...)), the qualifiers after its parameters, the
+// parameters (each of a known class of System V: AssignSystemVSlots)
 struct GccMethodName {
     std::string_view functionName;
+    std::string_view returnType;
     std::string_view qualifiers;
     std::vector<std::string_view> parameters;
-    std::vector<std::string_view> registers;
 };
 
 std::optional<GccMethodName> ParseGccMethodName(std::string_view name)
@@ -2553,13 +2618,13 @@ std::optional<GccMethodName> ParseGccMethodName(std::string_view name)
         else if (head[index] == ' ' && depth == 0)
             nameStart = index + 1;
     }
-    GccMethodName parsed{ head.substr(nameStart), name.substr(close + 1), SplitDemangledParameters(name.substr(open + 1, close - open - 1)), {} };
+    GccMethodName parsed{
+        head.substr(nameStart), Trim(head.substr(0, nameStart)), name.substr(close + 1), SplitDemangledParameters(name.substr(open + 1, close - open - 1))
+    };
     if (const auto scope = ScopeOfName(parsed.functionName); !scope.empty() && IsConstructorOrDestructor(parsed.functionName, scope))
         return std::nullopt; // MakeDemangledPrototype
-    auto registers = SystemVRegisterTypes(parsed.parameters, 6);
-    if (parsed.functionName.empty() || !registers.has_value())
+    if (parsed.functionName.empty() || !AssignSystemVSlots(parsed.parameters, 0).complete)
         return std::nullopt; // a class by value, variadic, ...: the registers after it not known
-    parsed.registers = std::move(registers.value());
     return parsed;
 }
 } // namespace
@@ -2644,7 +2709,10 @@ std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::ParseApi
 std::optional<uint32> GView::View::DissasmViewer::GetGccMethodParameters(std::string_view name)
 {
     const auto parsed = name.find('(') != std::string_view::npos ? ParseGccMethodName(name) : std::nullopt;
-    return parsed.has_value() ? std::optional<uint32>(static_cast<uint32>(parsed->registers.size())) : std::nullopt;
+    if (!parsed.has_value())
+        return std::nullopt;
+    const auto slots = AssignSystemVSlots(parsed->parameters, 0);
+    return static_cast<uint32>(slots.registers.size() + slots.stack.size());
 }
 
 std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::MakeGccMethodPrototype(std::string_view name, int32 highestRead)
@@ -2653,11 +2721,31 @@ std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::MakeGccM
     if (!parsed.has_value())
         return nullptr;
     // the arguments before its parameters: 1 is this for a const method, the address of what it returns for a function without a scope,
-    // else either (a static method / a function of a namespace returning a class); 2 are that address, then this
-    const int32 hidden           = highestRead + 1 - static_cast<int32>(parsed->registers.size());
+    // else either (a static method / a function of a namespace returning a class); 2 are that address, then this. The highest register read
+    // is the last of the arguments for the one count that fits; with the six registers read two may fit: the return type of a template
+    // in a register (or none) leaves no address of a result (a const method of it: this alone, whatever it reads)
     const std::string_view scope = ScopeOfName(parsed->functionName);
     const bool isConst           = parsed->qualifiers.find("const") != std::string_view::npos;
-    if (hidden < 1 || hidden > 2 || (scope.empty() && (hidden == 2 || isConst)))
+    const bool returnInRegisters = !parsed->returnType.empty() && (parsed->returnType == "void" || SystemVIntegerRegisters(parsed->returnType) >= 0);
+    if (scope.empty() && isConst)
+        return nullptr;
+    int32 hidden = 0;
+    SystemVSlots slots;
+    for (int32 candidate = 1; candidate <= 2; candidate++) {
+        if ((candidate == 2 && (scope.empty() || returnInRegisters)) || (candidate == 1 && scope.empty() && returnInRegisters))
+            continue;
+        auto assigned    = AssignSystemVSlots(parsed->parameters, static_cast<uint32>(candidate));
+        const int32 last = candidate + static_cast<int32>(assigned.registers.size()) - 1;
+        if (highestRead == last || (candidate == 1 && isConst && returnInRegisters && highestRead < last)) {
+            if (hidden != 0 && !slots.stack.empty())
+                return nullptr; // both fit
+            if (hidden != 0)
+                break; // both fit, this alone with every parameter in a register (as 9v: far more common than a result in memory)
+            hidden = candidate;
+            slots  = std::move(assigned);
+        }
+    }
+    if (hidden == 0)
         return nullptr;
     auto prototype            = std::make_shared<DissasmUserPrototype>();
     auto& details             = prototype->details;
@@ -2670,20 +2758,55 @@ std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::MakeGccM
         details.params.push_back({ "result", unnamed.c_str() });
         text += hidden == 2 ? "void* result, " : "void* result";
     }
-    if (hidden == 2 || isConst) {
+    if (hidden == 2 || isConst || (!scope.empty() && returnInRegisters)) {
         details.params.push_back({ "this", thisType.c_str() });
         text += thisType + " this";
     } else if (!scope.empty()) { // this, or the address of what a static method / a function of a namespace returns
         details.params.push_back({ unnamed.c_str(), unnamed.c_str() });
         text += "a1";
     }
-    for (const auto type : parsed->registers) // a float takes none, a class of two eightbytes two (the second without a type)
+    for (const auto type : slots.registers) // a float takes none, a class of two eightbytes two (the second without a type)
         details.params.push_back({ unnamed.c_str(), prototype->strings.emplace_back(type).c_str() });
+    for (size_t index = 0; index < slots.stack.size(); index++) { // the stack slots after the sixth (pushed: 9y)
+        while (index == 0 && details.params.size() < 6)
+            details.params.push_back({ unnamed.c_str(), unnamed.c_str() });
+        details.params.push_back({ unnamed.c_str(), prototype->strings.emplace_back(slots.stack[index]).c_str() });
+    }
     for (const auto parameter : parsed->parameters)
         text += ", " + std::string(parameter);
     details.prototype    = prototype->strings.emplace_back(text + ")" + std::string(parsed->qualifiers));
     details.functionName = prototype->strings.emplace_back(parsed->functionName);
     return prototype;
+}
+
+std::string GView::View::DissasmViewer::EditablePrototypeName(std::string_view name)
+{
+    // a demangled name: without its parameters and qualifiers (and the number of a name given twice), without the return type of a template
+    const auto close = name.rfind(')');
+    if (close == std::string_view::npos)
+        return std::string(name);
+    const auto open = FindParametersOpen(name, close);
+    if (open == std::string_view::npos || open == 0)
+        return std::string(name);
+    std::string_view head  = Trim(name.substr(0, open));
+    const auto operatorAt  = head.find("operator");
+    const auto returnTypes = LastSeparatorOutsideTemplates(head.substr(0, std::min(operatorAt, head.size())));
+    if (returnTypes != std::string_view::npos && head[returnTypes] == ' ')
+        head.remove_prefix(returnTypes + 1);
+    return std::string(head);
+}
+
+std::string GView::View::DissasmViewer::FormatEditablePrototype(const AsmFunctionDetails& details)
+{
+    std::string text =
+          (details.returnType.empty() ? std::string("void") : std::string(details.returnType)) + " " + EditablePrototypeName(details.functionName) + "(";
+    for (size_t index = 0; index < details.params.size(); index++) {
+        const std::string_view name = details.params[index].name ? details.params[index].name : "";
+        const std::string_view type = details.params[index].type ? details.params[index].type : "";
+        text += (index > 0 ? ", " : "") + (type.empty() ? std::string("void*") : std::string(type)) + " " +
+                (name.empty() ? "a" + std::to_string(index + 1) : std::string(name));
+    }
+    return text + ")";
 }
 
 std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::ParseUserPrototype(std::string_view text)
