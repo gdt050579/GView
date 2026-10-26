@@ -1248,6 +1248,19 @@ constexpr std::string_view PROTOTYPES[] = {
     "BOOL CryptDecodeObjectEx(DWORD dwCertEncodingType, LPCSTR lpszStructType, const BYTE* pbEncoded, DWORD cbEncoded, DWORD dwFlags, PCRYPT_DECODE_PARA pDecodePara, void* pvStructInfo, DWORD* pcbStructInfo)",
     "BOOLEAN GetUserNameExW(EXTENDED_NAME_FORMAT NameFormat, LPWSTR lpNameBuffer, PULONG nSize)",
     "LONG SCardEstablishContext(DWORD dwScope, LPCVOID pvReserved1, LPCVOID pvReserved2, LPSCARDCONTEXT phContext)",
+    "LONG SCardListReaders%(SCARDCONTEXT hContext, LPCTSTR mszGroups, LPTSTR mszReaders, LPDWORD pcchReaders)",
+    "ULONG ldap_modify_ext_sW(LDAP* ld, PWSTR dn, LDAPModW** mods, PLDAPControlW* ServerControls, PLDAPControlW* ClientControls)",
+    "struct berval** ldap_get_values_lenW(LDAP* ExternalHandle, LDAPMessage* Message, PWSTR attr)",
+    "ULONG ldap_value_free_len(struct berval** vals)",
+    "ULONG ldap_search_ext_sW(LDAP* ld, PWSTR base, ULONG scope, PWSTR filter, PZPWSTR attrs, ULONG attrsonly, PLDAPControlW* ServerControls, PLDAPControlW* ClientControls, struct l_timeval* timeout, ULONG SizeLimit, PLDAPMessage* res)",
+    // the debug helpers of the certificate services (certcli: certutil, certsrv; no header of the SDK): the place of an error (its line and
+    // file: __LINE__ << 16 | __dwFILE__) and its HRESULT; the subsystems of the debug output
+    "void CSPrintErrorLineFile(DWORD dwLineFile, HRESULT hr)",
+    "void CSPrintErrorLineFile2(DWORD dwLineFile, HRESULT hr, HRESULT hrQuiet)",
+    "void CSPrintErrorLineFileData(LPCWSTR pwszData, DWORD dwLineFile, HRESULT hr)",
+    "void CSPrintErrorLineFileData2(LPCWSTR pwszData, DWORD dwLineFile, HRESULT hr, HRESULT hrQuiet)",
+    "BOOL DbgIsSSActive(DWORD dwSSMask)",
+    "int DbgPrintf(DWORD dwSubSystemId, LPCSTR lpFmt, ...)",
     "BOOL GetComputerNameExW(COMPUTER_NAME_FORMAT NameType, LPWSTR lpBuffer, LPDWORD nSize)",
     "BOOL CertGetEnhancedKeyUsage(PCCERT_CONTEXT pCertContext, DWORD dwFlags, PCERT_ENHKEY_USAGE pUsage, DWORD* pcbUsage)",
     "HRESULT WsReadStartAttribute(WS_XML_READER* reader, ULONG attributeIndex, WS_ERROR* error)",
@@ -1479,6 +1492,22 @@ constexpr std::string_view PROTOTYPES[] = {
     "int wmemcmp(const wchar_t* s1, const wchar_t* s2, size_t n)",
     "wchar_t* wmemset(wchar_t* wcs, wchar_t wc, size_t n)",
     "wchar_t* wmemmove(wchar_t* dest, const wchar_t* src, size_t n)",
+    // the operators new and delete of C++ (by their kind and the kinds of their parameters, OperatorKey: operator delete(void*, unsigned long)
+    // of libstdc++, void __cdecl operator delete(void *) of the CRT of MSVC)
+    "void* operator new(size_t size)",
+    "void* operator new[](size_t size)",
+    "void* operator new(size_t size, const std::nothrow_t& tag)",
+    "void* operator new[](size_t size, const std::nothrow_t& tag)",
+    "void* operator new(size_t size, std::align_val_t alignment)",
+    "void* operator new[](size_t size, std::align_val_t alignment)",
+    "void operator delete(void* ptr)",
+    "void operator delete[](void* ptr)",
+    "void operator delete(void* ptr, size_t size)",
+    "void operator delete[](void* ptr, size_t size)",
+    "void operator delete(void* ptr, std::align_val_t alignment)",
+    "void operator delete[](void* ptr, std::align_val_t alignment)",
+    "void operator delete(void* ptr, size_t size, std::align_val_t alignment)",
+    "void operator delete[](void* ptr, size_t size, std::align_val_t alignment)",
 };
 
 struct PrototypeTable {
@@ -1510,6 +1539,44 @@ bool IsIdentifier(std::string_view text)
     return std::all_of(text.begin(), text.end(), [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; });
 }
 
+// an operator new / delete of C++ (a line of the table, a demangled name: operator new(unsigned long), void * __ptr64 __cdecl operator
+// new(unsigned __int64)): the operator and the kinds of its parameters (p: a pointer, n: a size, a: std::align_val_t, t: std::nothrow_t):
+// "operator delete(p,n)"; empty for another name
+std::string OperatorKey(std::string_view text)
+{
+    size_t start = std::string_view::npos;
+    for (const std::string_view op : { std::string_view("operator new"), std::string_view("operator delete") })
+        if (const auto found = text.find(op); found != std::string_view::npos)
+            start = found;
+    if (start == std::string_view::npos)
+        return {};
+    const auto open  = text.find('(', start);
+    const auto close = text.rfind(')');
+    if (open == std::string_view::npos || close == std::string_view::npos || close < open)
+        return {};
+    std::string key(Trim(text.substr(start, open - start)));
+    if (key != "operator new" && key != "operator new[]" && key != "operator delete" && key != "operator delete[]")
+        return {};
+    key += '(';
+    std::string_view parameters = text.substr(open + 1, close - open - 1);
+    bool first                  = true;
+    while (!parameters.empty()) {
+        const auto comma                 = parameters.find(',');
+        const std::string_view parameter = Trim(parameters.substr(0, comma));
+        parameters                       = comma == std::string_view::npos ? std::string_view() : parameters.substr(comma + 1);
+        if (parameter.empty() || parameter == "void")
+            continue;
+        if (!first)
+            key += ',';
+        first = false;
+        key += parameter.find("align_val_t") != std::string_view::npos ? 'a'
+               : parameter.find("nothrow") != std::string_view::npos   ? 't'
+               : parameter.find('*') != std::string_view::npos         ? 'p'
+                                                                       : 'n';
+    }
+    return key + ')';
+}
+
 // "HANDLE CreateFileW(LPCWSTR lpFileName, ...)": the function, its parameters (the name after the last space or *, the type before it); the
 // texts are kept in `strings` (stable addresses). `strict` (a prototype of the user): every name an identifier, every parameter named
 bool ParsePrototypeText(std::deque<std::string>& strings, const std::string& line, AsmFunctionDetails& details, bool strict)
@@ -1520,7 +1587,8 @@ bool ParsePrototypeText(std::deque<std::string>& strings, const std::string& lin
         return false;
     const auto& text = strings.emplace_back(line);
     const std::string_view head = Trim(std::string_view(text).substr(0, open));
-    const auto nameStart        = head.find_last_of(" *");
+    const auto operatorStart    = head.find("operator "); // void* operator new[](size_t size): its name with the space
+    const auto nameStart        = operatorStart != std::string_view::npos && operatorStart > 0 ? operatorStart - 1 : head.find_last_of(" *");
     const std::string_view name = nameStart == std::string_view::npos ? head : head.substr(nameStart + 1);
     if (name.empty() || (strict && !IsIdentifier(name)))
         return false;
@@ -1557,7 +1625,10 @@ void AddPrototype(PrototypeTable& table, const std::string& line)
     if (!ParsePrototypeText(table.strings, line, details, false) || table.byName.contains(details.functionName))
         return;
     const auto& added = table.functions.emplace_back(std::move(details));
-    table.byName.emplace(added.functionName, &added);
+    if (added.functionName.starts_with("operator ")) // the operators by their parameters (OperatorKey): operator delete(p,n)
+        table.byName.emplace(table.strings.emplace_back(OperatorKey(added.prototype)), &added);
+    else
+        table.byName.emplace(added.functionName, &added);
 }
 
 const PrototypeTable& GetPrototypeTable()
@@ -1595,6 +1666,10 @@ const AsmFunctionDetails* GView::View::DissasmViewer::FindApiPrototype(std::stri
     if (const auto at = name.find('@'); at != std::string_view::npos && at > 0)
         name = name.substr(0, at);
     const auto& byName = GetPrototypeTable().byName;
+    if (const auto key = OperatorKey(name); !key.empty()) { // a demangled operator new / delete (its parameters choose the line)
+        const auto found = byName.find(key);
+        return found != byName.end() ? found->second : nullptr;
+    }
     if (const auto found = byName.find(name); found != byName.end())
         return found->second;
     if (name.size() > 2 && name.starts_with("Zw")) { // the Zw functions are the Nt ones
@@ -1631,8 +1706,9 @@ std::optional<uint32> GView::View::DissasmViewer::GetX86StdcallPushes(const AsmF
 {
     const std::string_view name = prototype.functionName;
     const bool lowercase        = std::all_of(name.begin(), name.end(), [](char c) { return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'; });
-    if (prototype.prototype.find("...") != std::string_view::npos || (lowercase && (GetApiCategories(name) & API_NETWORK) == 0))
-        return std::nullopt;
+    if (prototype.prototype.find("...") != std::string_view::npos || (lowercase && (GetApiCategories(name) & API_NETWORK) == 0) ||
+        name.starts_with("operator "))
+        return std::nullopt; // cdecl: the C run-time, the variadic APIs, the operators of C++
     uint32 pushes = 0;
     for (const auto& parameter : prototype.params)
         pushes += IsWideX86Type(parameter.type) ? 2u : 1u;
@@ -1699,6 +1775,8 @@ std::string GView::View::DissasmViewer::GetReturnValueName(const AsmFunctionDeta
     if (!function.returnName.empty())
         return std::string(function.returnName);
     std::string_view name = function.functionName;
+    if (name.starts_with("operator new")) // what the operator gives: new_result, new_array_result
+        return name.ends_with("[]") ? "new_array_result" : "new_result";
     // the A and the W functions of a line: the ending dropped (CreateFileW -> CreateFile)
     if (name.size() > 1 && (name.back() == 'A' || name.back() == 'W')) {
         std::string other(name);

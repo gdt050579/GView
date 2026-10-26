@@ -5399,7 +5399,7 @@ TEST_CASE("ApiPrototypes", "[Dissasm]Help")
         const auto identifier = [](std::string_view text) {
             return !text.empty() && std::all_of(text.begin(), text.end(), [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; });
         };
-        REQUIRE(identifier(details.functionName));
+        REQUIRE((identifier(details.functionName) || details.functionName.starts_with("operator "))); // operator new[]
         for (const auto& parameter : details.params) {
             REQUIRE(identifier(parameter.name));
             REQUIRE(!std::string_view(parameter.type).empty());
@@ -13278,4 +13278,158 @@ TEST_CASE("Arm64VariadicPrototype", "[Dissasm]Arm64")
     REQUIRE(std::string_view(prototype->prototype) == "sub_40(a1, format, ...)");
     REQUIRE(FindListingLine(listing, "0x00000008  mov    w1, #0x65").find("; format") != std::string_view::npos);
     REQUIRE(FindListingLine(listing, "0x00000064  add    x1, sp, #va_x2").size() > 0);
+}
+
+TEST_CASE("CxxOperatorPrototypes", "[Dissasm]Help")
+{
+    // the operators new and delete of C++ by their demangled names (libstdc++: operator delete(void*, unsigned long); the CRT of MSVC:
+    // void __cdecl operator delete(void *)): the line of the kinds of their parameters, their arguments named at the calls
+    const auto* scalarNew = FindApiPrototype("j_operator new(unsigned long)");
+    REQUIRE(scalarNew != nullptr);
+    REQUIRE(std::string_view(scalarNew->functionName) == "operator new");
+    REQUIRE(std::string_view(scalarNew->returnType) == "void*");
+    REQUIRE(GetReturnValueName(*scalarNew) == "new_result");
+    REQUIRE(FindApiPrototype("void * __ptr64 __cdecl operator new(unsigned __int64)") == scalarNew);
+    REQUIRE(FindApiPrototype("operator new[](unsigned long)") != scalarNew);
+    REQUIRE(std::string_view(FindApiPrototype("operator new(unsigned long, std::align_val_t)")->params[1].name) == "alignment");
+    REQUIRE(FindApiPrototype("operator delete(void*, unsigned long)")->params.size() == 2);
+    REQUIRE(FindApiPrototype("void __cdecl operator delete(void *)")->params.size() == 1);
+    REQUIRE(FindApiPrototype("operator delete(void*, unsigned long, unsigned long, unsigned long)") == nullptr);
+
+    std::vector<unsigned char> file;
+    const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x28 });       // 0x00: sub rsp, 0x28
+    file.insert(file.end(), { 0xB9, 0x20, 0x00, 0x00, 0x00 }); // 0x04: mov ecx, 0x20     (size)
+    call(0x200);                                               // 0x09: call operator new(unsigned long)
+    file.insert(file.end(), { 0x48, 0x89, 0xC1 });             // 0x0f: mov rcx, rax      (ptr)
+    file.insert(file.end(), { 0xBA, 0x20, 0x00, 0x00, 0x00 }); // 0x12: mov edx, 0x20     (size)
+    call(0x208);                                               // 0x17: call operator delete(void*, unsigned long)
+    file.insert(file.end(), { 0x48, 0x89, 0xD9 });             // 0x1d: mov rcx, rbx      (ptr)
+    call(0x210);                                               // 0x20: call void __cdecl operator delete(void *)
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x28, 0xC3 }); // 0x26: add rsp, 0x28; ret
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "operator new(unsigned long)", MemoryMappingType::FunctionMapping } },
+                                { 0x208, { "operator delete(void*, unsigned long)", MemoryMappingType::FunctionMapping } },
+                                { 0x210, { "void __cdecl operator delete(void *)", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000004  mov    ecx, 0x20").ends_with("; size"));
+    REQUIRE(FindListingLine(listing, "0x0000000f  mov    rcx, rax").ends_with("; ptr"));
+    REQUIRE(FindListingLine(listing, "0x00000012  mov    edx, 0x20").ends_with("; size"));
+    REQUIRE(FindListingLine(listing, "0x0000001d  mov    rcx, rbx").ends_with("; ptr"));
+}
+
+TEST_CASE("Arm64VariadicFormatForms", "[Dissasm]Arm64")
+{
+    // the format of an ARM64 variadic function passed with its va_list: the printf of the UCRT has the locale between them (format, NULL,
+    // va); a large frame addresses the home of its first variadic register through x16 (mov x16, #0x1020; add x2, sp, x16)
+    std::vector<unsigned char> file;
+    const auto word = [&file](uint32 value) {
+        for (int index = 0; index < 4; index++)
+            file.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    };
+    word(0xA9BF7BFD); // 0x00: stp x29, x30, [sp, #-0x10]!
+    word(0x910003FD); // 0x04: mov x29, sp
+    word(0x52800CA1); // 0x08: mov w1, #0x65                (format)
+    word(0x9400000D); // 0x0c: bl 0x40
+    word(0x52800CC1); // 0x10: mov w1, #0x66                (format)
+    word(0x9400001B); // 0x14: bl 0x80
+    word(0xA8C17BFD); // 0x18: ldp x29, x30, [sp], #0x10
+    word(0xD65F03C0); // 0x1c: ret
+    file.resize(0x40, 0);
+    word(0xA9BB7BFD); // 0x40: stp x29, x30, [sp, #-0x50]!
+    word(0xA9020FE2); // 0x44: stp x2, x3, [sp, #0x20]      (va_x2)
+    word(0xA90317E4); // 0x48: stp x4, x5, [sp, #0x30]
+    word(0xA9041FE6); // 0x4c: stp x6, x7, [sp, #0x40]
+    word(0x910003FD); // 0x50: mov x29, sp
+    word(0xAA0103E3); // 0x54: mov x3, x1                   (format)
+    word(0xD2800004); // 0x58: mov x4, #0                   (the locale)
+    word(0x910083E5); // 0x5c: add x5, sp, #0x20            (the va_list)
+    word(0x94000020); // 0x60: bl 0xe0
+    word(0xA8C57BFD); // 0x64: ldp x29, x30, [sp], #0x50
+    word(0xD65F03C0); // 0x68: ret
+    file.resize(0x80, 0);
+    word(0xA9BB7BFD); // 0x80: stp x29, x30, [sp, #-0x50]!
+    word(0xA9020FE2); // 0x84: stp x2, x3, [sp, #0x20]      (va_x2)
+    word(0xA90317E4); // 0x88: stp x4, x5, [sp, #0x30]
+    word(0xA9041FE6); // 0x8c: stp x6, x7, [sp, #0x40]
+    word(0x910003FD); // 0x90: mov x29, sp
+    word(0xD14007FF); // 0x94: sub sp, sp, #1, lsl #12
+    word(0xD2820410); // 0x98: mov x16, #0x1020
+    word(0x8B3063E2); // 0x9c: add x2, sp, x16              (the va_list: va_x2)
+    word(0x94000010); // 0xa0: bl 0xe0                      (x1: the format)
+    word(0x914007FF); // 0xa4: add sp, sp, #1, lsl #12
+    word(0xA8C57BFD); // 0xa8: ldp x29, x30, [sp], #0x50
+    word(0xD65F03C0); // 0xac: ret
+    file.resize(0xE0, 0);
+    word(0x52800000); // 0xe0: mov w0, #0                   (a vprintf)
+    word(0xD65F03C0); // 0xe4: ret
+    file.resize(0x100, 0);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::ARM64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const auto& zone          = *dissasmInstance.zone;
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(zone.FindInferredPrototype(0x40) != nullptr);
+    REQUIRE(std::string_view(zone.FindInferredPrototype(0x40)->prototype) == "sub_40(a1, format, ...)");
+    REQUIRE(zone.FindInferredPrototype(0x80) != nullptr);
+    REQUIRE(std::string_view(zone.FindInferredPrototype(0x80)->prototype) == "sub_80(a1, format, ...)");
+    REQUIRE(FindListingLine(listing, "0x00000010  mov    w1, #0x66").find("; format") != std::string_view::npos);
+}
+
+TEST_CASE("CertificateServicesErrorPrototypes", "[Dissasm]Thunks")
+{
+    // the debug helpers of the certificate services (certutil): stdcall, the place of the error (__LINE__ << 16 | __dwFILE__: file, line)
+    // and its HRESULT named at the pushes; DbgPrintf is variadic (cdecl)
+    const auto* printError = FindApiPrototype("CSPrintErrorLineFile");
+    REQUIRE(printError != nullptr);
+    REQUIRE(GetX86StdcallPushes(*printError) == std::optional<uint32>(2));
+    REQUIRE(GetX86StdcallPushes(*FindApiPrototype("CSPrintErrorLineFileData2")) == std::optional<uint32>(4));
+    REQUIRE(!GetX86StdcallPushes(*FindApiPrototype("DbgPrintf")).has_value());
+    REQUIRE(FormatApiConstant("CSPrintErrorLineFile", "dwLineFile", 0x207070A) == "file 0x70A, line 519");
+    REQUIRE(FormatApiConstant("CSPrintErrorLineFile", "hr", 0x80070057) == "E_INVALIDARG");
+    REQUIRE(FormatApiConstant("CSPrintErrorLineFile", "dwLineFile", 0x70A).empty());
+
+    std::vector<unsigned char> file = {
+        0x56,                               // 0x00: push esi            (hr)
+        0x68, 0x0A, 0x07, 0x07, 0x02,       // 0x01: push 0x207070a      (dwLineFile)
+        0xE8, 0x15, 0x00, 0x00, 0x00,       // 0x06: call 0x20 (the thunk of CSPrintErrorLineFile)
+        0x68, 0x57, 0x00, 0x07, 0x80,       // 0x0b: push 0x80070057     (hr)
+        0x68, 0x2E, 0x01, 0x33, 0x16,       // 0x10: push 0x1633012e     (dwLineFile)
+        0x57,                               // 0x15: push edi            (pwszData)
+        0xE8, 0x0D, 0x00, 0x00, 0x00,       // 0x16: call 0x28 (the thunk of CSPrintErrorLineFileData)
+        0xC3,                               // 0x1b: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xFF, 0x25, 0x80, 0x10, 0x40, 0x00 }); // 0x20: jmp dword ptr [0x401080]
+    file.resize(0x28, 0xCC);
+    file.insert(file.end(), { 0xFF, 0x25, 0x84, 0x10, 0x40, 0x00 }); // 0x28: jmp dword ptr [0x401084]
+    file.resize(0x40, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.imports    = { { 0x401080, { "CSPrintErrorLineFile", MemoryMappingType::FunctionMapping } },
+                          { 0x401084, { "CSPrintErrorLineFileData", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "push   esi").ends_with("; hr"));
+    REQUIRE(FindListingLine(listing, "push   0x207070a").ends_with("; dwLineFile = file 0x70A, line 519"));
+    REQUIRE(FindListingLine(listing, "push   0x80070057").ends_with("; hr = E_INVALIDARG"));
+    REQUIRE(FindListingLine(listing, "push   0x1633012e").ends_with("; dwLineFile = file 0x12E, line 5683"));
+    REQUIRE(FindListingLine(listing, "push   edi").ends_with("; pwszData"));
 }

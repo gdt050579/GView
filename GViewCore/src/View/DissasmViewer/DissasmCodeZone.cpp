@@ -4189,6 +4189,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         };
         std::vector<Step> steps;
         std::vector<std::pair<int32, uint32>> stores; // a variadic function: the slots its code writes (offset, size)
+        std::array<std::optional<int64>, 2> scratchConstants; // a variadic function: mov x16, #0x1060 / x17 in the order of the code
         const auto data = start < end ? obj->GetData().Get(codeStart + start, static_cast<uint32>(std::min<uint64>(end - start, 0x10000)), false) : BufferView{};
         cs_insn* insn   = data.IsValid() ? cs_malloc(detailHandle) : nullptr;
         if (!insn)
@@ -4260,7 +4261,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                             step.comparedValue    = insn->id == ARM64_INS_CMN ? -insn->detail->arm64.operands[1].imm : insn->detail->arm64.operands[1].imm;
                         }
                     if (variadic && step.kind == StepKind::Other)
-                        DecodeVariadicStep(*insn, *variadicFrame, *variadic, step, stores);
+                        DecodeVariadicStep(*insn, *variadicFrame, *variadic, step, stores, scratchConstants);
                 } else {
                     const cs_x86& x86 = insn->detail->x86;
                     for (uint8 i = 0; i < x86.op_count; i++)
@@ -4370,10 +4371,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 state.fill(-1); // code after a ret / jmp that no branch of the function reaches
                 vaList = 0;
             }
-            // vsprintf(buffer, format, va) / StringCchVPrintf(buffer, size, format, va): the last fixed argument before the va_list
+            // vsprintf(buffer, format, va) / StringCchVPrintf(buffer, size, format, va): the last fixed argument before the va_list; the
+            // printf of the UCRT has the locale between them (__stdio_common_vsprintf(options, buffer, count, format, locale, va))
             if (variadic && lastFixed >= 0 && (step.kind == StepKind::Call || step.kind == StepKind::TailCall))
                 for (int reg = 1; reg < 8 && !passesFormat; reg++)
-                    passesFormat = (vaList & (1u << reg)) != 0 && state[reg - 1] == lastFixed;
+                    passesFormat = (vaList & (1u << reg)) != 0 && (state[reg - 1] == lastFixed || (reg >= 2 && state[reg - 2] == lastFixed));
             if (step.storeFrom >= 0 && step.storeFrom < REGISTERS && state[step.storeFrom] >= 0)
                 slotValues[step.slot] = state[step.storeFrom];
             if ((step.kind == StepKind::Call || step.kind == StepKind::TailCall) && step.callee) {
@@ -4432,14 +4434,16 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     }
 
     // a step of the code of an ARM64 variadic function (InferFunctionPrototype): the address of the home of its first variadic register (add x3,
-    // sp, #0x30 at the depth of the frame there; add x3, x29, #0x10) or the move of x4 of ARM64EC is its va_list, add x20, x26, #0 a copy;
-    // str x1, [sp, #0x10] / ldr x2, [sp, #0x10]: a slot of the frame; `stores` receives the slots every store of the code writes
+    // sp, #0x30 at the depth of the frame there; add x3, x29, #0x10; a large frame: mov x16, #0x1060; add x22, sp, x16) or the move of x4 of
+    // ARM64EC is its va_list, add x20, x26, #0 a copy; str x1, [sp, #0x10] / ldr x2, [sp, #0x10]: a slot of the frame; `stores` receives the
+    // slots every store of the code writes, `scratchConstants` the constants of x16 / x17 in the order of the code
     static void DecodeVariadicStep(
           const cs_insn& insn,
           const DissasmFunctionFrame& frame,
           const DissasmFunctionFrame::VariadicHomes& variadic,
           auto& step,
-          std::vector<std::pair<int32, uint32>>& stores)
+          std::vector<std::pair<int32, uint32>>& stores,
+          std::array<std::optional<int64>, 2>& scratchConstants)
     {
         const cs_arm64& arm64 = insn.detail->arm64;
         const auto slotOf     = [&](unsigned int base, int64 displacement) -> std::optional<int32> {
@@ -4460,6 +4464,23 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                          : static_cast<int8>(-1);
         };
         const bool immediate = arm64.op_count == 3 && arm64.operands[2].type == ARM64_OP_IMM && arm64.operands[2].shift.value == 0;
+        const int8 scratch   = xRegister(0) == 16 || xRegister(0) == 17 ? static_cast<int8>(xRegister(0) - 16) : static_cast<int8>(-1);
+        if (scratch >= 0 && (arm64.operands[0].access & CS_AC_WRITE)) {
+            // mov x16, #0x1060: the offset of a slot of a large frame; another write of x16 forgets it
+            const bool constant = (insn.id == ARM64_INS_MOV || insn.id == ARM64_INS_MOVZ) && arm64.op_count == 2 && arm64.operands[1].type == ARM64_OP_IMM;
+            scratchConstants[scratch] = constant ? std::optional<int64>(arm64.operands[1].imm) : std::nullopt;
+            if (constant)
+                return;
+        }
+        if (insn.id == ARM64_INS_ADD && arm64.op_count == 3 && !variadic.throughX4 && xRegister(0) >= 0 && arm64.operands[1].type == ARM64_OP_REG &&
+            arm64.operands[1].reg == ARM64_REG_SP && arm64.operands[2].type == ARM64_OP_REG && arm64.operands[2].shift.value == 0 &&
+            arm64.operands[2].ext == ARM64_EXT_INVALID && (arm64.operands[2].reg == ARM64_REG_X16 || arm64.operands[2].reg == ARM64_REG_X17)) {
+            // add x22, sp, x16
+            if (const auto& value = scratchConstants[arm64.operands[2].reg == ARM64_REG_X16 ? 0 : 1]; value.has_value())
+                if (const auto slot = slotOf(ARM64_REG_SP, value.value()); slot.has_value() && slot.value() == variadic.frameOffset)
+                    step.vaListTo = xRegister(0);
+            return;
+        }
         if ((insn.id == ARM64_INS_ADD || insn.id == ARM64_INS_SUB) && immediate && arm64.operands[1].type == ARM64_OP_REG) {
             const int8 to       = xRegister(0);
             const unsigned base = arm64.operands[1].reg;
@@ -5183,13 +5204,16 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         uint64 callAddress         = 0;
         // the text buffers a formatting / copying function writes (swprintf_s(buffer, ...): a character pointer before its format, or named
         // buffer / dest; an API or a wrapper inferred from one): the next call that takes them names them again (the buffer then passed to
-        // RegOpenKeyExW is its SubKey)
+        // RegOpenKeyExW is its SubKey); so is the text an error print of the certificate services reports (CSPrintErrorLineFileData: its
+        // pwszData, before the LocalFree of its hMem)
         std::unordered_set<int32> formattedBuffers;
         const auto formatsInto = [](const AsmFunctionDetails& prototype, size_t index) {
             static constexpr std::string_view TEXT_BUFFERS[] = { "char*", "wchar_t*", "LPSTR", "LPWSTR", "PSTR", "PWSTR", "STRSAFE_LPSTR", "STRSAFE_LPWSTR" };
+            const std::string_view own                       = prototype.params[index].name ? prototype.params[index].name : "";
+            if (own == "pwszData")
+                return true;
             if (std::find(std::begin(TEXT_BUFFERS), std::end(TEXT_BUFFERS), std::string_view(prototype.params[index].type)) == std::end(TEXT_BUFFERS))
                 return false;
-            const std::string_view own = prototype.params[index].name ? prototype.params[index].name : "";
             if (own == "buffer" || own == "dest") // a wrapper that formats / copies into its argument (its format inside: sub_X(a1, wchar_t* buffer))
                 return true;
             for (size_t next = index + 1; next < prototype.params.size(); next++) {

@@ -556,6 +556,15 @@ std::string FormatControlCode(uint32 value)
            std::string(ACCESSES[(value >> 14) & 3]) + ")";
 }
 
+// the place an error of the certificate services is printed from (CSPrintErrorLineFile: __LINE__ << 16 | __dwFILE__, the number of the
+// source file in its low word): file 0x70A, line 519
+std::string FormatLineFile(uint32 value)
+{
+    if ((value >> 16) == 0 || (value & 0xFFFF) == 0)
+        return {};
+    return "file " + Hex(value & 0xFFFF) + ", line " + std::to_string(value >> 16);
+}
+
 std::string FormatConstant(const ConstantSet& set, uint32 value)
 {
     constexpr size_t MAX_PARTS = 8;
@@ -739,6 +748,10 @@ std::string GView::View::DissasmViewer::FormatApiConstant(std::string_view funct
         return FormatPoolTag(constant);
     if (parameter == "dwIoControlCode" || parameter == "IoControlCode")
         return FormatControlCode(constant);
+    if (parameter == "dwLineFile")
+        return FormatLineFile(constant);
+    if (parameter == "hr" || parameter == "hrQuiet") // an HRESULT argument: E_INVALIDARG, HRESULT_FROM_WIN32(ERROR_NOT_FOUND)
+        return FormatHresult(constant);
     const std::string_view base = BaseFunctionName(function);
     const auto& sets            = GetConstantSets();
     for (const std::string_view name : { function, base }) {
