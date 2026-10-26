@@ -3778,6 +3778,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     void AddGccMethodPrototypes()
     {
         methodPrototypes.clear();
+        struct UndecidedMethod {
+            size_t index;    // of the function
+            int32 highest;   // the highest argument register it reads
+            uint64 passedTo; // the target of the call its first argument goes to first
+        };
+        std::vector<UndecidedMethod> undecided; // this or a result, not read first
         if (!hasDetailHandle || !zone->systemVCalls || functionEnds.size() != functionStarts.size())
             return;
         for (size_t index = 0; index < functionStarts.size(); index++) {
@@ -3792,9 +3798,106 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const auto parameters = GetGccMethodParameters(name);
             if (!parameters.has_value())
                 continue;
-            if (auto prototype = MakeGccMethodPrototype(name, HighestArgumentRead(start, functionEnds[index], parameters.value())))
+            const int32 highest = HighestArgumentRead(start, functionEnds[index], parameters.value());
+            auto prototype      = MakeGccMethodPrototype(name, highest);
+            if (prototype && !prototype->details.params.empty() && !prototype->details.params[0].name[0] && !prototype->details.params[0].type[0]) {
+                uint64 passedTo = NO_TARGET;
+                const auto use  = FirstUseOfFirstArgument(start, functionEnds[index], passedTo);
+                if (use == FirstArgumentUse::Read)
+                    prototype = MakeGccMethodPrototype(name, highest, true); // this or a result: the object it reads
+                else if (use == FirstArgumentUse::PassedToCall)
+                    undecided.push_back({ index, highest, passedTo });
+            }
+            if (prototype)
                 methodPrototypes.emplace(name, std::move(prototype));
         }
+        // this or a result, not read before a call: passed first as the this of a method (a result is built first: a constructor); the
+        // methods known by this round decide the next ones (3 rounds)
+        for (uint32 round = 0; round < 3 && !undecided.empty(); round++) {
+            std::vector<UndecidedMethod> left;
+            for (const auto& method : undecided) {
+                const uint64 start = functionStarts[method.index];
+                const auto label   = std::lower_bound(
+                      callsFound.begin(), callsFound.end(), codeStart + start, [](const auto& item, uint64 value) { return item.first < value; });
+                if (TakesItsThis(method.passedTo))
+                    methodPrototypes[label->second] = MakeGccMethodPrototype(label->second, method.highest, true);
+                else
+                    left.push_back(method);
+            }
+            if (left.size() == undecided.size())
+                break;
+            undecided = std::move(left);
+        }
+    }
+
+    // how the entry of a function first uses its first argument (System V: rdi): memory read / written through it (or a copy of it: mov rbx,
+    // rdi), passed in rdi to a direct call
+    enum class FirstArgumentUse : uint8 { None, Read, Write, PassedToCall };
+
+    // a function of the zone whose prototype takes its first argument as its this: a method, not a constructor / destructor (one builds
+    // the address of a result there)
+    bool TakesItsThis(uint64 target)
+    {
+        const std::string name = TargetName(target);
+        const auto* callee     = target < codeSize ? zone->FindUserPrototype(target) : nullptr;
+        if (!callee && !name.empty())
+            callee = FindApiPrototype(name);
+        if (!callee && !name.empty())
+            callee = FindMethodPrototypeByName(methodPrototypes, name);
+        return callee && !callee->params.empty() && callee->params[0].name && std::string_view(callee->params[0].name) == "this" &&
+               !IsCxxConstructorOrDestructor(callee->functionName);
+    }
+
+    // System V x64: the first use of the first argument of a function (rdi, a copy of it: mov rbx, rdi) on the path of its entry that falls
+    // through its conditional jumps, up to its first call / jmp / ret: memory read through it (an object, this: the address of a result is
+    // written before it is read), written, or passed in rdi to the first call (its target in `passedTo`)
+    FirstArgumentUse FirstUseOfFirstArgument(uint64 start, uint64 end, uint64& passedTo)
+    {
+        constexpr uint32 MAX_INSTRUCTIONS = 64;
+        constexpr int FIRST               = 7; // the family of rdi (GetX64RegisterFamily)
+        const auto data = start < end ? obj->GetData().Get(codeStart + start, static_cast<uint32>(std::min<uint64>(end - start, 0x400)), false) : BufferView{};
+        cs_insn* insn   = data.IsValid() ? cs_malloc(detailHandle) : nullptr;
+        if (!insn)
+            return FirstArgumentUse::None;
+        const uint8* bytes = data.GetData();
+        size_t size        = data.GetLength();
+        uint64 address     = start;
+        uint32 holders     = 1u << FIRST; // the families of the registers that hold it
+        std::optional<bool> reads;
+        auto use = FirstArgumentUse::None;
+        for (uint32 count = 0; count < MAX_INSTRUCTIONS && !reads.has_value() && cs_disasm_iter(detailHandle, &bytes, &size, &address, insn); count++) {
+            const auto flow = GetInstructionFlow(*insn, DissasmArch::X64);
+            if (flow == X86Flow::Call && insn->detail && (holders & (1u << FIRST)) != 0) {
+                if (const auto operands = GetInstructionOperands(*insn, DissasmArch::X64, labelBase); operands.directTarget.has_value()) {
+                    passedTo = operands.directTarget.value() & addressMask;
+                    use      = FirstArgumentUse::PassedToCall;
+                }
+                break;
+            }
+            if (flow == X86Flow::Call || flow == X86Flow::Jump || flow == X86Flow::Return || flow == X86Flow::Interrupt || insn->id == X86_INS_UD2 ||
+                insn->id == X86_INS_HLT || !insn->detail)
+                break;
+            const auto& x86 = insn->detail->x86;
+            const auto held = [&holders](unsigned int reg) {
+                const int family = GetX64RegisterFamily(reg);
+                return family >= 0 && family < 32 && (holders & (1u << family)) != 0;
+            };
+            if (insn->id != X86_INS_LEA && insn->id != X86_INS_NOP)
+                for (uint8 index = 0; index < x86.op_count && !reads.has_value(); index++)
+                    if (const auto& op = x86.operands[index]; op.type == X86_OP_MEM && op.mem.base != X86_REG_INVALID && held(op.mem.base))
+                        reads = (op.access & CS_AC_READ) != 0;
+            if (x86.op_count == 2 && x86.operands[0].type == X86_OP_REG) {
+                const int destination = GetX64RegisterFamily(x86.operands[0].reg);
+                if (destination >= 0 && destination < 32) {
+                    if (insn->id == X86_INS_MOV && x86.operands[1].type == X86_OP_REG && held(x86.operands[1].reg))
+                        holders |= 1u << destination; // a copy
+                    else if ((x86.operands[0].access & CS_AC_WRITE) != 0)
+                        holders &= ~(1u << destination);
+                }
+            }
+        }
+        cs_free(insn, 1);
+        return reads.has_value() ? (reads.value() ? FirstArgumentUse::Read : FirstArgumentUse::Write) : use;
     }
 
     // System V x64: the highest argument register (0: rdi, rsi, rdx, rcx, r8, 5: r9) the entry of a function reads before writing it, on the

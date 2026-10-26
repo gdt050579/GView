@@ -1590,6 +1590,101 @@ constexpr std::string_view PROTOTYPES[] = {
     "int key_call_socket(u_long proc, xdrproc_t xdr_arg, char* arg, xdrproc_t xdr_rslt, char* rslt)",
     "void __sfp_handle_exceptions(int _fex)",
     "struct unwind_link* __libc_unwind_link_get()",
+    // the long tail of the GNU C library (2): the public functions it calls 4 times or more without a line (readdir64, strncasecmp, getpwnam_r,
+    // regexec, the signals, the timers), the regular expressions, the conversions of the numbers, the streams, the condition variables,
+    // spawn, NSS, the resolver (their calls checked: the argument registers they set)
+    "struct dirent64* readdir64(DIR* dirp)",
+    "int strncasecmp(const char* s1, const char* s2, size_t n)",
+    "int getpwnam_r(const char* name, struct passwd* pwd, char* buf, size_t buflen, struct passwd** result)",
+    "int getpwuid_r(uid_t uid, struct passwd* pwd, char* buf, size_t buflen, struct passwd** result)",
+    "int chdir(const char* path)",
+    "ssize_t recvmsg(int sockfd, struct msghdr* msg, int flags)",
+    "int fstatfs64(int fd, struct statfs64* buf)",
+    "void tdestroy(void* root, void* free_node)",
+    "int pthread_rwlock_rdlock(pthread_rwlock_t* rwlock)",
+    "int pthread_sigmask(int how, const sigset_t* set, sigset_t* oldset)",
+    "size_t wcsrtombs(char* dest, const wchar_t** src, size_t len, mbstate_t* ps)",
+    "wint_t btowc(int c)",
+    "wchar_t* wmempcpy(wchar_t* dest, const wchar_t* src, size_t n)",
+    "int iswspace_l(wint_t wc, locale_t locale)",
+    "int ttyname_r(int fd, char* buf, size_t buflen)",
+    "char* hasmntopt(const struct mntent* mnt, const char* opt)",
+    "int setitimer(int which, const struct itimerval* new_value, struct itimerval* old_value)",
+    "unsigned int alarm(unsigned int seconds)",
+    "void freeifaddrs(struct ifaddrs* ifa)",
+    "int regexec(const regex_t* preg, const char* string, size_t nmatch, regmatch_t* pmatch, int eflags)",
+    "int sched_getscheduler(pid_t pid)",
+    "int __isoc23_sscanf(const char* str, const char* format, ...)",
+    "int ns_name_ntop(const unsigned char* src, char* dst, size_t dstsiz)",
+    "bool_t xdr_string(XDR* xdrs, char** sp, u_int maxsize)",
+    "bool_t xdr_u_int(XDR* xdrs, u_int* up)",
+    "bool_t xdr_authunix_parms(XDR* xdrs, struct authunix_parms* p)",
+    "bool_t xdrrec_endofrecord(XDR* xdrs, bool_t sendnow)",
+    "int __libc_current_sigrtmin()",
+    "int __libc_current_sigrtmax()",
+    "struct link_map* _dl_find_dso_for_object(uintptr_t addr)",
+    "int _dl_addr(const void* address, Dl_info* info, struct link_map** mapp, const void** symbolp)",
+    "Idx re_node_set_contains(const re_node_set* set, Idx elem)",
+    "unsigned int re_string_context_at(const re_string_t* input, Idx idx, int eflags)",
+    "re_dfastate_t* re_acquire_state_context(reg_errcode_t* err, const re_dfa_t* dfa, const re_node_set* nodes, unsigned int context)",
+    "re_dfastate_t* re_acquire_state(reg_errcode_t* err, const re_dfa_t* dfa, const re_node_set* nodes)",
+    "bool re_node_set_insert(re_node_set* set, Idx elem)",
+    "reg_errcode_t re_node_set_init_copy(re_node_set* dest, const re_node_set* src)",
+    "reg_errcode_t re_node_set_merge(re_node_set* dest, const re_node_set* src)",
+    "int peek_token_bracket(re_token_t* token, re_string_t* input, reg_syntax_t syntax)",
+    "unsigned long ____strtoul_l_internal(const char* nptr, char** endptr, int base, int group, bool bin_cst, locale_t loc)",
+    "long long ____strtoll_l_internal(const char* nptr, char** endptr, int base, int group, bool bin_cst, locale_t loc)",
+    "unsigned long long ____wcstoull_l_internal(const wchar_t* nptr, wchar_t** endptr, int base, int group, bool bin_cst, locale_t loc)",
+    "int __gen_tempname(char* tmpl, int suffixlen, int flags, int kind)",
+    "int __vfprintf_internal(FILE* s, const char* format, va_list ap, unsigned int mode_flags)",
+    "int __vfwprintf_internal(FILE* s, const wchar_t* format, va_list ap, unsigned int mode_flags)",
+    "int __vasprintf_internal(char** result_ptr, const char* format, va_list ap, unsigned int mode_flags)",
+    "int __vsnprintf_internal(char* string, size_t maxlen, const char* format, va_list ap, unsigned int mode_flags)",
+    "int _IO_file_close_it(FILE* fp)",
+    "off64_t _IO_seekoff_unlocked(FILE* fp, off64_t offset, int dir, int mode)",
+    "void _IO_wstr_init_static(FILE* fp, wchar_t* ptr, size_t size, wchar_t* pstart)",
+    "void _IO_doallocbuf(FILE* fp)",
+    "void _IO_setb(FILE* f, char* b, char* eb, int a)",
+    "void _IO_wsetb(FILE* f, wchar_t* b, wchar_t* eb, int a)",
+    "void _IO_un_link(struct _IO_FILE_plus* fp)",
+    "void _IO_free_backup_area(FILE* fp)",
+    "size_t _IO_getline(FILE* fp, char* buf, size_t n, int delim, int extract_delim)",
+    "int _IO_switch_to_get_mode(FILE* fp)",
+    "int __underflow(FILE* fp)",
+    "void _IO_new_file_init_internal(struct _IO_FILE_plus* fp)",
+    "void __condvar_cancel_waiting(pthread_cond_t* cond, uint64_t seq, unsigned int g, int private)",
+    "void __condvar_confirm_wakeup(pthread_cond_t* cond, int private)",
+    "int __posix_spawn_file_actions_realloc(posix_spawn_file_actions_t* file_actions)",
+    "void* __libc_allocate_once_slow(void** place, void* allocate, void* deallocate, void* closure)",
+    "int __inet_aton_exact(const char* cp, struct in_addr* inp)",
+    "void* __nss_module_get_function(struct nss_module* module, const char* name)",
+    "void __free_in6ai(struct in6addrinfo* ai)",
+    "void __nss_files_data_setent(enum nss_files_file file, const char* path)",
+    "void __nss_files_data_endent(enum nss_files_file file)",
+    "void _dl_signal_error(int errcode, const char* object, const char* occasion, const char* errstring)",
+    "void __libc_message_impl(const char* fmt, ...)",
+    "int __gconv_find_transform(const char* toset, const char* fromset, struct __gconv_step** handle, size_t* nsteps, int flags)",
+    "bool __printf_buffer_flush(struct __printf_buffer* buf)",
+    "bool __wprintf_buffer_flush(struct __wprintf_buffer* buf)",
+    "void __printf_fphex_l_buffer(struct __printf_buffer* buf, locale_t loc, const struct printf_info* info, const void* const* args)",
+    "bool __grouping_iterator_next(struct grouping_iterator* it)",
+    "void __grouping_iterator_init_none(struct grouping_iterator* it, unsigned int digits)",
+    "int __translated_number_width(locale_t loc, const char* first, const char* last)",
+    "int __libio_codecvt_encoding(struct _IO_codecvt* codecvt)",
+    "int _dlerror_run(void* operate, void* args)",
+    "struct era_entry* _nl_select_era_entry(int cnt, locale_t loc)",
+    "struct era_entry* _nl_get_era_entry(const struct tm* tp, struct __locale_data* current)",
+    "int __spawni(pid_t* pid, const char* path, const posix_spawn_file_actions_t* acts, const posix_spawnattr_t* attrp, char* const* argv, char* const* envp, int xflags)",
+    "bool __spawn_valid_fd(int fd)",
+    "int __utimensat64_helper(int fd, const char* file, const struct __timespec64* tsp, int flags)",
+    "void __netlink_assert_response(int fd, ssize_t result)",
+    "int __res_context_search(struct resolv_context* ctx, const char* name, int class, int type, unsigned char* answer, int anslen, unsigned char** answerp, unsigned char** answerp2, int* nanswerp2, int* resplen2, int* answerp2_malloced)",
+    "void __libc_setutent()",
+    "const char* __get_errname(int errnum)",
+    "char* __fd_to_filename(int descriptor, struct fd_to_filename* storage)",
+    "int __pthread_clockjoin_ex(pthread_t threadid, void** thread_return, clockid_t clockid, const struct __timespec64* abstime, bool block)",
+    "int __gconv(__gconv_t cd, const unsigned char** inbuf, const unsigned char* inbufend, unsigned char** outbuf, unsigned char* outbufend, size_t* irreversible)",
+    "void _int_free_chunk(mstate av, mchunkptr p, size_t size, int have_lock)",
     // the run-time of C++ of GCC / Clang (the Itanium ABI: the exceptions, the guards of the static locals, dynamic_cast), the locales and the
     // wide characters libstdc++ calls
     "void* __cxa_allocate_exception(size_t thrown_size)",
@@ -2706,6 +2801,12 @@ std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::ParseApi
     return prototype;
 }
 
+bool GView::View::DissasmViewer::IsCxxConstructorOrDestructor(std::string_view functionName)
+{
+    const auto scope = ScopeOfName(functionName);
+    return !scope.empty() && IsConstructorOrDestructor(functionName, scope);
+}
+
 std::optional<uint32> GView::View::DissasmViewer::GetGccMethodParameters(std::string_view name)
 {
     const auto parsed = name.find('(') != std::string_view::npos ? ParseGccMethodName(name) : std::nullopt;
@@ -2715,7 +2816,8 @@ std::optional<uint32> GView::View::DissasmViewer::GetGccMethodParameters(std::st
     return static_cast<uint32>(slots.registers.size() + slots.stack.size());
 }
 
-std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::MakeGccMethodPrototype(std::string_view name, int32 highestRead)
+std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::MakeGccMethodPrototype(
+      std::string_view name, int32 highestRead, bool readsFirstArgument)
 {
     const auto parsed = ParseGccMethodName(name);
     if (!parsed.has_value())
@@ -2758,7 +2860,7 @@ std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::MakeGccM
         details.params.push_back({ "result", unnamed.c_str() });
         text += hidden == 2 ? "void* result, " : "void* result";
     }
-    if (hidden == 2 || isConst || (!scope.empty() && returnInRegisters)) {
+    if (hidden == 2 || isConst || (!scope.empty() && (returnInRegisters || readsFirstArgument))) { // the object read: no result written first
         details.params.push_back({ "this", thisType.c_str() });
         text += thisType + " this";
     } else if (!scope.empty()) { // this, or the address of what a static method / a function of a namespace returns

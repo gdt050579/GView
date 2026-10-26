@@ -14118,3 +14118,131 @@ TEST_CASE("UserPrototypesOfCxxFunctions", "[Dissasm]Help")
         REQUIRE(name.size() <= text.size());
     }
 }
+
+TEST_CASE("GccMethodsReadingTheirObject", "[Dissasm]Help")
+{
+    // a GCC method that is not const with one argument before its parameters: this or the address of a result; its entry reads memory
+    // through it (through a copy of it) before writing there: this (a result is written first)
+    REQUIRE(std::string_view(MakeGccMethodPrototype("Foo::get(int)", 1, true)->details.params[0].name) == "this");
+    REQUIRE(std::string_view(MakeGccMethodPrototype("Foo::get(int)", 1, false)->details.params[0].name).empty());
+    REQUIRE(std::string_view(MakeGccMethodPrototype("get(int)", 1, true)->details.params[0].name) == "result"); // a function: no this
+
+    std::vector<unsigned char> file = {
+        0xBE, 0x01, 0x00, 0x00, 0x00, // 0x00: mov esi, 1                (int)
+        0x48, 0x89, 0xDF,             // 0x05: mov rdi, rbx              (this: the callee reads [rdi])
+        0xE8, 0x33, 0x00, 0x00, 0x00, // 0x08: call 0x40                 Foo::get(int)
+        0xBE, 0x02, 0x00, 0x00, 0x00, // 0x0d: mov esi, 2                (int)
+        0x48, 0x89, 0xDF,             // 0x12: mov rdi, rbx              (this: the callee reads [rax + 8], rax a copy)
+        0xE8, 0x46, 0x00, 0x00, 0x00, // 0x15: call 0x60                 Foo::copy(int)
+        0xBE, 0x03, 0x00, 0x00, 0x00, // 0x1a: mov esi, 3                (int)
+        0x48, 0x89, 0xDF,             // 0x1f: mov rdi, rbx              (not known: the callee writes [rdi] first)
+        0xE8, 0x59, 0x00, 0x00, 0x00, // 0x22: call 0x80                 Foo::make(int)
+        0xC3,                         // 0x27: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x8B, 0x07, 0x01, 0xF0, 0xC3 }); // 0x40: mov eax, dword ptr [rdi]; add eax, esi; ret
+    file.resize(0x60, 0xCC);
+    file.insert(file.end(), { 0x48, 0x89, 0xF8, 0x8B, 0x48, 0x08, 0x01, 0xF1, 0x89, 0xC8, 0xC3 }); // 0x60: mov rax, rdi; mov ecx, [rax + 8]; add ecx, esi; mov eax, ecx; ret
+    file.resize(0x80, 0xCC);
+    file.insert(file.end(), { 0x89, 0x37, 0x48, 0x89, 0xF8, 0xC3 }); // 0x80: mov dword ptr [rdi], esi; mov rax, rdi; ret
+    file.resize(0xA0, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.systemV         = true;
+    layout.functionEntries = { { 0x40, { "Foo::get(int)", 5 } }, { 0x60, { "Foo::copy(int)", 11 } }, { 0x80, { "Foo::make(int)", 6 } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000005  mov    rdi, rbx").ends_with("; this"));
+    REQUIRE(FindListingLine(listing, "0x00000012  mov    rdi, rbx").ends_with("; this"));
+    REQUIRE(FindListingLine(listing, "0x0000001f  mov    rdi, rbx").find(';') == std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0000001a  mov    esi, 3").ends_with("; int"));
+}
+
+TEST_CASE("GccMethodsPassingTheirObject", "[Dissasm]Help")
+{
+    // a GCC method that is not const with one argument before its parameters, its entry not reading it before a call: passed first as the
+    // this of a method, it is an object (this); passed to a constructor it may be the address of a result built there (not known)
+    REQUIRE(IsCxxConstructorOrDestructor("std::locale::~locale"));
+    REQUIRE(IsCxxConstructorOrDestructor("Foo::Foo<int>"));
+    REQUIRE(!IsCxxConstructorOrDestructor("Foo::get"));
+
+    std::vector<unsigned char> file = {
+        0xBE, 0x02, 0x00, 0x00, 0x00, // 0x00: mov esi, 2
+        0x48, 0x89, 0xDF,             // 0x05: mov rdi, rbx              (this: passed to Foo::get as its this)
+        0xE8, 0x53, 0x00, 0x00, 0x00, // 0x08: call 0x60                 Foo::forward(int)
+        0xBE, 0x03, 0x00, 0x00, 0x00, // 0x0d: mov esi, 3
+        0x48, 0x89, 0xDF,             // 0x12: mov rdi, rbx              (not known: passed to a constructor)
+        0xE8, 0x66, 0x00, 0x00, 0x00, // 0x15: call 0x80                 Foo::build(int)
+        0xC3,                         // 0x1a: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x8B, 0x07, 0x01, 0xF0, 0xC3 }); // 0x40: mov eax, dword ptr [rdi]; add eax, esi; ret (Foo::get: reads its object)
+    file.resize(0x60, 0xCC);
+    file.insert(file.end(), { 0x53, 0x83, 0xC6, 0x01, 0xE8, 0xD7, 0xFF, 0xFF, 0xFF, 0x5B, 0xC3 }); // 0x60: push rbx; add esi, 1; call 0x40; pop rbx; ret
+    file.resize(0x80, 0xCC);
+    file.insert(file.end(), { 0x53, 0x83, 0xC6, 0x01, 0xE8, 0x17, 0x00, 0x00, 0x00, 0x5B, 0xC3 }); // 0x80: push rbx; add esi, 1; call 0xa0; pop rbx; ret
+    file.resize(0xA0, 0xCC);
+    file.insert(file.end(), { 0x89, 0x37, 0xC3 }); // 0xa0: mov dword ptr [rdi], esi; ret (Foo::Foo(int))
+    file.resize(0xC0, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.systemV         = true;
+    layout.functionEntries = { { 0x40, { "Foo::get(int)", 5 } },
+                               { 0x60, { "Foo::forward(int)", 11 } },
+                               { 0x80, { "Foo::build(int)", 11 } },
+                               { 0xA0, { "Foo::Foo(int)", 3 } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000005  mov    rdi, rbx").ends_with("; this"));
+    REQUIRE(FindListingLine(listing, "0x00000012  mov    rdi, rbx").find(';') == std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0000000d  mov    esi, 3").ends_with("; int"));
+}
+
+TEST_CASE("GlibcLongTailPrototypes2", "[Dissasm]Help")
+{
+    // the long tail of glibc (2): public functions libc calls without a line (readdir64, getpwnam_r, regexec), the regular expressions
+    // (re_node_set_contains), the conversions of the numbers with their binary constants (____strtoul_l_internal: bin_cst), spawn, NSS
+    REQUIRE(FindApiPrototype("readdir64") != nullptr);
+    REQUIRE(FindApiPrototype("getpwnam_r")->params.size() == 5);
+    REQUIRE(FindApiPrototype("regexec")->params.size() == 5);
+    REQUIRE(FindApiPrototype("j_re_node_set_contains")->params.size() == 2);
+    REQUIRE(std::string_view(FindApiPrototype("____strtoul_l_internal")->params[4].name) == "bin_cst");
+    REQUIRE(FindApiPrototype("__spawni")->params.size() == 7);
+    REQUIRE(!GetX86StdcallPushes(*FindApiPrototype("__isoc23_sscanf")).has_value()); // variadic
+
+    std::vector<unsigned char> file;
+    const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    file.insert(file.end(), { 0x53 });             // 0x00: push rbx
+    file.insert(file.end(), { 0x89, 0xEE });       // 0x01: mov esi, ebp      (elem)
+    file.insert(file.end(), { 0x48, 0x89, 0xDF }); // 0x03: mov rdi, rbx      (set)
+    call(0x200);                                   // 0x06: call re_node_set_contains
+    file.insert(file.end(), { 0x4C, 0x89, 0xE7 }); // 0x0c: mov rdi, r12      (dirp)
+    call(0x208);                                   // 0x0f: call readdir64
+    file.insert(file.end(), { 0x5B, 0xC3 });       // 0x15: pop rbx; ret
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.systemV          = true;
+    layout.imports          = { { 0x200, { "re_node_set_contains", MemoryMappingType::FunctionMapping } },
+                                { 0x208, { "readdir64", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000001  mov    esi, ebp").ends_with("; elem"));
+    REQUIRE(FindListingLine(listing, "0x00000003  mov    rdi, rbx").ends_with("; set"));
+    REQUIRE(FindListingLine(listing, "0x0000000c  mov    rdi, r12").ends_with("; dirp"));
+}
