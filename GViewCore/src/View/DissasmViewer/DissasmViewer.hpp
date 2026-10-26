@@ -468,8 +468,8 @@ namespace View
         std::shared_ptr<const DissasmUserPrototype> ParseUserPrototype(std::string_view text);
         // a prototype of the tables (the COM methods: IWbemLocator::ConnectServer), parsed as the ones of the APIs (not strict)
         std::shared_ptr<const DissasmUserPrototype> ParseApiPrototype(std::string_view text);
-        // GCC (System V x64): a demangled C++ name that is no constructor / destructor (std::istream::ignore(long)): the number of its
-        // parameters when each takes one integer register (none: a float, a class by value, variadic, a name of MSVC)
+        // GCC (System V x64): a demangled C++ name that is no constructor / destructor (std::istream::ignore(long)): the integer registers
+        // its parameters take (a float none, std::error_code two; none known: another class by value, variadic, a name of MSVC)
         std::optional<uint32> GetGccMethodParameters(std::string_view name);
         // its prototype once the code of the function tells the highest argument register it reads (0: rdi .. 5: r9): one more than its
         // parameters (this for a const method, the address of what a function returns, else one of them), two more (that address, then
@@ -563,8 +563,8 @@ namespace View
 
             // the arguments of a known API: the names of its parameters are added to the automatic comments of the pushes placed before the call
             // the arguments of a call to a known function, on the lines prepared before it: the pushes (x86) or the instructions that write
-            // the argument registers / stack slots (x64)
-            void AnnounceCallInstruction(const AsmFunctionDetails* functionDetails, bool registerArguments);
+            // the argument registers / stack slots (x64; System V: the pushes of the arguments after the sixth)
+            void AnnounceCallInstruction(const AsmFunctionDetails* functionDetails, bool registerArguments, bool systemVPushes = false);
         };
 
         // The lines of a x86/x64 code zone in the expanded layout (every line shown, no zone collapsed): the labels and the local variable

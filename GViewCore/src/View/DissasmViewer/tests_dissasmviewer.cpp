@@ -13585,7 +13585,7 @@ TEST_CASE("CxxDemangledPrototypes", "[Dissasm]Help")
     REQUIRE(FindApiPrototype("std::basic_ios<char, std::char_traits<char> >::basic_ios(std::basic_streambuf<char, std::char_traits<char> >*)")->params.size() == 2);
     REQUIRE(FindApiPrototype("std::basic_istream<char, std::char_traits<char> >::basic_istream(std::basic_streambuf<char, std::char_traits<char> >*)")
                   ->params.size() == 1); // a virtual base: the VTT
-    REQUIRE(FindApiPrototype("Point::Point(double, int)")->params.size() == 1);
+    REQUIRE(FindApiPrototype("Point::Point(double, int)")->params.size() == 2); // the double in xmm0 (9w)
     REQUIRE(FindApiPrototype("Name::Name(std::string, int)")->params.size() == 1);
     REQUIRE(FindApiPrototype("std::locale::id::_M_id() const") == nullptr);
     REQUIRE(FindApiPrototype("std::__throw_bad_cast()") == nullptr);
@@ -13720,7 +13720,7 @@ TEST_CASE("GccMethodsByTheirCode", "[Dissasm]Help")
     REQUIRE(GetGccMethodParameters("j_std::basic_istream<char, std::char_traits<char> >& std::ws<char, std::char_traits<char> >(std::basic_istream<char, "
                                    "std::char_traits<char> >&)") == std::optional<uint32>(1));
     REQUIRE(!GetGccMethodParameters("std::locale::~locale()").has_value());         // a destructor: its name tells
-    REQUIRE(!GetGccMethodParameters("Foo::scale(double) const").has_value());       // a float: its register not an integer one
+    REQUIRE(GetGccMethodParameters("Foo::scale(double) const") == std::optional<uint32>(0)); // a float: in xmm0 (9w)
     REQUIRE(!GetGccMethodParameters("std::__throw_out_of_range_fmt(char const*, ...)").has_value()); // variadic
     REQUIRE(!GetGccMethodParameters("public: long __cdecl Foo::Bar(int)").has_value());
     REQUIRE(!GetGccMethodParameters("operator delete(void*, unsigned long)").has_value());
@@ -13785,4 +13785,180 @@ TEST_CASE("GccMethodsByTheirCode", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x0000001f  mov    edi, 7").find(';') == std::string_view::npos);
     REQUIRE(FindListingLine(listing, "0x00000029  mov    esi, 9").ends_with("; int"));
     REQUIRE(FindListingLine(listing, "0x0000002e  mov    rdi, rbx").find(';') == std::string_view::npos);
+}
+
+TEST_CASE("GccParametersByValue", "[Dissasm]Help")
+{
+    // System V: an enum of the standard library takes one integer register, a class of two eightbytes of integers two (std::error_code), a
+    // float none (xmm); another class by value, an empty tag class: the registers after it not known
+    REQUIRE(GetGccMethodParameters("Foo::scale(double) const") == std::optional<uint32>(0));
+    REQUIRE(GetGccMethodParameters("std::basic_ios<char, std::char_traits<char> >::clear(std::_Ios_Iostate)") == std::optional<uint32>(1));
+    REQUIRE(GetGccMethodParameters("Foo::check(std::error_code, int) const") == std::optional<uint32>(3));
+    REQUIRE(GetGccMethodParameters("Foo::get(std::istreambuf_iterator<char, std::char_traits<char> >, std::istreambuf_iterator<char, "
+                                   "std::char_traits<char> >, std::ios_base&, std::_Ios_Iostate&) const") == std::optional<uint32>(6));
+    REQUIRE(!GetGccMethodParameters("Foo::many(std::error_code, std::error_code, std::error_code, int)").has_value()); // 7: the stack
+    REQUIRE(!GetGccMethodParameters("Foo::tag(std::forward_iterator_tag)").has_value());
+    REQUIRE(!GetGccMethodParameters("Foo::name(std::string)").has_value());
+    const auto* systemError = FindApiPrototype("std::system_error::system_error(std::error_code, char const*)");
+    REQUIRE(systemError != nullptr);
+    REQUIRE(systemError->params.size() == 4); // this, the two eightbytes of the error_code, the text
+    REQUIRE(std::string_view(systemError->params[1].type) == "std::error_code");
+    REQUIRE(std::string_view(systemError->params[2].type).empty());
+    REQUIRE(std::string_view(systemError->params[3].type) == "char const*");
+
+    std::vector<unsigned char> file = {
+        0x53,                         // 0x00: push rbx
+        0xBE, 0x04, 0x00, 0x00, 0x00, // 0x01: mov esi, 4                (std::_Ios_Iostate)
+        0x48, 0x89, 0xDF,             // 0x06: mov rdi, rbx              (this or a result)
+        0xE8, 0x32, 0x00, 0x00, 0x00, // 0x09: call 0x40                 basic_ios::clear(std::_Ios_Iostate)
+        0xBE, 0x03, 0x00, 0x00, 0x00, // 0x0e: mov esi, 3                (int: the double in xmm0)
+        0x48, 0x89, 0xDF,             // 0x13: mov rdi, rbx              (this)
+        0xE8, 0x45, 0x00, 0x00, 0x00, // 0x16: call 0x60                 Foo::scale(double, int) const
+        0xB9, 0x07, 0x00, 0x00, 0x00, // 0x1b: mov ecx, 7                (int)
+        0x48, 0x89, 0xDA,             // 0x20: mov rdx, rbx              (the second eightbyte of the error_code)
+        0xBE, 0x02, 0x00, 0x00, 0x00, // 0x23: mov esi, 2                (std::error_code)
+        0x48, 0x89, 0xDF,             // 0x28: mov rdi, rbx              (this)
+        0xE8, 0x50, 0x00, 0x00, 0x00, // 0x2b: call 0x80                 Foo::check(std::error_code, int) const
+        0x5B,                         // 0x30: pop rbx
+        0xC3,                         // 0x31: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x89, 0x77, 0x20, 0xC3 }); // 0x40: mov dword ptr [rdi + 0x20], esi; ret
+    file.resize(0x60, 0xCC);
+    file.insert(file.end(), { 0x89, 0xF0, 0x03, 0x07, 0xC3 }); // 0x60: mov eax, esi; add eax, dword ptr [rdi]; ret
+    file.resize(0x80, 0xCC);
+    file.insert(file.end(), { 0x89, 0xC8, 0x01, 0xF0, 0x48, 0x01, 0xD0, 0x48, 0x03, 0x07, 0xC3 }); // 0x80: mov eax, ecx; add eax, esi; add rax, rdx; add rax, [rdi]; ret
+    file.resize(0xA0, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.systemV         = true;
+    layout.functionEntries = { { 0x40, { "std::basic_ios<char, std::char_traits<char> >::clear(std::_Ios_Iostate)", 4 } },
+                               { 0x60, { "Foo::scale(double, int) const", 5 } },
+                               { 0x80, { "Foo::check(std::error_code, int) const", 11 } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000001  mov    esi, 4").ends_with("; std::_Ios_Iostate"));
+    REQUIRE(FindListingLine(listing, "0x00000006  mov    rdi, rbx").find(';') == std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0000000e  mov    esi, 3").ends_with("; int"));
+    REQUIRE(FindListingLine(listing, "0x00000013  mov    rdi, rbx").ends_with("; this"));
+    REQUIRE(FindListingLine(listing, "0x0000001b  mov    ecx, 7").ends_with("; int"));
+    REQUIRE(FindListingLine(listing, "0x00000020  mov    rdx, rbx").find(';') == std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000023  mov    esi, 2").ends_with("; std::error_code"));
+    REQUIRE(FindListingLine(listing, "0x00000028  mov    rdi, rbx").ends_with("; this"));
+}
+
+TEST_CASE("GlibcLongTailPrototypes", "[Dissasm]Help")
+{
+    // the internal functions of glibc libc calls 7 times or more without a prototype (regcomp, wordexp, fnmatch, the futexes, NSS, XDR, mpn,
+    // ...), found by the names of their hidden aliases too (__GI___futex_abstimed_wait64)
+    REQUIRE(FindApiPrototype("create_token_tree") != nullptr);
+    REQUIRE(FindApiPrototype("create_token_tree")->params.size() == 4);
+    REQUIRE(FindApiPrototype("w_addmem")->params.size() == 5);
+    const auto* futex = FindApiPrototype("__GI___futex_abstimed_wait64");
+    REQUIRE(futex != nullptr);
+    REQUIRE(std::string_view(futex->functionName) == "__futex_abstimed_wait64");
+    REQUIRE(std::string_view(futex->params[2].name) == "clockid");
+    REQUIRE(FindApiPrototype("j___tunable_get_val")->params.size() == 3);
+    REQUIRE(FindApiPrototype("__nss_getent_r")->params.size() == 13);
+    REQUIRE(!GetX86StdcallPushes(*FindApiPrototype("__GI___fcntl64_nocancel")).has_value()); // variadic
+    REQUIRE(std::string_view(FindApiPrototype("internal_fnwmatch")->params[5].type) == "struct fnwmatch_struct*");
+
+    std::vector<unsigned char> file;
+    const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    file.insert(file.end(), { 0x53 });                         // 0x00: push rbx
+    file.insert(file.end(), { 0x48, 0x89, 0xE9 });             // 0x01: mov rcx, rbp      (token)
+    file.insert(file.end(), { 0x31, 0xD2 });                   // 0x04: xor edx, edx      (right)
+    file.insert(file.end(), { 0x48, 0x89, 0xDE });             // 0x06: mov rsi, rbx      (left)
+    file.insert(file.end(), { 0x4C, 0x89, 0xE7 });             // 0x09: mov rdi, r12      (dfa)
+    call(0x200);                                               // 0x0c: call create_token_tree
+    file.insert(file.end(), { 0x41, 0xB8, 0x80, 0x00, 0x00, 0x00 }); // 0x12: mov r8d, 0x80 (private)
+    file.insert(file.end(), { 0x31, 0xC9 });                   // 0x18: xor ecx, ecx      (abstime)
+    file.insert(file.end(), { 0x31, 0xD2 });                   // 0x1a: xor edx, edx      (clockid)
+    file.insert(file.end(), { 0x89, 0xC6 });                   // 0x1c: mov esi, eax      (expected)
+    file.insert(file.end(), { 0x48, 0x89, 0xDF });             // 0x1e: mov rdi, rbx      (futex_word)
+    call(0x208);                                               // 0x21: call __GI___futex_abstimed_wait64
+    file.insert(file.end(), { 0x5B, 0xC3 });                   // 0x27: pop rbx; ret
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.systemV          = true;
+    layout.imports          = { { 0x200, { "create_token_tree", MemoryMappingType::FunctionMapping } },
+                                { 0x208, { "__GI___futex_abstimed_wait64", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000001  mov    rcx, rbp").ends_with("; token"));
+    REQUIRE(FindListingLine(listing, "0x00000004  xor    edx, edx").ends_with("; right"));
+    REQUIRE(FindListingLine(listing, "0x00000009  mov    rdi, r12").ends_with("; dfa"));
+    REQUIRE(FindListingLine(listing, "0x00000012  mov    r8d, 0x80").find("; private") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0000001a  xor    edx, edx").ends_with("; clockid"));
+    REQUIRE(FindListingLine(listing, "0x0000001e  mov    rdi, rbx").ends_with("; futex_word"));
+}
+
+TEST_CASE("SystemVPushedArguments", "[Dissasm]Help")
+{
+    // System V x64: the arguments after the sixth are pushed, the last push is the seventh (push 0x82 ; nr of __syscall_cancel); the pushes
+    // before another write of rsp (sub rsp, 8, the prologue) are no arguments
+    std::vector<unsigned char> file;
+    const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    file.insert(file.end(), { 0x55 });                         // 0x00: push rbp
+    file.insert(file.end(), { 0x48, 0x89, 0xE5 });             // 0x01: mov rbp, rsp
+    file.insert(file.end(), { 0x53 });                         // 0x04: push rbx
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x08 });       // 0x05: sub rsp, 8
+    file.insert(file.end(), { 0x45, 0x31, 0xC9 });             // 0x09: xor r9d, r9d       (arg6)
+    file.insert(file.end(), { 0x45, 0x31, 0xC0 });             // 0x0c: xor r8d, r8d       (arg5)
+    file.insert(file.end(), { 0x31, 0xC9 });                   // 0x0f: xor ecx, ecx       (arg4)
+    file.insert(file.end(), { 0xBA, 0x10, 0x00, 0x00, 0x00 }); // 0x11: mov edx, 0x10      (arg3)
+    file.insert(file.end(), { 0x48, 0x89, 0xDE });             // 0x16: mov rsi, rbx       (arg2)
+    file.insert(file.end(), { 0xBF, 0x03, 0x00, 0x00, 0x00 }); // 0x19: mov edi, 3         (arg1)
+    file.insert(file.end(), { 0x68, 0x82, 0x00, 0x00, 0x00 }); // 0x1e: push 0x82          (nr)
+    call(0x200);                                               // 0x23: call __syscall_cancel
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x10 });       // 0x29: add rsp, 0x10
+    file.insert(file.end(), { 0x5B, 0x5D, 0xC3 });             // 0x2d: pop rbx; pop rbp; ret
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x55 });                         // 0x40: push rbp
+    file.insert(file.end(), { 0x48, 0x89, 0xE5 });             // 0x41: mov rbp, rsp
+    file.insert(file.end(), { 0x53 });                         // 0x44: push rbx           (no argument)
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x08 });       // 0x45: sub rsp, 8
+    file.insert(file.end(), { 0x48, 0x8D, 0x45, 0xF0 });       // 0x49: lea rax, [rbp - 0x10]
+    file.insert(file.end(), { 0x50 });                         // 0x4d: push rax           (stayon_tmp)
+    file.insert(file.end(), { 0x45, 0x31, 0xC9 });             // 0x4e: xor r9d, r9d       (stayon)
+    call(0x208);                                               // 0x51: call __nss_setent (8 parameters: the res pushed before the sub)
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x10 });       // 0x57: add rsp, 0x10
+    file.insert(file.end(), { 0x5B, 0x5D, 0xC3 });             // 0x5b: pop rbx; pop rbp; ret
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.systemV          = true;
+    layout.functionEntries  = { { 0x40, { "sub_40", 0x1e } } };
+    layout.imports          = { { 0x200, { "__syscall_cancel", MemoryMappingType::FunctionMapping } },
+                                { 0x208, { "__nss_setent", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x0000001e  push   0x82").ends_with("; nr"));
+    REQUIRE(FindListingLine(listing, "0x00000019  mov    edi, 3").ends_with("; arg1"));
+    REQUIRE(FindListingLine(listing, "0x00000004  push   rbx").find(';') == std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0000004d  push   rax").ends_with("; stayon_tmp"));
+    REQUIRE(FindListingLine(listing, "0x0000004e  xor    r9d, r9d").ends_with("; stayon"));
+    REQUIRE(FindListingLine(listing, "0x00000044  push   rbx").find(';') == std::string_view::npos);
 }

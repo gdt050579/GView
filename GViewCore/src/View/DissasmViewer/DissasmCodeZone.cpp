@@ -5240,7 +5240,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         std::array<std::optional<SlotValue>, 32> registers{};        // the frame slot a register holds: its address or its value
         std::array<const AsmFunctionDetails*, 32> returned{};         // the API whose return value a register holds
         std::array<std::optional<SlotValue>, MAX_SLOTS> stackArgs{}; // the arguments stored in the stack, by argument index
-        std::vector<std::optional<SlotValue>> pushes;                 // x86: the pushed arguments, in their order
+        std::vector<std::optional<SlotValue>> pushes;                // x86, System V x64: the pushed arguments, in their order
         std::vector<std::pair<int32, const AsmFunctionDetails*>> returnStores; // the slots whose first use is a return value stored there
         const auto slotValue = [](std::optional<int32> offset, bool isAddress) {
             return offset.has_value() ? std::optional<SlotValue>(SlotValue{ offset.value(), isAddress }) : std::nullopt;
@@ -5355,6 +5355,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     source = registers[reg];
                 else if (isX86 && index < pushes.size())
                     source = pushes[pushes.size() - 1 - index]; // the last push is the first argument
+                else if (isX64 && zone->systemVCalls && index >= 6 && index - 6 < pushes.size())
+                    source = pushes[pushes.size() - 1 - (index - 6)]; // System V: the last push is the seventh
                 if (!source.has_value() && index < MAX_SLOTS)
                     source = stackArgs[index];
                 if (!source.has_value())
@@ -5518,6 +5520,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 pushes.pop_back();
             if (isX86 && current.id == X86_INS_ADD && x86.op_count == 2 && IsRegisterOperandOf(x86, 0, X86_REG_ESP) && x86.operands[1].type == X86_OP_IMM)
                 pushes.resize(pushes.size() - std::min<size_t>(pushes.size(), static_cast<size_t>(x86.operands[1].imm) / 4));
+            if (isX64 && current.id != X86_INS_PUSH && x86.op_count >= 1 &&
+                (IsRegisterOperandOf(x86, 0, X86_REG_RSP) ||
+                 (x86.op_count == 2 && x86.operands[0].type == X86_OP_REG && IsRegisterOperandOf(x86, 1, X86_REG_RSP))))
+                pushes.clear(); // sub rsp, 8 / mov rbp, rsp of the prologue: the pushes before it are no arguments
             if (current.id == X86_INS_PUSH && x86.op_count == 1) {
                 const auto& op = x86.operands[0];
                 if (op.type == X86_OP_REG) {

@@ -1519,6 +1519,77 @@ constexpr std::string_view PROTOTYPES[] = {
     "void xdrmem_create(XDR* xdrs, const caddr_t addr, u_int size, enum xdr_op xop)",
     "char* __tzstring(const char* s)",
     "int __gconv_transliterate(struct __gconv_step* step, struct __gconv_step_data* step_data, const unsigned char* inbufstart, const unsigned char** inbufp, const unsigned char* inbufend, unsigned char** outbufstart, size_t* irreversible)",
+    // the internal functions of the GNU C library (3): the regular expressions, wordexp, fnmatch, scanf / strptime, the futexes and the locks,
+    // the collation tables, NSS, Sun RPC / XDR, the streams, mpn, malloc, the resolver (their calls checked: the argument registers they set)
+    "bin_tree_t* create_token_tree(re_dfa_t* dfa, bin_tree_t* left, bin_tree_t* right, const re_token_t* token)",
+    "int peek_token(re_token_t* token, re_string_t* input, reg_syntax_t syntax)",
+    "void free_charset(re_charset_t* cset)",
+    "char* w_addchar(char* buffer, size_t* actlen, size_t* maxlen, char ch)",
+    "char* w_addmem(char* buffer, size_t* actlen, size_t* maxlen, const char* str, size_t len)",
+    "int w_addword(wordexp_t* pwordexp, char* word)",
+    "int __futex_abstimed_wait64(unsigned int* futex_word, unsigned int expected, clockid_t clockid, const struct __timespec64* abstime, int private)",
+    "int __futex_abstimed_wait_cancelable64(unsigned int* futex_word, unsigned int expected, clockid_t clockid, const struct __timespec64* abstime, int private)",
+    "void __lll_lock_wait(int* futex, int private)",
+    "void __lll_lock_wake(int* futex, int private)",
+    "int __fcntl64_nocancel(int fd, int cmd, ...)",
+    "void __tunable_get_val(tunable_id_t id, void* valp, tunable_callback_t callback)",
+    "int32_t __collidx_table_lookup(const char* table, uint32_t wc)",
+    "uint32_t __collseq_table_lookup(const char* table, uint32_t wc)",
+    "void __wcsmbs_load_conv(struct __locale_data* new_category)",
+    "int internal_fnmatch(const char* pattern, const char* string, const char* string_end, bool no_leading_period, int flags, struct fnmatch_struct* ends)",
+    "int internal_fnwmatch(const wchar_t* pattern, const wchar_t* string, const wchar_t* string_end, bool no_leading_period, int flags, struct fnwmatch_struct* ends)",
+    "int __vfscanf_internal(FILE* s, const char* format, va_list argptr, unsigned int mode_flags)",
+    "int __vfwscanf_internal(FILE* s, const wchar_t* format, va_list argptr, unsigned int mode_flags)",
+    "char* __strptime_internal(const char* rp, const char* fmt, struct tm* tmp, void* statep, locale_t locale)",
+    "char* __strstr_generic(const char* haystack, const char* needle)",
+    "int __popcountdi2(long a)",
+    "int _nl_parse_alt_digit(const char** strp, struct __locale_data* current)",
+    "int __nss_readline(FILE* fp, char* buf, size_t len, off64_t* poffset)",
+    "int __nss_parse_line_result(FILE* fp, off64_t offset, int parse_line_result)",
+    "enum nss_status __nss_files_data_open(struct nss_files_per_file_data** pdata, enum nss_files_file file, const char* path, int* errnop, int* herrnop)",
+    "void __nss_files_data_put(struct nss_files_per_file_data* data)",
+    "void __nss_setent(const char* func_name, db_lookup_function lookup_fct, nss_action_list* nip, nss_action_list* startp, nss_action_list* last_nip, int stayon, int* stayon_tmp, int res)",
+    "void __nss_endent(const char* func_name, db_lookup_function lookup_fct, nss_action_list* nip, nss_action_list* startp, nss_action_list* last_nip, int res)",
+    "int __nss_getent_r(const char* getent_func_name, const char* setent_func_name, db_lookup_function lookup_fct, nss_action_list* nip, nss_action_list* startp, nss_action_list* last_nip, int* stayopen_tmp, int res, void* resbuf, char* buffer, size_t buflen, void** result, int* h_errnop)",
+    "void* __nss_getent(getent_r_function func, void** resbuf, char** buffer, size_t buflen, size_t* buffer_size, int* h_errnop)",
+    "bool __nss_valid_field(const char* value)",
+    "bool_t xdr_opaque_auth(XDR* xdrs, struct opaque_auth* ap)",
+    "bool_t xdr_replymsg(XDR* xdrs, struct rpc_msg* rmsg)",
+    "bool_t xdr_opaque(XDR* xdrs, caddr_t cp, u_int cnt)",
+    "void _pthread_cleanup_push(struct _pthread_cleanup_buffer* buffer, void* routine, void* arg)",
+    "void _pthread_cleanup_pop(struct _pthread_cleanup_buffer* buffer, int execute)",
+    "int __gconv_close_transform(struct __gconv_step* steps, size_t nsteps)",
+    "void __set_vma_name(void* start, size_t len, const char* name)",
+    "const char* __correctly_grouped_prefixmb(const char* begin, const char* end, const char* thousands, const char* grouping)",
+    "const wchar_t* __correctly_grouped_prefixwc(const wchar_t* begin, const wchar_t* end, wchar_t thousands, const char* grouping)",
+    "int _IO_do_write(FILE* fp, const char* data, size_t to_do)",
+    "int _IO_wdo_write(FILE* fp, const wchar_t* data, size_t to_do)",
+    "void _IO_free_wbackup_area(FILE* fp)",
+    "void _IO_str_init_static_internal(_IO_strfile* sf, char* ptr, size_t size, char* pstart)",
+    "int __pthread_tpp_change_priority(int prev_prio, int new_prio)",
+    "void* _int_malloc(mstate av, size_t bytes)",
+    "int __fxprintf_nocancel(FILE* fp, const char* fmt, ...)",
+    "int __res_context_query(struct resolv_context* ctx, const char* name, int class, int type, unsigned char* answer, int anslen, unsigned char** answerp, unsigned char** answerp2, int* nanswerp2, int* resplen2, int* answerp2_malloced)",
+    "int ns_name_unpack(const unsigned char* msg, const unsigned char* eom, const unsigned char* src, unsigned char* dst, size_t dstsiz)",
+    "void __gettext_free_exp(struct expression* exp)",
+    "unsigned long plural_eval(const struct expression* pexp, unsigned long n)",
+    "mp_limb_t __mpn_submul_1(mp_ptr res_ptr, mp_srcptr s1_ptr, mp_size_t s1_size, mp_limb_t s2_limb)",
+    "mp_limb_t __mpn_addmul_1(mp_ptr res_ptr, mp_srcptr s1_ptr, mp_size_t s1_size, mp_limb_t s2_limb)",
+    "void __mpn_impn_mul_n(mp_ptr prodp, mp_srcptr up, mp_srcptr vp, mp_size_t size, mp_ptr tspace)",
+    "int __printf_buffer_done(struct __printf_buffer* buf)",
+    "void __printf_fp_l_buffer(struct __printf_buffer* buf, locale_t loc, const struct printf_info* info, const void* const* args)",
+    "void char_buffer_add_slow(struct char_buffer* buffer, char ch)",
+    "void __pthread_unwind(__pthread_unwind_buf_t* buf)",
+    "void __libc_dynarray_at_failure(size_t size, size_t index)",
+    "void __libc_alloc_buffer_create_failure(void* start, size_t size)",
+    "int __nptl_setxid(struct xid_command* cmdp)",
+    "void __resolv_conf_put(struct resolv_conf* conf)",
+    "bool __grouping_iterator_init(struct grouping_iterator* it, int category, locale_t loc, unsigned int digits)",
+    "void* __default_morecore(ptrdiff_t increment)",
+    "void* __argp_input(const struct argp* argp, const struct argp_state* state)",
+    "int key_call_socket(u_long proc, xdrproc_t xdr_arg, char* arg, xdrproc_t xdr_rslt, char* rslt)",
+    "void __sfp_handle_exceptions(int _fex)",
+    "struct unwind_link* __libc_unwind_link_get()",
     // the run-time of C++ of GCC / Clang (the Itanium ABI: the exceptions, the guards of the static locals, dynamic_cast), the locales and the
     // wide characters libstdc++ calls
     "void* __cxa_allocate_exception(size_t thrown_size)",
@@ -2213,13 +2284,63 @@ bool IsClassByValue(std::string_view type)
     return (type.starts_with("class ") || type.starts_with("struct ") || type.starts_with("union ")) && !type.ends_with('*') && !type.ends_with('&');
 }
 
-// GCC: a parameter that takes one integer register of System V (a pointer, a reference, an integer; not a float, nor a class by value)
-bool IsIntegerRegisterParameter(std::string_view type)
+// GCC: the integer registers of System V a parameter takes: 1 for a pointer, a reference, an integer, an enum of the standard library
+// (std::_Ios_Iostate, std::align_val_t, std::filesystem::perms) or a class of one eightbyte of integers (__gnu_cxx::__normal_iterator,
+// std::chrono::time_point of a long); 2 for a class of two (std::error_code, std::istreambuf_iterator, std::basic_string_view); 0 for a
+// float (an xmm register) or a long double (the stack); -1 when not known (another class by value, an empty tag class, variadic)
+int32 SystemVIntegerRegisters(std::string_view type)
 {
     static constexpr std::string_view INTEGERS[] = { "bool",     "char",          "signed char", "unsigned char",     "wchar_t", "char8_t",
                                                      "char16_t", "char32_t",      "short",       "unsigned short",    "int",     "unsigned int",
                                                      "long",     "unsigned long", "long long",   "unsigned long long" };
-    return type.ends_with('*') || type.ends_with('&') || std::find(std::begin(INTEGERS), std::end(INTEGERS), type) != std::end(INTEGERS);
+    static constexpr std::string_view ENUMS[]    = { "std::_Ios_Iostate",
+                                                     "std::_Ios_Openmode",
+                                                     "std::_Ios_Seekdir",
+                                                     "std::_Ios_Fmtflags",
+                                                     "std::align_val_t",
+                                                     "std::ios_base::event",
+                                                     "std::memory_order",
+                                                     "std::float_round_style",
+                                                     "std::regex_constants::error_type",
+                                                     "std::regex_constants::syntax_option_type",
+                                                     "std::regex_constants::match_flag_type",
+                                                     "std::filesystem::directory_options",
+                                                     "std::filesystem::copy_options",
+                                                     "std::filesystem::perms",
+                                                     "std::filesystem::perm_options",
+                                                     "std::filesystem::file_type",
+                                                     "std::launch",
+                                                     "std::future_status",
+                                                     "std::errc",
+                                                     "std::io_errc",
+                                                     "std::future_errc",
+                                                     "std::byte",
+                                                     "__mbstate_t" };
+    if (type.ends_with('*') || type.ends_with('&') || std::find(std::begin(INTEGERS), std::end(INTEGERS), type) != std::end(INTEGERS) ||
+        std::find(std::begin(ENUMS), std::end(ENUMS), type) != std::end(ENUMS) || type.starts_with("__gnu_cxx::__normal_iterator<") ||
+        (type.starts_with("std::chrono::time_point<") && type.find("std::chrono::duration<long,") != std::string_view::npos))
+        return 1;
+    if (type == "std::error_code" || type == "std::error_condition" || type.starts_with("std::istreambuf_iterator<") ||
+        type.starts_with("std::ostreambuf_iterator<") || type.starts_with("std::basic_string_view<"))
+        return 2;
+    if (type == "float" || type == "double" || type == "long double" || type == "__float128")
+        return 0;
+    return -1;
+}
+
+// GCC: the types of the integer registers of System V the parameters take, an empty type for the second one of a class of two; none when one
+// is not known or they need more than `available` registers (the ones after it in the stack)
+std::optional<std::vector<std::string_view>> SystemVRegisterTypes(const std::vector<std::string_view>& parameters, uint32 available)
+{
+    std::vector<std::string_view> registers;
+    for (const auto parameter : parameters) {
+        const int32 taken = SystemVIntegerRegisters(parameter);
+        if (taken < 0 || registers.size() + static_cast<uint32>(taken) > available)
+            return std::nullopt;
+        for (int32 half = 0; half < taken; half++)
+            registers.push_back(half == 0 ? parameter : std::string_view());
+    }
+    return registers;
 }
 
 // the prototype a demangled C++ name tells, its parameters named by their types (IDA: ; unsigned int), null when it does not tell its
@@ -2350,10 +2471,11 @@ std::unique_ptr<DissasmUserPrototype> MakeDemangledPrototype(std::string_view na
         bool known = !className.ends_with("stream"); // a stream: the VTT of its virtual base after this
         for (const auto parameter : parameters) {
             text += ", " + std::string(parameter);
-            variadic = variadic || parameter == "...";
-            known    = known && !variadic && IsIntegerRegisterParameter(parameter); // the registers of the ones after it: not known
-            if (known)
-                kept.push_back(parameter);
+            variadic          = variadic || parameter == "...";
+            const int32 taken = variadic ? -1 : SystemVIntegerRegisters(parameter);
+            known             = known && taken >= 0 && kept.size() + static_cast<size_t>(taken) < 6; // the registers of the ones after it: not known
+            for (int32 half = 0; known && half < taken; half++)
+                kept.push_back(half == 0 ? parameter : std::string_view()); // a class of two eightbytes: its second register without a type
         }
     }
     for (const auto parameter : kept)
@@ -2386,11 +2508,12 @@ const AsmFunctionDetails* FindDemangledPrototype(std::string_view name)
 
 // GCC: a demangled name that is no constructor / destructor, operator new / delete or name of MSVC (GetGccMethodParameters): the function
 // (after the return type of a template: std::basic_istream<char, ...>& std::ws<char, ...>(...)), the qualifiers after its parameters, the
-// parameters (each in one integer register of System V, 6 at most)
+// parameters, the types of the integer registers of System V they take (SystemVRegisterTypes, 6 at most)
 struct GccMethodName {
     std::string_view functionName;
     std::string_view qualifiers;
     std::vector<std::string_view> parameters;
+    std::vector<std::string_view> registers;
 };
 
 std::optional<GccMethodName> ParseGccMethodName(std::string_view name)
@@ -2430,23 +2553,26 @@ std::optional<GccMethodName> ParseGccMethodName(std::string_view name)
         else if (head[index] == ' ' && depth == 0)
             nameStart = index + 1;
     }
-    GccMethodName parsed{ head.substr(nameStart), name.substr(close + 1), SplitDemangledParameters(name.substr(open + 1, close - open - 1)) };
+    GccMethodName parsed{ head.substr(nameStart), name.substr(close + 1), SplitDemangledParameters(name.substr(open + 1, close - open - 1)), {} };
     if (const auto scope = ScopeOfName(parsed.functionName); !scope.empty() && IsConstructorOrDestructor(parsed.functionName, scope))
         return std::nullopt; // MakeDemangledPrototype
-    if (parsed.functionName.empty() || parsed.parameters.size() > 6 ||
-        std::any_of(parsed.parameters.begin(), parsed.parameters.end(), [](std::string_view parameter) { return !IsIntegerRegisterParameter(parameter); }))
-        return std::nullopt; // a float, a class by value, ...: the registers after it not known
+    auto registers = SystemVRegisterTypes(parsed.parameters, 6);
+    if (parsed.functionName.empty() || !registers.has_value())
+        return std::nullopt; // a class by value, variadic, ...: the registers after it not known
+    parsed.registers = std::move(registers.value());
     return parsed;
 }
 } // namespace
 
 const AsmFunctionDetails* GView::View::DissasmViewer::FindApiPrototype(std::string_view name)
 {
-    // the import / thunk prefixes (the forwarders of the UCRT: _o__wcsicmp is _wcsicmp), the version / PLT / stdcall suffixes (as
+    // the import / thunk prefixes (the forwarders of the UCRT: _o__wcsicmp is _wcsicmp; the hidden aliases of glibc: __GI___fcntl64_nocancel),
+    // the version / PLT / stdcall suffixes (as
     // IsNoReturnFunctionName)
     for (bool stripped = true; stripped;) {
         stripped = false;
-        for (const std::string_view prefix : { std::string_view("__imp_"), std::string_view("_imp__"), std::string_view("j_"), std::string_view("_o_") })
+        for (const std::string_view prefix :
+             { std::string_view("__imp_"), std::string_view("_imp__"), std::string_view("j_"), std::string_view("_o_"), std::string_view("__GI_") })
             if (name.size() > prefix.size() && name.starts_with(prefix)) {
                 name.remove_prefix(prefix.size());
                 stripped = true;
@@ -2518,7 +2644,7 @@ std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::ParseApi
 std::optional<uint32> GView::View::DissasmViewer::GetGccMethodParameters(std::string_view name)
 {
     const auto parsed = name.find('(') != std::string_view::npos ? ParseGccMethodName(name) : std::nullopt;
-    return parsed.has_value() ? std::optional<uint32>(static_cast<uint32>(parsed->parameters.size())) : std::nullopt;
+    return parsed.has_value() ? std::optional<uint32>(static_cast<uint32>(parsed->registers.size())) : std::nullopt;
 }
 
 std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::MakeGccMethodPrototype(std::string_view name, int32 highestRead)
@@ -2528,7 +2654,7 @@ std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::MakeGccM
         return nullptr;
     // the arguments before its parameters: 1 is this for a const method, the address of what it returns for a function without a scope,
     // else either (a static method / a function of a namespace returning a class); 2 are that address, then this
-    const int32 hidden           = highestRead + 1 - static_cast<int32>(parsed->parameters.size());
+    const int32 hidden           = highestRead + 1 - static_cast<int32>(parsed->registers.size());
     const std::string_view scope = ScopeOfName(parsed->functionName);
     const bool isConst           = parsed->qualifiers.find("const") != std::string_view::npos;
     if (hidden < 1 || hidden > 2 || (scope.empty() && (hidden == 2 || isConst)))
@@ -2551,10 +2677,10 @@ std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::MakeGccM
         details.params.push_back({ unnamed.c_str(), unnamed.c_str() });
         text += "a1";
     }
-    for (const auto parameter : parsed->parameters) {
-        details.params.push_back({ unnamed.c_str(), prototype->strings.emplace_back(parameter).c_str() });
+    for (const auto type : parsed->registers) // a float takes none, a class of two eightbytes two (the second without a type)
+        details.params.push_back({ unnamed.c_str(), prototype->strings.emplace_back(type).c_str() });
+    for (const auto parameter : parsed->parameters)
         text += ", " + std::string(parameter);
-    }
     details.prototype    = prototype->strings.emplace_back(text + ")" + std::string(parsed->qualifiers));
     details.functionName = prototype->strings.emplace_back(parsed->functionName);
     return prototype;

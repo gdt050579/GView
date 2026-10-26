@@ -1807,7 +1807,7 @@ static const char* ArgumentText(const AsmFunctionDetails::NameType& parameter)
     return parameter.type && parameter.type[0] ? parameter.type : nullptr;
 }
 
-void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* functionDetails, bool registerArguments)
+void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* functionDetails, bool registerArguments, bool systemVPushes)
 {
     // the lines prepared so far (above the call); the call line itself is not added yet
     if (cachedAsmLines.empty())
@@ -1849,12 +1849,20 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* f
         constexpr uint32 MAX_ARGUMENTS     = 20;
         bool named[MAX_ARGUMENTS]          = {};
         uint32 remaining                   = std::min(paramsCount, MAX_ARGUMENTS);
+        // System V: the arguments after the sixth are pushed, the last push the seventh (push 0x82 ; nr of __syscall_cancel); another write of
+        // rsp before them (sub rsp, 8 aligning them, the prologue) ends them
+        uint8 pushedSlot = systemVPushes ? 6 : MAX_ARGUMENTS;
         for (auto it = cachedAsmLines.rbegin(); it != cachedAsmLines.rend() && remaining; ++it) {
             const auto kind = static_cast<X86InstructionKind>(it->instructionKind);
             if (startingLine - it->currentLine > MAX_LINE_DIFF_X64 || it->size == 0 || (it->flags & DissasmAsmPreCacheLine::InstructionFlag::CallFlag) ||
                 kind == X86InstructionKind::Call || kind == X86InstructionKind::Jump || kind == X86InstructionKind::Return)
                 break;
-            const uint8 slot = it->argumentSlot;
+            uint8 slot                      = it->argumentSlot;
+            const std::string_view operands = it->op_str ? std::string_view(it->op_str, it->op_str_size) : std::string_view();
+            if (it->flags == DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
+                slot = pushedSlot < MAX_ARGUMENTS ? pushedSlot++ : DissasmAsmPreCacheLine::NO_ARGUMENT;
+            else if (operands.starts_with("rsp, ") || operands == "rbp, rsp")
+                pushedSlot = MAX_ARGUMENTS;
             if (slot >= paramsCount || slot >= MAX_ARGUMENTS || named[slot])
                 continue;
             named[slot] = true;
