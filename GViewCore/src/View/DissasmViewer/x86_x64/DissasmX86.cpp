@@ -994,8 +994,10 @@ static void AnnounceKnownFunctionCall(DissasmInsnExtractLineParams& params, cons
 {
     if (params.asmData->functions.empty() || !details)
         return;
-    // x64 / ARM: the registers; x86: the pushes and mov [esp + n]
-    params.zone->asmPreCacheData.AnnounceCallInstruction(details, params.zone->Is64BitCode() || params.zone->IsArmCode(), params.zone->systemVCalls);
+    // x64 / ARM: the registers; x86: the pushes and mov [esp + n]; the arguments after a format on x86 / x64 (not ARM: Apple passes the
+    // variadic ones of ARM64 in the stack)
+    params.zone->asmPreCacheData.AnnounceCallInstruction(
+          details, params.zone->Is64BitCode() || params.zone->IsArmCode(), params.zone->systemVCalls, !params.zone->IsArmCode());
 }
 
 static void AnnounceKnownFunctionCall(DissasmInsnExtractLineParams& params, std::string_view functionName)

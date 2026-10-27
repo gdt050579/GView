@@ -572,8 +572,10 @@ namespace View
 
             // the arguments of a known API: the names of its parameters are added to the automatic comments of the pushes placed before the call
             // the arguments of a call to a known function, on the lines prepared before it: the pushes (x86) or the instructions that write
-            // the argument registers / stack slots (x64; System V: the pushes of the arguments after the sixth)
-            void AnnounceCallInstruction(const AsmFunctionDetails* functionDetails, bool registerArguments, bool systemVPushes = false);
+            // the argument registers / stack slots (x64; System V: the pushes of the arguments after the sixth); `formatArguments`: the arguments
+            // after the format of a variadic function too (x86 / x64), by the conversions of the string it shows
+            void AnnounceCallInstruction(
+                  const AsmFunctionDetails* functionDetails, bool registerArguments, bool systemVPushes = false, bool formatArguments = false);
         };
 
         // The lines of a x86/x64 code zone in the expanded layout (every line shown, no zone collapsed): the labels and the local variable

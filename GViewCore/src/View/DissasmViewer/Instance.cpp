@@ -1807,7 +1807,118 @@ static const char* ArgumentText(const AsmFunctionDetails::NameType& parameter)
     return parameter.type && parameter.type[0] ? parameter.type : nullptr;
 }
 
-void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* functionDetails, bool registerArguments, bool systemVPushes)
+// a variadic function whose last fixed parameter is its format (printf, DbgPrintEx: format, Format, pszFormat, fmt, lpFmt)
+static bool HasFormatArguments(const AsmFunctionDetails& function)
+{
+    if (function.params.empty() || !function.prototype.ends_with("...)") || !function.params.back().name)
+        return false;
+    const std::string_view name = function.params.back().name;
+    return name.find("ormat") != std::string_view::npos || name.find("mt") != std::string_view::npos;
+}
+
+// the arguments a format string passes after it (printf, DbgPrintEx, scanf): one text per argument slot, the conversion that takes it (%s,
+// %08x, the width / precision of %*.*d); an empty text for a slot without a name (the high half of a value of 8 bytes in 32 bit code:
+// %I64x, %lld, %f); none for a double of System V (an xmm register), for the %m of glibc. scanf: %*d assigns nothing, %[a-z] takes a
+// buffer. The texts up to a conversion it does not know (a long double, an unknown letter, the end of a shortened string); none for a
+// positional one (%1$s)
+static std::vector<std::string> GetFormatArgumentTexts(std::string_view format, bool scanf, bool slotsOf4Bytes, bool floatsInXmm)
+{
+    std::vector<std::string> texts;
+    const auto isDigit = [&format](size_t index) { return index < format.size() && format[index] >= '0' && format[index] <= '9'; };
+    for (size_t index = 0; index < format.size(); index++) {
+        if (format[index] != '%')
+            continue;
+        const size_t start = index++;
+        if (index < format.size() && format[index] == '%')
+            continue; // %%
+        size_t digits = index;
+        while (isDigit(digits))
+            digits++;
+        if (digits > index && digits < format.size() && format[digits] == '$')
+            return {}; // %1$s: the arguments are not in the order of the conversions
+        bool suppressed = false, starWidth = false, starPrecision = false;
+        if (scanf && index < format.size() && format[index] == '*') {
+            suppressed = true;
+            index++;
+        }
+        while (index < format.size() && std::string_view("-+ #0'").find(format[index]) != std::string_view::npos)
+            index++;
+        if (!scanf && index < format.size() && format[index] == '*') {
+            starWidth = true;
+            index++;
+        }
+        while (isDigit(index))
+            index++;
+        if (!scanf && index < format.size() && format[index] == '.') {
+            index++;
+            if (index < format.size() && format[index] == '*') {
+                starPrecision = true;
+                index++;
+            }
+            while (isDigit(index))
+                index++;
+        }
+        // the size: 8 bytes in 32 bit code for %I64d, %lld, %qd, %jd (scanf: a pointer whatever it is)
+        const std::string_view rest = format.substr(index);
+        bool eightBytes             = false;
+        if (rest.starts_with("I64") || rest.starts_with("I32") || rest.starts_with("ll") || rest.starts_with("hh")) {
+            eightBytes = rest.starts_with("I64") || rest.starts_with("ll");
+            index += rest.starts_with("ll") || rest.starts_with("hh") ? 2 : 3;
+        } else if (!rest.empty() && std::string_view("hlLqjztIw").find(rest[0]) != std::string_view::npos) {
+            if (rest[0] == 'L')
+                return texts; // a long double (12 bytes in 32 bit code, the stack of System V)
+            eightBytes = rest[0] == 'q' || rest[0] == 'j';
+            index++;
+        }
+        if (index >= format.size())
+            return texts; // the string is shortened there
+        const char conversion = format[index];
+        if (!scanf && conversion == 'm') // glibc: the text of errno, no argument
+            continue;
+        if (scanf && conversion == '[') { // a set: %[^]a-z]
+            size_t close = index + 1;
+            if (close < format.size() && format[close] == '^')
+                close++;
+            close = format.find(']', close + 1);
+            if (close == std::string_view::npos)
+                return texts;
+            index = close;
+        } else if (std::string_view("diouxXeEfFgGaAcCsSpnZ").find(conversion) == std::string_view::npos) {
+            return texts;
+        }
+        const std::string spec(format.substr(start, index + 1 - start));
+        if (suppressed)
+            continue;
+        if (starWidth)
+            texts.push_back("width of " + spec);
+        if (starPrecision)
+            texts.push_back("precision of " + spec);
+        const bool isFloat = !scanf && std::string_view("eEfFgGaA").find(conversion) != std::string_view::npos;
+        if (isFloat && floatsInXmm)
+            continue;
+        texts.push_back(spec);
+        if (slotsOf4Bytes && !scanf && (eightBytes || isFloat))
+            texts.emplace_back(); // the high half of the value
+    }
+    return texts;
+}
+
+// the text of the format a line passes: the string it shows ("%s: %d", L"%ws"), without its quotes; empty for another comment
+static std::string_view GetShownFormat(const DissasmAsmPreCacheLine& line)
+{
+    std::string_view text = line.autoComment;
+    if (text.starts_with("L\""))
+        text.remove_prefix(1);
+    if (text.size() < 2 || text.front() != '"' || text.back() != '"')
+        return {};
+    text = text.substr(1, text.size() - 2);
+    if (text.ends_with("...")) // shortened: its last conversion may be cut
+        text.remove_suffix(3);
+    return text;
+}
+
+void DissasmAsmPreCacheData::AnnounceCallInstruction(
+      const AsmFunctionDetails* functionDetails, bool registerArguments, bool systemVPushes, bool formatArguments)
 {
     // the lines prepared so far (above the call); the call line itself is not added yet
     if (cachedAsmLines.empty())
@@ -1841,35 +1952,71 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* f
     };
     const uint32 startingLine = cachedAsmLines.back().currentLine;
     const auto paramsCount    = static_cast<uint32>(functionDetails->params.size());
+    // beyond IDA (its decompiler does it): the arguments after a format (printf, DbgPrintEx, scanf) named by the conversions of the string
+    // the format line shows (; %s, ; %08x, ; width of %*d); the lines of the slots after the format are kept until it is read
+    constexpr uint32 MAX_FORMAT_ARGUMENTS = 16;
+    const bool hasFormat                  = formatArguments && HasFormatArguments(*functionDetails);
+    std::string format;
+    std::vector<DissasmAsmPreCacheLine*> formatArgumentLines(hasFormat ? MAX_FORMAT_ARGUMENTS : 0, nullptr);
+    const auto nameFormatArguments = [&](bool slotsOf4Bytes, bool floatsInXmm) {
+        if (format.empty())
+            return;
+        const auto texts = GetFormatArgumentTexts(format, functionDetails->functionName.find("scanf") != std::string_view::npos, slotsOf4Bytes, floatsInXmm);
+        for (size_t index = 0; index < texts.size() && index < formatArgumentLines.size(); index++)
+            if (formatArgumentLines[index] && !texts[index].empty())
+                nameArgument(*formatArgumentLines[index], texts[index].c_str());
+    };
 
     if (registerArguments) {
         // x64: the last instruction before the call that writes an argument register / stack slot gives that argument; the search stops
-        // at the start of the block (a label, another call, a jmp or ret); a conditional jump continues into the call
+        // at another call, a jmp or ret, a label that the code before it does not fall into; a conditional jump continues into the call
         constexpr uint32 MAX_LINE_DIFF_X64 = 24;
         constexpr uint32 MAX_ARGUMENTS     = 20;
         bool named[MAX_ARGUMENTS]          = {};
-        uint32 remaining                   = std::min(paramsCount, MAX_ARGUMENTS);
+        const uint32 slotsCount            = std::min(paramsCount + static_cast<uint32>(formatArgumentLines.size()), MAX_ARGUMENTS);
+        uint32 remaining                   = slotsCount;
         // System V: the arguments after the sixth are pushed, the last push the seventh (push 0x82 ; nr of __syscall_cancel); another write of
         // rsp before them (sub rsp, 8 aligning them, the prologue) ends them
         uint8 pushedSlot = systemVPushes ? 6 : MAX_ARGUMENTS;
+        bool afterLabel  = false; // a location passed: the instruction before it must fall into it
         for (auto it = cachedAsmLines.rbegin(); it != cachedAsmLines.rend() && remaining; ++it) {
             const auto kind = static_cast<X86InstructionKind>(it->instructionKind);
-            if (startingLine - it->currentLine > MAX_LINE_DIFF_X64 || it->size == 0 || (it->flags & DissasmAsmPreCacheLine::InstructionFlag::CallFlag) ||
+            if (startingLine - it->currentLine > MAX_LINE_DIFF_X64 || (it->flags & DissasmAsmPreCacheLine::InstructionFlag::CallFlag) ||
                 kind == X86InstructionKind::Call || kind == X86InstructionKind::Jump || kind == X86InstructionKind::Return)
                 break;
+            if (it->size == 0) {
+                // a location the code before it falls into (loc_, the target of other jumps too): the arguments written before it reach the
+                // call on that path (IDA names them there); not a function, a variable line, a collapsed zone
+                if (it->isCollapsedLine || it->localVariableKind != DissasmAsmPreCacheLine::LocalVariableKind::None || !it->label.starts_with("loc_"))
+                    break;
+                afterLabel = true;
+                continue;
+            }
+            if (afterLabel && kind != X86InstructionKind::Other && kind != X86InstructionKind::Compare && kind != X86InstructionKind::Stack &&
+                kind != X86InstructionKind::ConditionalJump)
+                break; // padding (align, int3, nop), data, ud2 / hlt before the location: nothing falls into it
+            afterLabel                      = false;
             uint8 slot                      = it->argumentSlot;
             const std::string_view operands = it->op_str ? std::string_view(it->op_str, it->op_str_size) : std::string_view();
             if (it->flags == DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
                 slot = pushedSlot < MAX_ARGUMENTS ? pushedSlot++ : DissasmAsmPreCacheLine::NO_ARGUMENT;
             else if (operands.starts_with("rsp, ") || operands == "rbp, rsp")
                 pushedSlot = MAX_ARGUMENTS;
-            if (slot >= paramsCount || slot >= MAX_ARGUMENTS || named[slot])
+            if (slot >= slotsCount || named[slot])
                 continue;
             named[slot] = true;
             remaining--;
+            if (slot >= paramsCount) {
+                formatArgumentLines[slot - paramsCount] = &*it;
+                continue;
+            }
+            // the text of the format, read before its name is added to the line
+            if (hasFormat && slot + 1 == paramsCount)
+                format = GetShownFormat(*it);
             if (const char* text = ArgumentText(functionDetails->params[slot])) // not a parameter an inferred prototype does not know
                 nameArgument(*it, text);
         }
+        nameFormatArguments(false, systemVPushes);
         return;
     }
 
@@ -1895,7 +2042,8 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* f
                 nameArgument(*it, "this");
             break;
         }
-    uint32 pushIndex = 0, remaining = paramsCount;
+    const uint32 slotsCount = paramsCount + static_cast<uint32>(formatArgumentLines.size());
+    uint32 pushIndex = 0, remaining = slotsCount;
     uint32 taken           = 0;     // the pushes found later that a pop / add esp / a call took (they are not arguments of this call)
     bool cleanedUpAfter    = false; // the call met next (walking back) is a cdecl one: its pushes are counted by its clean up
     const auto calleeName  = [](const DissasmAsmPreCacheLine& line) -> std::string_view {
@@ -1909,7 +2057,7 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* f
             start--;
         return operands.substr(start);
     };
-    std::vector<bool> named(paramsCount, false);
+    std::vector<bool> named(slotsCount, false);
     for (auto it = cachedAsmLines.rbegin(); it != cachedAsmLines.rend() && remaining; ++it) {
         if (startingLine - it->currentLine > MAX_LINE_DIFF)
             break;
@@ -1951,7 +2099,7 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* f
                 continue;
             }
         }
-        uint32 slot = paramsCount;
+        uint32 slot = slotsCount;
         if (it->flags == DissasmAsmPreCacheLine::InstructionFlag::PushFlag) {
             if (taken > 0) {
                 taken--; // an argument of a call made in between
@@ -1960,13 +2108,21 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* f
             slot = pushIndex++;
         } else if (it->argumentSlot != DissasmAsmPreCacheLine::NO_ARGUMENT)
             slot = it->argumentSlot;
-        if (slot >= paramsCount || named[slot])
+        if (slot >= slotsCount || named[slot])
             continue;
         named[slot] = true;
         remaining--;
+        if (slot >= paramsCount) {
+            formatArgumentLines[slot - paramsCount] = &*it;
+            continue;
+        }
+        // the text of the format, read before its name is added to the line
+        if (hasFormat && slot + 1 == paramsCount)
+            format = GetShownFormat(*it);
         if (const char* text = ArgumentText(functionDetails->params[slot]))
             nameArgument(*it, text);
     }
+    nameFormatArguments(true, false); // the values of 8 bytes take two pushes, the doubles too
 }
 
 void Instance::ProcessSpaceKey(bool goToEntryPoint)

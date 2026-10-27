@@ -14246,3 +14246,189 @@ TEST_CASE("GlibcLongTailPrototypes2", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x00000003  mov    rdi, rbx").ends_with("; set"));
     REQUIRE(FindListingLine(listing, "0x0000000c  mov    rdi, r12").ends_with("; dirp"));
 }
+
+TEST_CASE("GlibcLongTailPrototypes3", "[Dissasm]Help")
+{
+    // the long tail of glibc (3): public functions libc calls without a line (getdents64, getnameinfo), the internals of the threads
+    // (__futex_lock_pi64 through its hidden alias), the scratch buffers, wordexp, the resolver (past the six registers), argp
+    REQUIRE(FindApiPrototype("getdents64")->params.size() == 3);
+    REQUIRE(FindApiPrototype("getnameinfo")->params.size() == 7);
+    REQUIRE(FindApiPrototype("__GI___futex_lock_pi64")->params.size() == 4);
+    REQUIRE(std::string_view(FindApiPrototype("__libc_alloc_buffer_alloc_array")->params[3].name) == "count");
+    REQUIRE(FindApiPrototype("parse_dollars")->params.size() == 10);
+    REQUIRE(FindApiPrototype("__res_context_send")->params.size() == 12);
+    REQUIRE(!GetX86StdcallPushes(*FindApiPrototype("argp_error")).has_value()); // variadic
+
+    std::vector<unsigned char> file;
+    const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    file.insert(file.end(), { 0x53 });             // 0x00: push rbx
+    file.insert(file.end(), { 0x4C, 0x89, 0xE9 }); // 0x01: mov rcx, r13      (count)
+    file.insert(file.end(), { 0x48, 0x89, 0xEA }); // 0x04: mov rdx, rbp      (align)
+    file.insert(file.end(), { 0x4C, 0x89, 0xE6 }); // 0x07: mov rsi, r12      (size)
+    file.insert(file.end(), { 0x48, 0x89, 0xDF }); // 0x0a: mov rdi, rbx      (buf)
+    call(0x200);                                   // 0x0d: call __libc_alloc_buffer_alloc_array
+    file.insert(file.end(), { 0x4C, 0x89, 0xF2 }); // 0x13: mov rdx, r14      (length)
+    file.insert(file.end(), { 0x4C, 0x89, 0xFE }); // 0x16: mov rsi, r15      (buffer)
+    file.insert(file.end(), { 0x89, 0xDF });       // 0x19: mov edi, ebx      (fd)
+    call(0x208);                                   // 0x1b: call getdents64
+    file.insert(file.end(), { 0x5B, 0xC3 });       // 0x21: pop rbx; ret
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.systemV          = true;
+    layout.imports          = { { 0x200, { "__libc_alloc_buffer_alloc_array", MemoryMappingType::FunctionMapping } },
+                                { 0x208, { "getdents64", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000001  mov    rcx, r13").ends_with("; count"));
+    REQUIRE(FindListingLine(listing, "0x00000004  mov    rdx, rbp").ends_with("; align"));
+    REQUIRE(FindListingLine(listing, "0x00000007  mov    rsi, r12").ends_with("; size"));
+    REQUIRE(FindListingLine(listing, "0x0000000a  mov    rdi, rbx").ends_with("; buf"));
+    REQUIRE(FindListingLine(listing, "0x00000013  mov    rdx, r14").ends_with("; length"));
+    REQUIRE(FindListingLine(listing, "0x00000016  mov    rsi, r15").ends_with("; buffer"));
+    REQUIRE(FindListingLine(listing, "0x00000019  mov    edi, ebx").ends_with("; fd"));
+}
+
+TEST_CASE("ArgumentsBeforeALocation", "[Dissasm]Help")
+{
+    // the arguments of a call written before a location that the code falls into (the target of a jump too): named there, after the
+    // writes of the block of the call; not past a location that the instruction before does not fall into (ud2)
+    std::vector<unsigned char> file;
+    const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    file.insert(file.end(), { 0x53 });             // 0x00: push rbx
+    file.insert(file.end(), { 0x45, 0x85, 0xC0 }); // 0x01: test r8d, r8d
+    file.insert(file.end(), { 0x74, 0x08 });       // 0x04: je loc_E
+    file.insert(file.end(), { 0x48, 0x89, 0xD9 }); // 0x06: mov rcx, rbx      (hModule, before the location)
+    file.insert(file.end(), { 0x48, 0x89, 0xF2 }); // 0x09: mov rdx, rsi      (written again in the block of the call)
+    file.insert(file.end(), { 0x31, 0xC0 });       // 0x0c: xor eax, eax
+    file.insert(file.end(), { 0x48, 0x89, 0xFA }); // 0x0e: loc_E: mov rdx, rdi (lpProcName)
+    call(0x200);                                   // 0x11: call GetProcAddress
+    file.insert(file.end(), { 0x48, 0x89, 0xC1 }); // 0x17: mov rcx, rax      (before ud2: not named)
+    file.insert(file.end(), { 0x85, 0xC0 });       // 0x1a: test eax, eax
+    file.insert(file.end(), { 0x75, 0x02 });       // 0x1c: jne loc_20
+    file.insert(file.end(), { 0x0F, 0x0B });       // 0x1e: ud2
+    call(0x208);                                   // 0x20: loc_20: call CloseHandle
+    file.insert(file.end(), { 0x5B, 0xC3 });       // 0x26: pop rbx; ret
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "GetProcAddress", MemoryMappingType::FunctionMapping } },
+                                { 0x208, { "CloseHandle", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000006  mov    rcx, rbx").ends_with("; hModule"));
+    REQUIRE(FindListingLine(listing, "0x00000009  mov    rdx, rsi").ends_with("rsi"));
+    REQUIRE(FindListingLine(listing, "0x0000000e  mov    rdx, rdi").ends_with("; lpProcName"));
+    REQUIRE(FindListingLine(listing, "0x00000017  mov    rcx, rax").ends_with("rax"));
+    REQUIRE(listing.find("\nloc_E:") != std::string::npos);
+    REQUIRE(listing.find("\nloc_20:") != std::string::npos);
+}
+
+TEST_CASE("FormatArgumentsOfVariadicCalls", "[Dissasm]Help")
+{
+    // the arguments after the format of a variadic call named by the conversions of the string it shows: System V (a double in xmm takes
+    // no register, the width / precision of a star), Windows x64 (the stack slots after r9), scanf (%*d assigns nothing)
+    const auto call = [](std::vector<unsigned char>& file, uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    const auto leaRdx = [](std::vector<unsigned char>& file, uint32 address) { // lea rdx, [rip + address - next]
+        const uint32 displacement = address - static_cast<uint32>(file.size() + 7);
+        file.insert(file.end(), { 0x48, 0x8D, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    const auto addString = [](std::vector<unsigned char>& file, uint32 address, std::string_view text) {
+        file.resize(address, 0xCC);
+        file.insert(file.end(), text.begin(), text.end());
+        file.push_back(0);
+    };
+    {
+        std::vector<unsigned char> file;
+        file.insert(file.end(), { 0x53 });                         // 0x00: push rbx
+        file.insert(file.end(), { 0x4C, 0x89, 0xE9 });             // 0x01: mov rcx, r13      (%s)
+        file.insert(file.end(), { 0x4D, 0x89, 0xF0 });             // 0x04: mov r8, r14       (precision of %.*s)
+        file.insert(file.end(), { 0x4D, 0x89, 0xF9 });             // 0x07: mov r9, r15       (%.*s)
+        leaRdx(file, 0x240);                                       // 0x0a: lea rdx, "%s %.*s %f" (format)
+        file.insert(file.end(), { 0xBE, 0x40, 0x00, 0x00, 0x00 }); // 0x11: mov esi, 0x40     (count)
+        file.insert(file.end(), { 0x48, 0x89, 0xDF });             // 0x16: mov rdi, rbx      (buffer)
+        file.insert(file.end(), { 0xB8, 0x01, 0x00, 0x00, 0x00 }); // 0x19: mov eax, 1        (the xmm registers used)
+        call(file, 0x200);                                         // 0x1e: call snprintf
+        file.insert(file.end(), { 0x4C, 0x89, 0xE2 });             // 0x24: mov rdx, r12      (%d: %*d assigns nothing)
+        file.insert(file.end(), { 0x48, 0x8D, 0x35 });             // 0x27: lea rsi, "%*d %d" (format)
+        for (const unsigned char byte : { 0x22, 0x02, 0x00, 0x00 }) // 0x250 - 0x2e
+            file.push_back(byte);
+        file.insert(file.end(), { 0x48, 0x89, 0xDF });             // 0x2e: mov rdi, rbx      (buffer)
+        call(file, 0x208);                                         // 0x31: call sscanf
+        file.insert(file.end(), { 0x5B, 0xC3 });                   // 0x37: pop rbx; ret
+        addString(file, 0x240, "%s %.*s %f");
+        addString(file, 0x250, "%*d %d");
+        file.resize(0x280, 0xCC);
+        ZoneLayout layout;
+        layout.size             = 0x200;
+        layout.entryPoint       = 0;
+        layout.language         = DisassemblyLanguage::x64;
+        layout.translateOffsets = true;
+        layout.systemV          = true;
+        layout.imports          = { { 0x200, { "snprintf", MemoryMappingType::FunctionMapping } },
+                                    { 0x208, { "sscanf", MemoryMappingType::FunctionMapping } } };
+        DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+        const std::string listing = dissasmInstance.GetListing();
+        INFO(listing);
+        REQUIRE(FindListingLine(listing, "0x00000001  mov    rcx, r13").ends_with("; %s"));
+        REQUIRE(FindListingLine(listing, "0x00000004  mov    r8, r14").ends_with("; precision of %.*s"));
+        REQUIRE(FindListingLine(listing, "0x00000007  mov    r9, r15").ends_with("; %.*s"));
+        REQUIRE(FindListingLine(listing, "0x0000000a  lea    rdx").ends_with("; format \"%s %.*s %f\""));
+        REQUIRE(FindListingLine(listing, "0x00000016  mov    rdi, rbx").ends_with("; buffer"));
+        REQUIRE(FindListingLine(listing, "0x00000024  mov    rdx, r12").ends_with("; %d"));
+        REQUIRE(FindListingLine(listing, "0x0000002e  mov    rdi, rbx").ends_with("; buffer"));
+    }
+    {
+        std::vector<unsigned char> file;
+        file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x38 });             // 0x00: sub rsp, 0x38
+        file.insert(file.end(), { 0x48, 0x89, 0x44, 0x24, 0x20 });       // 0x04: mov qword ptr [rsp + 0x20], rax (%p)
+        file.insert(file.end(), { 0x4C, 0x8B, 0xCB });                   // 0x09: mov r9, rbx       (%wZ)
+        file.insert(file.end(), { 0x4C, 0x8D, 0x05 });                   // 0x0c: lea r8, "%wZ %p" (Format)
+        for (const unsigned char byte : { 0x2D, 0x02, 0x00, 0x00 })       // 0x240 - 0x13
+            file.push_back(byte);
+        file.insert(file.end(), { 0xBA, 0x03, 0x00, 0x00, 0x00 });       // 0x13: mov edx, 3        (Level)
+        file.insert(file.end(), { 0xB9, 0x4D, 0x00, 0x00, 0x00 });       // 0x18: mov ecx, 0x4d     (ComponentId)
+        call(file, 0x200);                                               // 0x1d: call DbgPrintEx
+        file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x38, 0xC3 });       // 0x23: add rsp, 0x38; ret
+        addString(file, 0x240, "%wZ %p");
+        file.resize(0x280, 0xCC);
+        ZoneLayout layout;
+        layout.size             = 0x200;
+        layout.entryPoint       = 0;
+        layout.language         = DisassemblyLanguage::x64;
+        layout.translateOffsets = true;
+        layout.imports          = { { 0x200, { "DbgPrintEx", MemoryMappingType::FunctionMapping } } };
+        DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+        const std::string listing = dissasmInstance.GetListing();
+        INFO(listing);
+        REQUIRE(FindListingLine(listing, "0x00000004  mov    qword ptr [rsp").ends_with("; %p"));
+        REQUIRE(FindListingLine(listing, "0x00000009  mov    r9, rbx").ends_with("; %wZ"));
+        REQUIRE(FindListingLine(listing, "0x0000000c  lea    r8").ends_with("; Format \"%wZ %p\""));
+        REQUIRE(FindListingLine(listing, "0x00000018  mov    ecx, 0x4d").find("; ComponentId") != std::string_view::npos);
+    }
+}
