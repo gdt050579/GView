@@ -120,6 +120,12 @@ void Settings::AddInstructionBoundary(uint64 fileOffset)
     INTERNAL_SETTINGS->instructionBoundaries.push_back(fileOffset);
 }
 
+void Settings::AddArm64ECCode(uint64 fileOffset, uint64 size)
+{
+    if (size > 0 && fileOffset + size > fileOffset)
+        INTERNAL_SETTINGS->arm64ECCode[fileOffset] = fileOffset + size;
+}
+
 void Settings::SetGlobalOffsetTable(uint64 address)
 {
     INTERNAL_SETTINGS->globalOffsetTable = address;

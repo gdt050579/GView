@@ -1923,6 +1923,9 @@ namespace View
              * boundaries as well.
              */
             void AddInstructionBoundary(uint64 fileOffset);
+            // the ARM64EC code of an ARM64X image (the code map of its CHPE metadata): its calls pass the variadic arguments after the fourth
+            // through x4 (their address) and x5 (their size), not in x4 .. x7
+            void AddArm64ECCode(uint64 fileOffset, uint64 size);
             // 32 bit x86 position independent code (an ELF shared object / PIE): the address of the global offset table, the value of ebx
             // in the PLT stubs (jmp dword ptr [ebx + 0xc])
             void SetGlobalOffsetTable(uint64 address);

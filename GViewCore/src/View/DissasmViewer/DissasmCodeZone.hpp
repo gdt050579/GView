@@ -196,6 +196,10 @@ struct DissasmCodeZone : public ParseZone {
     bool hasDecoder          = false;       // the language is known: capstoneArch and internalArchitecture are set
     bool isInit              = false;
     bool systemVCalls        = false; // x64 code of an ELF / Mach-O file: the System V calling convention (GetX64ArgumentSlot)
+    // the variadic arguments of the calls: in the stack only for the ARM64 code of a Mach-O file (Apple), a double of an ELF / Mach-O file in a
+    // vector register (System V, AAPCS64), in the integer ones for a PE (Windows x64 / ARM64) (AnnounceCallInstruction)
+    bool variadicArgumentsInStack = false;
+    bool variadicFloatsInVectors  = false;
     bool initTried           = false; // InitZone ran (it may have failed): the zones prepared in the background are not tried again
 
     // x86/x64: decoded instructions count (the zone lines are the instructions plus the annotations of the root type)

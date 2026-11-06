@@ -682,6 +682,7 @@ void AddX64RuntimeFunctions(DissasmViewer::Settings& settings, Reference<PE::PEF
 // (the extra table of runtime functions). The x64 ranges, by RVA
 struct HybridCodeMap {
     std::vector<std::pair<uint32, uint32>> x64Ranges;
+    std::vector<std::pair<uint32, uint32>> arm64ECRanges; // the code of the ARM64EC convention (x4 / x5 for the variadic arguments)
     uint32 x64ExceptionTable     = 0;
     uint32 x64ExceptionTableSize = 0;
 };
@@ -692,7 +693,8 @@ HybridCodeMap ReadHybridCodeMap(Reference<PE::PEFile> pe, GView::Utils::DataCach
         return result;
     constexpr uint32 CHPE_METADATA_POINTER = 200; // the field of the 64 bit load config
     constexpr uint32 MAX_CODE_RANGES       = 0x10000;
-    constexpr uint32 CODE_RANGE_AMD64      = 2; // the low 2 bits of the start: 0 ARM64, 1 ARM64EC, 2 AMD64
+    constexpr uint32 CODE_RANGE_ARM64EC    = 1; // the low 2 bits of the start: 0 ARM64, 1 ARM64EC, 2 AMD64
+    constexpr uint32 CODE_RANGE_AMD64      = 2;
     const auto& directory = pe->GetDirectory(PE::DirectoryType::Config);
     const auto config     = directory.VirtualAddress != 0 ? pe->RVAToFA(directory.VirtualAddress) : PE_INVALID_ADDRESS;
     uint32 configSize     = 0;
@@ -717,6 +719,8 @@ HybridCodeMap ReadHybridCodeMap(Reference<PE::PEFile> pe, GView::Utils::DataCach
         const uint32 begin = range.startAndKind & ~3u;
         if ((range.startAndKind & 3) == CODE_RANGE_AMD64 && range.length > 0 && range.length <= 0xFFFFFFFFu - begin)
             result.x64Ranges.emplace_back(begin, begin + range.length);
+        else if ((range.startAndKind & 3) == CODE_RANGE_ARM64EC && range.length > 0 && range.length <= 0xFFFFFFFFu - begin)
+            result.arm64ECRanges.emplace_back(begin, begin + range.length);
     }
     std::sort(result.x64Ranges.begin(), result.x64Ranges.end());
     if (!data.Copy<uint32>(metadata + 64, result.x64ExceptionTable) || !data.Copy<uint32>(metadata + 68, result.x64ExceptionTableSize))
@@ -815,6 +819,10 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
         const auto hybrid = ReadHybridCodeMap(pe, data);
         if (!hybrid.x64Ranges.empty())
             AddX64RuntimeFunctions(settings, pe, data, hybrid.x64ExceptionTable, hybrid.x64ExceptionTableSize);
+        // its ARM64EC code: the variadic arguments of its calls after the fourth are in the stack
+        for (const auto& [begin, end] : hybrid.arm64ECRanges)
+            if (const auto fa = pe->RVAToFA(begin); fa != PE_INVALID_ADDRESS)
+                settings.AddArm64ECCode(fa, end - begin);
     }
     // x64 exception data (.pdata): a RUNTIME_FUNCTION for nearly every function that is not a leaf, with its size
     else if (pe->hdr64) {

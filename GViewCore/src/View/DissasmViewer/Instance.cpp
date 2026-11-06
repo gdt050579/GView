@@ -1918,7 +1918,12 @@ static std::string_view GetShownFormat(const DissasmAsmPreCacheLine& line)
 }
 
 void DissasmAsmPreCacheData::AnnounceCallInstruction(
-      const AsmFunctionDetails* functionDetails, bool registerArguments, bool systemVPushes, bool formatArguments)
+      const AsmFunctionDetails* functionDetails,
+      bool registerArguments,
+      bool systemVPushes,
+      bool formatArguments,
+      bool variadicFloatsApart,
+      uint8 variadicSlots)
 {
     // the lines prepared so far (above the call); the call line itself is not added yet
     if (cachedAsmLines.empty())
@@ -2016,7 +2021,10 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(
             if (const char* text = ArgumentText(functionDetails->params[slot])) // not a parameter an inferred prototype does not know
                 nameArgument(*it, text);
         }
-        nameFormatArguments(false, systemVPushes);
+        for (size_t index = 0; index < formatArgumentLines.size(); index++)
+            if (paramsCount + index >= variadicSlots) // ARM64EC: x4 points to the ones after the fourth, x5 is their size
+                formatArgumentLines[index] = nullptr;
+        nameFormatArguments(false, variadicFloatsApart);
         return;
     }
 

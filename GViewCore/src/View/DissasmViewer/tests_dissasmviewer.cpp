@@ -14432,3 +14432,207 @@ TEST_CASE("FormatArgumentsOfVariadicCalls", "[Dissasm]Help")
         REQUIRE(FindListingLine(listing, "0x00000018  mov    ecx, 0x4d").find("; ComponentId") != std::string_view::npos);
     }
 }
+
+TEST_CASE("FormatWrapperPrototypes", "[Dissasm]Help")
+{
+    // a function that passes the address of its incoming argument after its format as the va_list of a call (va_start: _vsnwprintf(buffer,
+    // count, format, &first)) is variadic from that argument on: 32 bit x86 (the format of the call is the argument right before), Windows
+    // x64 (the home of r9 after its format in r8); its calls name the arguments after the format by its conversions (10h)
+    {
+        std::vector<unsigned char> file = {
+            0x56,                         // 0x00: push esi
+            0x57,                         // 0x01: push edi            (format)
+            0x6A, 0x10,                   // 0x02: push 0x10           (count)
+            0x53,                         // 0x04: push ebx            (buffer)
+            0xE8, 0x36, 0x00, 0x00, 0x00, // 0x05: call 0x40
+            0x83, 0xC4, 0x10,             // 0x0a: add esp, 0x10
+            0xE8, 0x6E, 0x00, 0x00, 0x00, // 0x0d: call 0x80
+            0xC3,                         // 0x12: ret
+        };
+        file.resize(0x40, 0xCC);
+        file.insert(file.end(), {
+                                      0x55,                         // 0x40: push ebp
+                                      0x8B, 0xEC,                   // 0x41: mov ebp, esp
+                                      0x8D, 0x45, 0x14,             // 0x43: lea eax, [ebp + 0x14]  (the address of the argument after the format)
+                                      0x50,                         // 0x46: push eax               (argptr)
+                                      0xFF, 0x75, 0x10,             // 0x47: push dword ptr [ebp + 0x10] (format)
+                                      0xFF, 0x75, 0x0C,             // 0x4a: push dword ptr [ebp + 0xc]  (count)
+                                      0xFF, 0x75, 0x08,             // 0x4d: push dword ptr [ebp + 8]    (buffer)
+                                      0xE8, 0x0B, 0x00, 0x00, 0x00, // 0x50: call 0x60 (_vsnwprintf)
+                                      0x83, 0xC4, 0x10,             // 0x55: add esp, 0x10
+                                      0x5D,                         // 0x58: pop ebp
+                                      0xC3,                         // 0x59: ret
+                                });
+        file.resize(0x60, 0xCC);
+        file.insert(file.end(), { 0xFF, 0x25, 0x80, 0x10, 0x40, 0x00 }); // 0x60: jmp dword ptr [0x401080]
+        file.resize(0x80, 0xCC);
+        file.insert(file.end(), {
+                                      0x55,                         // 0x80: push ebp
+                                      0x8B, 0xEC,                   // 0x81: mov ebp, esp
+                                      0x8D, 0x45, 0x14,             // 0x83: lea eax, [ebp + 0x14]
+                                      0x50,                         // 0x86: push eax               (argptr)
+                                      0xFF, 0x75, 0x08,             // 0x87: push dword ptr [ebp + 8]    (format: the first argument, not the one before)
+                                      0xFF, 0x75, 0x0C,             // 0x8a: push dword ptr [ebp + 0xc]  (count)
+                                      0xFF, 0x75, 0x10,             // 0x8d: push dword ptr [ebp + 0x10] (buffer)
+                                      0xE8, 0xCB, 0xFF, 0xFF, 0xFF, // 0x90: call 0x60 (_vsnwprintf)
+                                      0x83, 0xC4, 0x10,             // 0x95: add esp, 0x10
+                                      0x5D,                         // 0x98: pop ebp
+                                      0xC3,                         // 0x99: ret
+                                });
+        file.resize(0xA0, 0xCC);
+        ZoneLayout layout;
+        layout.size       = file.size();
+        layout.entryPoint = 0;
+        layout.imports    = { { 0x401080, { "_vsnwprintf", MemoryMappingType::FunctionMapping } } };
+        DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+        const std::string listing = dissasmInstance.GetListing();
+        INFO(listing);
+        REQUIRE(FindListingLine(listing, "sub_40:").find("inferred: int sub_40(wchar_t* buffer, size_t count, const wchar_t* format, ...)") !=
+                std::string_view::npos);
+        REQUIRE(FindListingLine(listing, "sub_80:").find("inferred: ") != std::string_view::npos);
+        REQUIRE(FindListingLine(listing, "sub_80:").find("...") == std::string_view::npos);
+        REQUIRE(FindListingLine(listing, "0x00000001  push   edi").ends_with("; format"));
+    }
+    {
+        std::vector<unsigned char> file = {
+            0x48, 0x83, 0xEC, 0x28,                   // 0x00: sub rsp, 0x28
+            0x4C, 0x8B, 0xCB,                         // 0x04: mov r9, rbx      (%ws)
+            0x4C, 0x8D, 0x05, 0x32, 0x02, 0x00, 0x00, // 0x07: lea r8, L"%ws!" (format)
+            0xBA, 0x10, 0x00, 0x00, 0x00,             // 0x0e: mov edx, 0x10    (count)
+            0x48, 0x89, 0xF9,                         // 0x13: mov rcx, rdi     (buffer)
+            0xE8, 0x25, 0x00, 0x00, 0x00,             // 0x16: call 0x40
+            0x48, 0x83, 0xC4, 0x28,                   // 0x1b: add rsp, 0x28
+            0xC3,                                     // 0x1f: ret
+        };
+        file.resize(0x40, 0xCC);
+        file.insert(file.end(), {
+                                      0x4C, 0x89, 0x44, 0x24, 0x18, // 0x40: mov qword ptr [rsp + 0x18], r8 (the homes)
+                                      0x4C, 0x89, 0x4C, 0x24, 0x20, // 0x45: mov qword ptr [rsp + 0x20], r9
+                                      0x48, 0x83, 0xEC, 0x28,       // 0x4a: sub rsp, 0x28
+                                      0x4C, 0x8D, 0x4C, 0x24, 0x48, // 0x4e: lea r9, [rsp + 0x48]  (the home of r9: argptr)
+                                });
+        const uint32 displacement = 0x200 - static_cast<uint32>(file.size() + 6); // 0x53: call qword ptr [_vsnwprintf]
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+        file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x28, 0xC3 }); // 0x59: add rsp, 0x28; ret
+        file.resize(0x240, 0xCC);
+        for (const char c : std::string_view("%ws!")) // a wide string
+            file.insert(file.end(), { static_cast<unsigned char>(c), 0x00 });
+        file.resize(0x280, 0x00);
+        ZoneLayout layout;
+        layout.size             = 0x200;
+        layout.entryPoint       = 0;
+        layout.language         = DisassemblyLanguage::x64;
+        layout.translateOffsets = true;
+        layout.imports          = { { 0x200, { "_vsnwprintf", MemoryMappingType::FunctionMapping } } };
+        DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+        const std::string listing = dissasmInstance.GetListing();
+        INFO(listing);
+        REQUIRE(FindListingLine(listing, "sub_40:").find("sub_40(wchar_t* buffer, size_t count, const wchar_t* format, ...)") != std::string_view::npos);
+        REQUIRE(FindListingLine(listing, "0x00000004  mov    r9, rbx").ends_with("; %ws"));
+        REQUIRE(FindListingLine(listing, "0x00000007  lea    r8").ends_with("; format L\"%ws!\""));
+        REQUIRE(FindListingLine(listing, "0x00000013  mov    rcx, rdi").ends_with("; buffer"));
+    }
+}
+
+TEST_CASE("PrototypesOfOtherCodeZones", "[Dissasm]Help")
+{
+    // a call to a function of another code zone of the file (.text to PAGE): its arguments named by the prototype that zone inferred for it
+    std::vector<unsigned char> page = {
+        0xE8, 0x3B, 0x00, 0x00, 0x00, // 0x00: call 0x40
+        0xC3,                         // 0x05: ret
+    };
+    page.resize(0x40, 0xCC);
+    page.insert(page.end(), { 0x48, 0x83, 0xEC, 0x28 }); // 0x40: sub rsp, 0x28
+    const uint32 displacement = 0x200 - static_cast<uint32>(page.size() + 6);
+    page.insert(page.end(), { 0xFF, 0x15 }); // 0x44: call qword ptr [CloseHandle] (hObject: rcx, untouched)
+    for (uint32 i = 0; i < 4; i++)
+        page.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    page.insert(page.end(), { 0x48, 0x83, 0xC4, 0x28, 0xC3 }); // 0x4a: add rsp, 0x28; ret
+    page.resize(0x220, 0xCC);
+    ZoneLayout pageLayout;
+    pageLayout.size             = 0x200;
+    pageLayout.entryPoint       = 0;
+    pageLayout.language         = DisassemblyLanguage::x64;
+    pageLayout.translateOffsets = true;
+    pageLayout.imports          = { { 0x200, { "CloseHandle", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance pageInstance(page.data(), page.size(), true, pageLayout);
+    INFO(pageInstance.GetListing());
+    REQUIRE(pageInstance.zone->FindInferredPrototype(0x40) != nullptr);
+
+    std::vector<unsigned char> text = {
+        0x48, 0x83, 0xEC, 0x28,       // 0x00: sub rsp, 0x28
+        0x48, 0x89, 0xD9,             // 0x04: mov rcx, rbx      (hObject of the function of the other zone)
+        0xE8, 0x34, 0x00, 0x01, 0x00, // 0x07: call 0x10040      (the function at 0x40 of the other zone, at 0x10000)
+        0x48, 0x83, 0xC4, 0x28,       // 0x0c: add rsp, 0x28
+        0xC3,                         // 0x10: ret
+    };
+    text.resize(0x40, 0xCC);
+    ZoneLayout textLayout;
+    textLayout.size       = text.size();
+    textLayout.entryPoint = 0;
+    textLayout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance textInstance(text.data(), text.size(), true, textLayout);
+    pageInstance.zone->labelAddressBase = 0x10000;
+    textInstance.zone->siblingZones.push_back(pageInstance.zone.get());
+    const std::string listing = textInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000007  call   sub_40").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000004  mov    rcx, rbx").ends_with("; hObject"));
+}
+
+TEST_CASE("Arm64FormatArguments", "[Dissasm]Help")
+{
+    // ARM64 (Windows, Linux): the variadic arguments after the format in the registers after the fixed ones (x3, x4, x5 of snprintf);
+    // ARM64EC (the code map of an ARM64X image): x4 points to the ones after the fourth (mov x4, sp) and x5 is their size: only x0 .. x3
+    std::vector<unsigned char> file = {
+        0x02, 0x00, 0x00, 0xB0, // 0x00: adrp x2, 0x1000
+        0x42, 0x80, 0x00, 0x91, // 0x04: add x2, x2, #0x20     (format "%s %d %x")
+        0xE3, 0x03, 0x13, 0xAA, // 0x08: mov x3, x19           (%s)
+        0xE4, 0x03, 0x14, 0xAA, // 0x0c: mov x4, x20           (%d)
+        0xE5, 0x03, 0x15, 0xAA, // 0x10: mov x5, x21           (%x)
+        0x01, 0x08, 0x80, 0xD2, // 0x14: mov x1, #0x40         (count)
+        0xE0, 0x03, 0x16, 0xAA, // 0x18: mov x0, x22           (buffer)
+        0x08, 0x00, 0x00, 0xB0, // 0x1c: adrp x8, 0x1000
+        0x08, 0x09, 0x40, 0xF9, // 0x20: ldr x8, [x8, #0x10]   (the slot of snprintf)
+        0x00, 0x01, 0x3F, 0xD6, // 0x24: blr x8
+        0x02, 0x00, 0x00, 0xB0, // 0x28: adrp x2, 0x1000
+        0x42, 0xC0, 0x00, 0x91, // 0x2c: add x2, x2, #0x30     (format "%s %d")
+        0xE3, 0x03, 0x13, 0xAA, // 0x30: mov x3, x19           (%s)
+        0xE4, 0x03, 0x00, 0x91, // 0x34: mov x4, sp            (ARM64EC: the variadic arguments in the stack)
+        0x05, 0x01, 0x80, 0xD2, // 0x38: mov x5, #8            (their size)
+        0x01, 0x08, 0x80, 0xD2, // 0x3c: mov x1, #0x40
+        0xE0, 0x03, 0x16, 0xAA, // 0x40: mov x0, x22
+        0x08, 0x00, 0x00, 0xB0, // 0x44: adrp x8, 0x1000
+        0x08, 0x09, 0x40, 0xF9, // 0x48: ldr x8, [x8, #0x10]
+        0x00, 0x01, 0x3F, 0xD6, // 0x4c: blr x8
+        0xC0, 0x03, 0x5F, 0xD6, // 0x50: ret
+    };
+    const uint64 codeSize = file.size();
+    file.resize(0x1020, 0x00);
+    for (const char c : std::string_view("%s %d %x"))
+        file.push_back(static_cast<unsigned char>(c));
+    file.resize(0x1030, 0x00);
+    for (const char c : std::string_view("%s %d"))
+        file.push_back(static_cast<unsigned char>(c));
+    file.resize(0x1040, 0x00);
+    ZoneLayout layout;
+    layout.size             = codeSize;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::ARM64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x1010, { "snprintf", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    dissasmInstance.settingsData.arm64ECCode[0x28] = 0x54; // the second call is ARM64EC code (Settings::AddArm64ECCode)
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000004  add    x2, x2, #0x20").ends_with("; format \"%s %d %x\""));
+    REQUIRE(FindListingLine(listing, "0x00000008  mov    x3, x19").ends_with("; %s"));
+    REQUIRE(FindListingLine(listing, "0x0000000c  mov    x4, x20").ends_with("; %d"));
+    REQUIRE(FindListingLine(listing, "0x00000010  mov    x5, x21").ends_with("; %x"));
+    REQUIRE(FindListingLine(listing, "0x00000018  mov    x0, x22").ends_with("; buffer"));
+    REQUIRE(FindListingLine(listing, "0x00000030  mov    x3, x19").ends_with("; %s"));
+    REQUIRE(FindListingLine(listing, "0x00000034  mov    x4, sp").find("; %") == std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000038  mov    x5, #8").find("; %") == std::string_view::npos);
+}

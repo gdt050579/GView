@@ -994,16 +994,43 @@ static void AnnounceKnownFunctionCall(DissasmInsnExtractLineParams& params, cons
 {
     if (params.asmData->functions.empty() || !details)
         return;
-    // x64 / ARM: the registers; x86: the pushes and mov [esp + n]; the arguments after a format on x86 / x64 (not ARM: Apple passes the
-    // variadic ones of ARM64 in the stack)
+    // x64 / ARM: the registers; x86: the pushes and mov [esp + n]; the arguments after a format on x86 / x64 / ARM64 (not the ARM64 code of
+    // Mach-O: Apple passes the variadic ones in the stack; not 32 bit ARM: a double there takes an even pair of registers)
+    const bool formatArguments = !params.zone->IsArmCode() || (params.zone->IsArm64Code() && !params.zone->variadicArgumentsInStack);
+    // ARM64EC (the code before the call): the variadic arguments after the fourth are in the stack x4 points to
+    const auto& lines = params.zone->asmPreCacheData.cachedAsmLines;
+    const bool ec     = params.zone->IsArm64Code() && !lines.empty() && params.settings && !params.zone->cachedCodeOffsets.empty() &&
+                    params.settings->IsArm64ECCode(params.zone->cachedCodeOffsets[0].offset + lines.back().address);
     params.zone->asmPreCacheData.AnnounceCallInstruction(
-          details, params.zone->Is64BitCode() || params.zone->IsArmCode(), params.zone->systemVCalls, !params.zone->IsArmCode());
+          details,
+          params.zone->Is64BitCode() || params.zone->IsArmCode(),
+          params.zone->systemVCalls,
+          formatArguments,
+          params.zone->Is64BitCode() && params.zone->variadicFloatsInVectors,
+          ec ? 4 : 0xFF);
 }
 
 static void AnnounceKnownFunctionCall(DissasmInsnExtractLineParams& params, std::string_view functionName)
 {
     const auto* prototype = FindApiPrototype(functionName);
     AnnounceKnownFunctionCall(params, prototype ? prototype : params.zone->FindMethodPrototype(functionName)); // GCC: a method its code tells
+}
+
+// the prototype of a call target of a code zone (relative), as its calls name their arguments: the one the user gave (Y), the API of its
+// import thunk or of its name (a static binary's getenv, libc's own closedir), the inferred one, a method of GCC its code tells (its name)
+static const AsmFunctionDetails* FindCallTargetPrototype(const DissasmCodeZone* zone, uint64 target, const std::string& labelName)
+{
+    if (const auto* user = zone->FindUserPrototype(target))
+        return user;
+    if (const auto thunk = zone->thunkImports.find(target); thunk != zone->thunkImports.end()) {
+        const auto* api = FindApiPrototype(thunk->second);
+        return api ? api : zone->FindMethodPrototype(thunk->second);
+    }
+    if (const auto* api = labelName.empty() ? nullptr : FindApiPrototype(labelName))
+        return api;
+    if (const auto* inferred = zone->FindInferredPrototype(target))
+        return inferred;
+    return labelName.empty() ? nullptr : zone->FindMethodPrototype(labelName);
 }
 
 // the label of an address (VA) in another code zone of the file; empty when no analyzed zone has a label there
@@ -1205,9 +1232,14 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
                 const uint64 addressMask = params.zone->Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull; // 32 bit addresses wrap around
                 const uint64 targetVA = (params.zone->labelAddressBase + operands.directTarget.value()) & addressMask;
                 target.SetFormat("0x%llx", static_cast<unsigned long long>(targetVA));
-                // another code zone of the file (a call from .text to PAGE): the label there, once that zone is analyzed
+                // another code zone of the file (a call from .text to PAGE): the label there, once that zone is analyzed; the prototype of the
+                // target as that zone knows it (the user's, the inferred one) when it is the code of the same instruction set (not the ARM64 code
+                // an x64 zone of an ARM64X image calls: by its name only)
                 const std::string otherLabel = FindLabelInOtherZones(params.settings, params.zone, targetVA);
-                if (shouldConsiderCall && !otherLabel.empty())
+                const auto* other            = otherLabel.empty() ? nullptr : params.zone->FindCodeZoneOfAddress(targetVA);
+                if (shouldConsiderCall && other && other->GetArchAt(targetVA - other->labelAddressBase) == params.zone->GetArchAt(address))
+                    AnnounceKnownFunctionCall(params, FindCallTargetPrototype(other, targetVA - other->labelAddressBase, otherLabel));
+                else if (shouldConsiderCall && !otherLabel.empty())
                     AnnounceKnownFunctionCall(params, otherLabel); // a PLT stub of another section: j_getenv
                 SetOperands((GetArm64BranchOperandsPrefix(*insn, params.zone) + (otherLabel.empty() ? std::string(target.GetText()) : otherLabel)).c_str(), params.zone);
             } else {
@@ -1224,17 +1256,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         if (shouldConsiderCall) {
             // the prototype the user gave (Y), else the one of the API the function is (an import thunk; a function of the file named so: a
             // static binary's getenv, libc's own closedir), else the inferred one
-            const auto thunk = params.zone->thunkImports.find(operands.directTarget.value());
-            if (const auto* user = params.zone->FindUserPrototype(operands.directTarget.value()))
-                AnnounceKnownFunctionCall(params, user);
-            else if (thunk != params.zone->thunkImports.end())
-                AnnounceKnownFunctionCall(params, thunk->second);
-            else if (!labelName.empty() && FindApiPrototype(labelName))
-                AnnounceKnownFunctionCall(params, labelName);
-            else if (const auto* inferred = params.zone->FindInferredPrototype(operands.directTarget.value()))
-                AnnounceKnownFunctionCall(params, inferred);
-            else if (!labelName.empty())
-                AnnounceKnownFunctionCall(params, labelName);
+            AnnounceKnownFunctionCall(params, FindCallTargetPrototype(params.zone, operands.directTarget.value(), labelName));
         }
 
         // the label of the target with its current name (renamed, an export, a function reached by a jmp keeps its sub_ label); a target

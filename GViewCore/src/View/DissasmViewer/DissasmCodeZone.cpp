@@ -249,6 +249,14 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::unordered_set<uint64> demangledPrototypeCalls;        // the same of a demangled C++ name (its types only: no seed of the inference)
     std::unordered_map<uint64, bool> knownPrototypeTargets;    // a direct target (relative) -> its name has a prototype (NameVariablesFromCalls)
     std::map<uint64, std::shared_ptr<const DissasmUserPrototype>> inferredPrototypes; // InferPrototypes, by function start
+    // x86 / x64: the incoming argument whose address a call of the function passes as its va_list (NameVariablesFromCalls; the format wrappers:
+    // _vsnwprintf(buffer, count, format, &first)): the index of that argument, the type of the format passed before it, two that differ
+    struct VariadicArgumentSlot {
+        uint32 first = 0;
+        std::string_view formatType;
+        bool conflict = false;
+    };
+    std::optional<VariadicArgumentSlot> variadicArgumentSlot;
     std::map<std::string, std::shared_ptr<const DissasmUserPrototype>, std::less<>> methodPrototypes; // AddGccMethodPrototypes, by name
     std::vector<std::pair<uint64, std::string>> functionComparisons; // the walk of a function: its cmp of a returned value with a constant
     std::unordered_map<uint64, std::vector<std::pair<uint64, std::string>>> comparisonsByFunction; // the last walk of each function
@@ -4729,6 +4737,71 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
     }
 
+    // x86 / x64 (NameVariablesFromCalls): a call passes the address of the incoming argument slot `offset` as its va_list (lea eax, [ebp + 0x14];
+    // push eax / lea r9, [rsp + 0x48 + arg_18] after the homes of x64): the function is variadic from that argument on (va_start). 32 bit x86:
+    // the format of the call (its parameter before the va_list) is the value of the argument right before it (`formatOffset`), which tells the slots apart (a
+    // frame register: [ebp + 8] is the first argument, else [esp + 4] at the entry); x64 without a frame register: the home of rdx, r8, r9 or
+    // a stack argument ([rsp + 8] is the home of rcx at the entry); not x64 with a frame register, nor System V (its va_list is a structure)
+    void NoteVariadicArgumentSlot(
+          const DissasmFunctionFrame& frame,
+          const AsmFunctionDetails& prototype,
+          size_t index,
+          int32 offset,
+          std::optional<int32> formatOffset,
+          DissasmArch functionArch)
+    {
+        const bool isX86 = functionArch == DissasmArch::X86;
+        if (!isX86 && (functionArch != DissasmArch::X64 || frame.usesFrameRegister || zone->systemVCalls))
+            return;
+        const int32 slotSize = isX86 ? 4 : 8;
+        const int32 base     = isX86 && frame.usesFrameRegister ? 8 : (isX86 ? 4 : 8);
+        if (offset < base + slotSize || (offset - base) % slotSize != 0)
+            return; // the first argument can not be a variadic one
+        const auto first = static_cast<uint32>((offset - base) / slotSize);
+        if (first >= 16)
+            return;
+        const std::string_view formatName = index > 0 && prototype.params[index - 1].name ? prototype.params[index - 1].name : "";
+        const bool passesFormat           = formatName.find("ormat") != std::string_view::npos || formatName.find("mt") != std::string_view::npos;
+        if (isX86 && (!passesFormat || formatOffset != offset - slotSize))
+            return;
+        const std::string_view formatType = passesFormat && prototype.params[index - 1].type ? prototype.params[index - 1].type : "";
+        if (variadicArgumentSlot.has_value()) {
+            variadicArgumentSlot->conflict |= variadicArgumentSlot->first != first; // two calls with other va_lists
+            return;
+        }
+        variadicArgumentSlot = VariadicArgumentSlot{ first, formatType, false };
+    }
+
+    // a format wrapper (NoteVariadicArgumentSlot): its prototype inferred again, its fixed arguments (the ones inferred before, the format of
+    // its call for the last one) then ..., its return kept; not when the user gave one
+    void InferFormatWrapperPrototype(uint64 start, DissasmArch functionArch)
+    {
+        if (zone->userPrototypes.contains(start))
+            return;
+        const auto& slot = variadicArgumentSlot.value();
+        const auto known = inferredPrototypes.find(start);
+        const auto* old  = known != inferredPrototypes.end() ? &known->second->details : nullptr;
+        std::vector<std::optional<std::pair<std::string_view, std::string_view>>> parameters(slot.first);
+        std::vector<bool> secondHalves(slot.first);
+        if (old) { // the parameters inferred before, by slot (a 64 bit one of 32 bit x86 takes two)
+            uint32 position = 0;
+            for (const auto& parameter : old->params) {
+                if (position >= slot.first)
+                    break;
+                if (parameter.name && parameter.name[0])
+                    parameters[position] = std::make_pair(std::string_view(parameter.name), std::string_view(parameter.type));
+                if (functionArch == DissasmArch::X86 && IsWideX86Type(parameter.type) && position + 1 < slot.first)
+                    secondHalves[++position] = true;
+                position++;
+            }
+        }
+        if (!parameters[slot.first - 1].has_value() && !slot.formatType.empty() && !secondHalves[slot.first - 1])
+            parameters[slot.first - 1] = std::make_pair(std::string_view("format"), slot.formatType);
+        auto prototype = MakeInferredPrototype(start, parameters, secondHalves, old && !old->returnType.empty() ? old : nullptr, true, true);
+        if (prototype)
+            inferredPrototypes[start] = std::move(prototype);
+    }
+
     // ARM64: a variadic function (the homes of its variadic registers in its frame, DissasmFunctionFrame::variadic): its prototype inferred
     // again with its frame (InferFunctionPrototype: its fixed arguments, the format it passes with its va_list), unless the user gave one
     void InferVariadicPrototype(const DissasmFunctionFrame& frame)
@@ -5143,7 +5216,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
           const std::vector<std::optional<std::pair<std::string_view, std::string_view>>>& parameters,
           const std::vector<bool>& secondHalves,
           const AsmFunctionDetails* returns,
-          bool variadic = false)
+          bool variadic         = false,
+          bool keepReturnedName = false)
     {
         size_t count = 0;
         for (size_t argument = 0; argument < parameters.size(); argument++)
@@ -5160,7 +5234,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         std::string text       = name + "(";
         if (returns) { // HANDLE sub_X(...): the return value of the API it returns, its name for the variables of the callers (File)
             prototype->details.returnType = prototype->strings.emplace_back(returns->returnType);
-            prototype->details.returnName = prototype->strings.emplace_back(GetReturnValueName(*returns));
+            prototype->details.returnName = prototype->strings.emplace_back(keepReturnedName ? std::string(returns->returnName) : GetReturnValueName(*returns));
             text                          = std::string(returns->returnType) + " " + text;
         }
         for (size_t argument = 0; argument < count; argument++) {
@@ -5444,6 +5518,19 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             }
             return false;
         };
+        // where an argument of the call comes from: the frame slot the register / the push / the stack store holds
+        const auto argumentSource = [&](size_t index) -> std::optional<SlotValue> {
+            std::optional<SlotValue> source;
+            if (const int reg = argumentRegister(index); reg >= 0 && reg < static_cast<int>(registers.size()))
+                source = registers[reg];
+            else if (isX86 && index < pushes.size())
+                source = pushes[pushes.size() - 1 - index]; // the last push is the first argument
+            else if (isX64 && zone->systemVCalls && index >= 6 && index - 6 < pushes.size())
+                source = pushes[pushes.size() - 1 - (index - 6)]; // System V: the last push is the seventh
+            if (!source.has_value() && index < MAX_SLOTS)
+                source = stackArgs[index];
+            return source;
+        };
         const auto nameArguments = [&](const AsmFunctionDetails& prototype) {
             // the variable that receives an interface (TrackComInterfaces): typed and named after it (pWbemLocator, IWbemLocator*)
             const auto output = comOutputs.find(callAddress);
@@ -5452,18 +5539,20 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     continue; // a parameter an inferred prototype does not know
                 if (std::string_view(prototype.params[index].name) == "This")
                     continue; // the object of a method: not named after it
-                const bool object = std::string_view(prototype.params[index].name) == "this"; // of a C++ method: typed, not named
-                std::optional<SlotValue> source;
-                if (const int reg = argumentRegister(index); reg >= 0 && reg < static_cast<int>(registers.size()))
-                    source = registers[reg];
-                else if (isX86 && index < pushes.size())
-                    source = pushes[pushes.size() - 1 - index]; // the last push is the first argument
-                else if (isX64 && zone->systemVCalls && index >= 6 && index - 6 < pushes.size())
-                    source = pushes[pushes.size() - 1 - (index - 6)]; // System V: the last push is the seventh
-                if (!source.has_value() && index < MAX_SLOTS)
-                    source = stackArgs[index];
+                const bool object                     = std::string_view(prototype.params[index].name) == "this"; // of a C++ method: typed, not named
+                const std::optional<SlotValue> source = argumentSource(index);
                 if (!source.has_value())
                     continue;
+                if (source->isAddress && prototype.params[index].type && std::string_view(prototype.params[index].type) == "va_list") {
+                    const auto format = index > 0 ? argumentSource(index - 1) : std::nullopt; // the value of an argument of the function
+                    NoteVariadicArgumentSlot(
+                          frame,
+                          prototype,
+                          index,
+                          source->offset,
+                          format.has_value() && !format->isAddress ? std::optional<int32>(format->offset) : std::nullopt,
+                          functionArch);
+                }
                 auto* variable                 = frame.FindVariable(source->offset);
                 if (object) {
                     if (variable && variable->origin.empty()) { // the first call that passes it: the object (lea rcx, [rsp + 0x38 + var_18]), a pointer to it
@@ -5842,7 +5931,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             NameArgumentsFromPrototype(frame, *prototype, functionArch, functionData.GetData(), functionData.GetLength(), relativeAddress);
         else if (const auto inferred = inferredPrototypes.find(relativeAddress); inferred != inferredPrototypes.end())
             NameArgumentsFromPrototype(frame, inferred->second->details, functionArch, functionData.GetData(), functionData.GetLength(), relativeAddress);
+        variadicArgumentSlot.reset();
         NameVariablesFromCalls(frame, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, functionArch);
+        if (variadicArgumentSlot.has_value() && !variadicArgumentSlot->conflict)
+            InferFormatWrapperPrototype(relativeAddress, functionArch); // its fixed arguments, its format, ...
         if (functionArch == DissasmArch::X64 && functionEntries) // x64 FH4: the objects the unwinding destroys
             if (const auto entry = functionEntries->find(callValue); entry != functionEntries->end() && !entry->second.exceptionObjects.empty())
                 AddExceptionObjects(frame, entry->second);
@@ -6317,8 +6409,11 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
     zoneObject       = initData.obj;
     // the calling convention of x64 code: Windows for a PE, System V for the others (ELF, Mach-O)
     {
-        auto contentType       = initData.obj.IsValid() ? initData.obj->GetContentType() : Reference<GView::TypeInterface>();
-        systemVCalls           = zoneDetails.language == DisassemblyLanguage::x64 && contentType.IsValid() && contentType->GetTypeName() != "PE";
+        auto contentType         = initData.obj.IsValid() ? initData.obj->GetContentType() : Reference<GView::TypeInterface>();
+        const bool notPE         = contentType.IsValid() && contentType->GetTypeName() != "PE";
+        systemVCalls             = zoneDetails.language == DisassemblyLanguage::x64 && notPE;
+        variadicArgumentsInStack = zoneDetails.language == DisassemblyLanguage::ARM64 && contentType.IsValid() && contentType->GetTypeName() == "Mach-O";
+        variadicFloatsInVectors  = notPE;
     }
     relocatedPointers = initData.relocatedPointers;
 

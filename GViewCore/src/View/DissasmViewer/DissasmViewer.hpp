@@ -573,9 +573,15 @@ namespace View
             // the arguments of a known API: the names of its parameters are added to the automatic comments of the pushes placed before the call
             // the arguments of a call to a known function, on the lines prepared before it: the pushes (x86) or the instructions that write
             // the argument registers / stack slots (x64; System V: the pushes of the arguments after the sixth); `formatArguments`: the arguments
-            // after the format of a variadic function too (x86 / x64), by the conversions of the string it shows
+            // after the format of a variadic function too, by the conversions of the string it shows (`variadicFloatsApart`: a double in a vector
+            // register, not in the integer ones: System V, AAPCS64; `variadicSlots`: the slots they can take, ARM64EC: x0 .. x3)
             void AnnounceCallInstruction(
-                  const AsmFunctionDetails* functionDetails, bool registerArguments, bool systemVPushes = false, bool formatArguments = false);
+                  const AsmFunctionDetails* functionDetails,
+                  bool registerArguments,
+                  bool systemVPushes       = false,
+                  bool formatArguments     = false,
+                  bool variadicFloatsApart = false,
+                  uint8 variadicSlots      = 0xFF);
         };
 
         // The lines of a x86/x64 code zone in the expanded layout (every line shown, no zone collapsed): the labels and the local variable
@@ -699,6 +705,12 @@ namespace View
             std::unordered_map<uint64, MemoryMappingEntry> memoryMappings; // memory locations to functions
             std::map<uint64, DissasmFunctionEntry> functionEntries;         // the known function starts, by file offset
             std::vector<uint64> instructionBoundaries;                      // the file offsets where an instruction starts (sections)
+            std::map<uint64, uint64> arm64ECCode;                           // Settings::AddArm64ECCode: file offset -> end
+            bool IsArm64ECCode(uint64 fileOffset) const
+            {
+                const auto range = arm64ECCode.upper_bound(fileOffset);
+                return range != arm64ECCode.begin() && fileOffset < std::prev(range)->second;
+            }
             std::optional<uint64> globalOffsetTable;                         // 32 bit x86 PIC: the value of ebx in the PLT stubs
             std::map<uint64, ArmCodeMode> armCodeModes;                     // 32 bit ARM: the mode from a file offset on
             std::map<uint64, uint64> relocatedPointers;                     // the pointers the loader writes (file offset -> VA)
