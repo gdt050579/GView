@@ -405,6 +405,9 @@ namespace View
         // the prototypes of the common APIs (Windows, the C run-time / POSIX; DissasmApiPrototypes.cpp): by the name of an import / a function
         // (the import prefixes, the version / stdcall suffixes, the underscore of Mach-O, Zw for Nt); null when it is not known
         const AsmFunctionDetails* FindApiPrototype(std::string_view name);
+        // the name of an argument added to a line before its generated text (lpFileName "C:\file.txt"), a constant with its symbolic name
+        // (dwDesiredAccess = GENERIC_READ): AnnounceCallInstruction, the writes of DissasmCodeZone::argumentDefinitions
+        void NameArgumentLine(DissasmAsmPreCacheLine& line, std::string_view functionName, const char* name);
         size_t GetApiPrototypesCount();
         void ForEachApiPrototype(const std::function<void(const AsmFunctionDetails&)>& callback);
         // the type a pointer parameter points to (the variable whose address is passed): PHKEY / LPDWORD / HMODULE* / REFIID -> HKEY / DWORD /
@@ -574,7 +577,8 @@ namespace View
             // the arguments of a call to a known function, on the lines prepared before it: the pushes (x86) or the instructions that write
             // the argument registers / stack slots (x64; System V: the pushes of the arguments after the sixth); `formatArguments`: the arguments
             // after the format of a variadic function too, by the conversions of the string it shows (`variadicFloatsApart`: a double in a vector
-            // register, not in the integer ones: System V, AAPCS64; `variadicSlots`: the slots they can take, ARM64EC: x0 .. x3)
+            // register, not in the integer ones: System V, AAPCS64; `variadicSlots`: the registers they can take, ARM64EC: x0 .. x3, the others in the stack x4
+            // points to)
             void AnnounceCallInstruction(
                   const AsmFunctionDetails* functionDetails,
                   bool registerArguments,

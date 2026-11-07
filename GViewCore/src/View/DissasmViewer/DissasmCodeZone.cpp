@@ -261,6 +261,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::vector<std::pair<uint64, std::string>> functionComparisons; // the walk of a function: its cmp of a returned value with a constant
     std::unordered_map<uint64, std::vector<std::pair<uint64, std::string>>> comparisonsByFunction; // the last walk of each function
     std::unordered_map<uint64, std::string> returnValueConstants;                                 // DissasmCodeZone::returnValueConstants
+    std::unordered_map<uint64, std::pair<std::string, std::string>> argumentDefinitions;          // DissasmCodeZone::argumentDefinitions
     // x64 structured exception handling (CollectExceptionScopes): the funclets with the frame of their function (relative starts; the
     // unwind data of the function: its prologue size, its frame register and offset / 16), the marks of the scopes
     struct FuncletLink {
@@ -4007,7 +4008,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         // as before), the ones inferred already too (they did not see the callees inferred after them: a function inferred from a known API
         // gets the arguments it passes to a wrapper inferred later)
         std::unordered_set<uint64> inferredBefore;
+        argumentStepsOf.clear();
         for (uint32 round = 0; round < 3; round++) {
+            keepArgumentSteps = round == 0; // the code CollectArgumentDefinitions follows: decoded once
             std::unordered_set<uint64> inferredNow;
             for (size_t index = 0; index < functionStarts.size(); index++) {
                 const uint64 start = functionStarts[index];
@@ -4046,6 +4049,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     inferredPrototypes.emplace(start, std::move(previous)); // the same as before
                 }
             }
+            keepArgumentSteps = false;
             if (inferredNow.empty())
                 break;
             inferredBefore = std::move(inferredNow);
@@ -4054,6 +4058,317 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             for (auto& [address, text] : comparisons)
                 returnValueConstants.emplace(address, std::move(text));
         comparisonsByFunction.clear();
+    }
+
+    // beyond IDA (its decompiler does it): the arguments of a call written in the blocks that jump to it (mov rcx, rbx; jmp loc_X, a write
+    // before a jcc to it) or before a tail jump; the display names the ones of the block of the call and of the code that falls into it
+    // (AnnounceCallInstruction). x64 / ARM64: the writes of the argument registers that reach each call with a prototype (the definitions of
+    // the paths to it), followed in the order of the code and merged at the branch targets of the forward branches. Kept: a write that reaches
+    // a call through a taken branch or a tail jump, never along the code that falls into a call, and that every call it reaches takes as the
+    // same parameter; not one live at a branch back (a loop: the calls it reaches before) or at an indirect jump (a switch)
+    std::vector<uint64> forwardTargets; // CollectArgumentDefinitions: the targets of the forward branches of a function (sorted)
+    // an instruction of a function for CollectArgumentDefinitions: the argument registers it writes, its branch, its callee
+    enum class ArgumentStepKind : uint8 { Other, Call, TailCall, Jump, ConditionalJump, Return, IndirectJump };
+    struct ArgumentStep {
+        uint64 address;
+        uint64 target; // a branch inside of the function; NO_TARGET otherwise
+        const AsmFunctionDetails* callee;
+        uint64 callTarget; // the direct target of a call / a jump out of the function; NO_TARGET otherwise
+        uint8 writes;      // a bit per argument register
+        ArgumentStepKind kind;
+    };
+    // the steps of the x64 / ARM64 functions the first round of InferPrototypes decodes (the same code: not decoded again), by start
+    std::unordered_map<uint64, std::vector<ArgumentStep>> argumentStepsOf;
+    bool keepArgumentSteps = false;
+
+    // the argument a register is (rcx .. r9 / rdi .. r9 / x0 .. x7: 0 ..), -1 for another one
+    int ArgumentRegisterOf(unsigned int reg, DissasmArch arch) const
+    {
+        if (arch == DissasmArch::Arm64) {
+            if (reg >= ARM64_REG_X0 && reg <= ARM64_REG_X7)
+                return static_cast<int>(reg - ARM64_REG_X0);
+            if (reg >= ARM64_REG_W0 && reg <= ARM64_REG_W7)
+                return static_cast<int>(reg - ARM64_REG_W0);
+            return -1;
+        }
+        static constexpr int WINDOWS[] = { 1, 2, 8, 9 }, SYSTEM_V[] = { 7, 6, 2, 1, 8, 9 };
+        const std::span<const int> arguments = zone->systemVCalls ? std::span<const int>(SYSTEM_V) : std::span<const int>(WINDOWS);
+        const int family                     = GetX64RegisterFamily(reg);
+        for (size_t argument = 0; argument < arguments.size(); argument++)
+            if (arguments[argument] == family)
+                return static_cast<int>(argument);
+        return -1;
+    }
+
+    // the prototype of the callee of a step kept by the first round of InferPrototypes, as CalleePrototype gives it now (the prototypes
+    // inferred by the later rounds, the COM methods of TrackComInterfaces, the methods of GCC): the target again; an import slot: the API
+    const AsmFunctionDetails* CurrentCalleeOf(const ArgumentStep& step)
+    {
+        if (const auto method = interfaceCalls.find(step.address); method != interfaceCalls.end())
+            if (const auto* prototype = FindComMethodPrototype(method->second))
+                return prototype;
+        if (step.callTarget == NO_TARGET)
+            return step.callee;
+        if (step.callTarget < codeSize) {
+            if (const auto* user = zone->FindUserPrototype(step.callTarget))
+                return user;
+            if (const auto inferred = inferredPrototypes.find(step.callTarget); inferred != inferredPrototypes.end()) {
+                const auto* api = FindApiPrototype(TargetName(step.callTarget));
+                return api ? api : &inferred->second->details;
+            }
+        }
+        const std::string name = TargetName(step.callTarget);
+        if (const auto* api = FindApiPrototype(name))
+            return api;
+        return FindMethodPrototypeByName(methodPrototypes, name);
+    }
+
+    // `callee`: the prototype of a call / a jump out of the function when the caller looked it up already (CalleePrototype)
+    ArgumentStep DecodeArgumentStep(
+          const cs_insn& insn, uint64 start, uint64 end, DissasmArch arch, std::optional<const AsmFunctionDetails*> callee = std::nullopt)
+    {
+        const bool isArm64 = arch == DissasmArch::Arm64;
+        ArgumentStep step{ insn.address, NO_TARGET, nullptr, NO_TARGET, 0, ArgumentStepKind::Other };
+        const auto flow = GetInstructionFlow(insn, arch);
+        if (flow == X86Flow::Call && !(isArm64 && stackHelperCalls.contains(insn.address))) { // bl __chkstk keeps the arguments
+            const auto operands = GetInstructionOperands(insn, arch, labelBase);
+            step.kind           = ArgumentStepKind::Call;
+            step.callee         = callee.has_value() ? callee.value() : CalleePrototype(insn, arch);
+            step.callTarget     = operands.directTarget.has_value() ? operands.directTarget.value() & addressMask : NO_TARGET;
+        } else if (flow == X86Flow::Jump || flow == X86Flow::ConditionalJump) {
+            const auto operands = GetInstructionOperands(insn, arch, labelBase);
+            const uint64 direct = operands.directTarget.has_value() ? operands.directTarget.value() & addressMask : NO_TARGET;
+            const bool inside   = direct >= start && direct < end;
+            step.callTarget     = inside ? NO_TARGET : direct;
+            step.target         = inside ? direct : NO_TARGET;
+            if (flow == X86Flow::ConditionalJump) {
+                step.kind = ArgumentStepKind::ConditionalJump;
+            } else if (inside) {
+                step.kind = ArgumentStepKind::Jump;
+            } else {
+                step.callee = callee.has_value() ? callee.value() : CalleePrototype(insn, arch);
+                step.kind   = direct != NO_TARGET || step.callee ? ArgumentStepKind::TailCall : ArgumentStepKind::IndirectJump;
+            }
+        } else if (flow == X86Flow::Return) {
+            step.kind = ArgumentStepKind::Return;
+        } else if (isArm64) {
+            for (uint8 i = 0; i < insn.detail->arm64.op_count; i++)
+                if (insn.detail->arm64.operands[i].type == ARM64_OP_REG && (insn.detail->arm64.operands[i].access & CS_AC_WRITE))
+                    if (const int argument = ArgumentRegisterOf(insn.detail->arm64.operands[i].reg, arch); argument >= 0)
+                        step.writes |= static_cast<uint8>(1u << argument);
+        } else {
+            const cs_x86& x86 = insn.detail->x86;
+            for (uint8 i = 0; i < x86.op_count; i++)
+                if (x86.operands[i].type == X86_OP_REG && (x86.operands[i].access & CS_AC_WRITE))
+                    if (const int argument = ArgumentRegisterOf(x86.operands[i].reg, arch); argument >= 0)
+                        step.writes |= static_cast<uint8>(1u << argument);
+            for (uint8 i = 0; i < insn.detail->regs_write_count; i++)
+                if (const int argument = ArgumentRegisterOf(insn.detail->regs_write[i], arch); argument >= 0)
+                    step.writes |= static_cast<uint8>(1u << argument);
+        }
+        return step;
+    }
+
+    void CollectArgumentDefinitions()
+    {
+        argumentDefinitions.clear();
+        if (!hasDetailHandle || functionEnds.size() != functionStarts.size())
+            return;
+        std::unordered_map<uint64, bool> targetsWithPrototype; // a direct target (relative) -> it has a prototype (the user's, an API, inferred)
+        const auto hasPrototype = [&](const FlowRecord& record) {
+            if (knownPrototypeCalls.contains(record.address) || demangledPrototypeCalls.contains(record.address))
+                return true; // through the slot of an import with a prototype (a demangled C++ name too)
+            if (record.target == NO_TARGET)
+                return false;
+            auto known = targetsWithPrototype.find(record.target);
+            if (known == targetsWithPrototype.end()) {
+                const std::string name = TargetName(record.target);
+                const bool prototype   = inferredPrototypes.contains(record.target) || (record.target < codeSize && zone->FindUserPrototype(record.target)) ||
+                                       (!name.empty() && (FindApiPrototype(name) || FindMethodPrototypeByName(methodPrototypes, name)));
+                known = targetsWithPrototype.emplace(record.target, prototype).first;
+            }
+            return known->second;
+        };
+        for (size_t index = 0; index < functionStarts.size(); index++) {
+            const uint64 start = functionStarts[index], end = functionEnds[index];
+            const auto arch = zone->GetArchAt(start);
+            if (arch != DissasmArch::X64 && arch != DissasmArch::Arm64)
+                continue;
+            // something to find: a tail jump with a prototype, or a call with one whose code after the call before it (the writes a call does
+            // not end) holds the target of a forward branch: a branch carries arguments only there; the records are sorted by address
+            bool found = false;
+            forwardTargets.clear();
+            const size_t first = FirstRecordAt(start);
+            for (size_t position = first; position < flowRecords.size() && flowRecords[position].address < end; position++) {
+                const auto& record = flowRecords[position];
+                if ((record.kind == FlowKind::Jump || record.kind == FlowKind::ConditionalJump) && record.target != NO_TARGET &&
+                    record.target > record.address && record.target < end)
+                    forwardTargets.push_back(record.target);
+            }
+            std::sort(forwardTargets.begin(), forwardTargets.end());
+            uint64 previousCall = start; // the code after it
+            for (size_t position = first; position < flowRecords.size() && flowRecords[position].address < end && !found; position++) {
+                const auto& record = flowRecords[position];
+                const bool inside  = record.target != NO_TARGET && record.target >= start && record.target < end;
+                if (record.kind == FlowKind::Call) {
+                    const auto target = std::upper_bound(forwardTargets.begin(), forwardTargets.end(), previousCall);
+                    found             = target != forwardTargets.end() && *target <= record.address && hasPrototype(record);
+                    previousCall      = record.address;
+                } else if (record.kind == FlowKind::Jump && !inside) {
+                    found = record.target == NO_TARGET || hasPrototype(record); // a tail jump (through an import slot: jmp TerminateProcess)
+                }
+            }
+            if (found)
+                CollectFunctionArgumentDefinitions(start, end, arch);
+        }
+        argumentStepsOf.clear();
+    }
+
+    void CollectFunctionArgumentDefinitions(uint64 start, uint64 end, DissasmArch arch)
+    {
+        constexpr uint32 MAX_STEPS      = 4096; // as InferFunctionPrototype
+        constexpr uint8 MAX_DEFINITIONS = 8;    // the writes of a register followed at once (more: forgotten, none of them named)
+        const size_t argumentsCount     = arch == DissasmArch::Arm64 ? 8u : (zone->systemVCalls ? 6u : 4u);
+        using Step                      = ArgumentStep;
+        using StepKind                  = ArgumentStepKind;
+
+        // the code of the function: the steps the first round of InferPrototypes kept, else decoded here
+        std::vector<Step> decoded;
+        const auto kept = argumentStepsOf.find(start);
+        if (kept == argumentStepsOf.end()) {
+            const auto data =
+                  start < end ? obj->GetData().Get(codeStart + start, static_cast<uint32>(std::min<uint64>(end - start, 0x10000)), false) : BufferView{};
+            cs_insn* insn = data.IsValid() ? cs_malloc(detailHandle) : nullptr;
+            if (!insn)
+                return;
+            const uint8* bytes = data.GetData();
+            size_t size        = data.GetLength();
+            uint64 address     = start;
+            while (decoded.size() < MAX_STEPS && cs_disasm_iter(detailHandle, &bytes, &size, &address, insn)) {
+                decoded.push_back(DecodeArgumentStep(*insn, start, end, arch));
+                if (decoded.back().kind == StepKind::Return && insn->address + insn->size >= end)
+                    break;
+            }
+            cs_free(insn, 1);
+        }
+        if (kept != argumentStepsOf.end()) // their callees as they are known now
+            for (auto& step : kept->second)
+                if (step.kind == StepKind::Call || step.kind == StepKind::TailCall)
+                    step.callee = CurrentCalleeOf(step);
+        const std::vector<Step>& steps = kept != argumentStepsOf.end() ? kept->second : decoded;
+
+        // the branches inside of the function: the step of their target (a branch back: at most its own step; the steps are sorted by address),
+        // the forward ones by target
+        std::vector<size_t> targetOf(steps.size(), SIZE_MAX);
+        std::unordered_map<size_t, std::vector<size_t>> branchesTo; // step of the target -> the steps of the forward branches
+        for (size_t i = 0; i < steps.size(); i++)
+            if (steps[i].target != NO_TARGET) {
+                const auto target =
+                      std::lower_bound(steps.begin(), steps.end(), steps[i].target, [](const Step& step, uint64 value) { return step.address < value; });
+                if (target != steps.end() && target->address == steps[i].target) {
+                    targetOf[i] = static_cast<size_t>(target - steps.begin());
+                    if (targetOf[i] > i)
+                        branchesTo[targetOf[i]].push_back(i);
+                }
+            }
+
+        // what each write reaches: the parameter of the calls (one name, else a conflict), along the code that falls into them or through a jump
+        struct Reach {
+            std::string_view function, parameter;
+            bool linear = false, jumped = false, rejected = false;
+        };
+        std::unordered_map<uint32, Reach> reaches;
+        struct Definitions { // the writes of a register that reach the current step, whether a branch was taken on the way (a bit each)
+            std::array<uint32, MAX_DEFINITIONS> steps;
+            uint8 count  = 0;
+            uint8 jumped = 0;
+        };
+        using State       = std::array<Definitions, 8>;
+        const auto reject = [&reaches](const Definitions& definitions) {
+            for (uint8 k = 0; k < definitions.count; k++)
+                reaches[definitions.steps[k]].rejected = true;
+        };
+        const auto add = [&](Definitions& into, uint32 step, bool jumped) {
+            for (uint8 k = 0; k < into.count; k++)
+                if (into.steps[k] == step) {
+                    into.jumped |= static_cast<uint8>(jumped ? 1u << k : 0u);
+                    return true;
+                }
+            if (into.count == MAX_DEFINITIONS)
+                return false;
+            into.steps[into.count] = step;
+            into.jumped |= static_cast<uint8>(jumped ? 1u << into.count : 0u);
+            into.count++;
+            return true;
+        };
+        State state{};
+        std::unordered_map<size_t, State> snapshots; // the state at each forward branch (before it)
+        bool reachable = true;
+        for (size_t i = 0; i < steps.size(); i++) {
+            const auto& step = steps[i];
+            if (const auto branches = branchesTo.find(i); branches != branchesTo.end()) {
+                State merged{};
+                if (reachable)
+                    merged = state;
+                uint8 overflow = 0; // the registers with too many writes: none of them is named
+                for (const size_t source : branches->second) {
+                    const State& from = snapshots.at(source);
+                    for (size_t argument = 0; argument < argumentsCount; argument++) {
+                        if (!(overflow & (1u << argument)))
+                            for (uint8 k = 0; k < from[argument].count; k++)
+                                if (!add(merged[argument], from[argument].steps[k], true)) {
+                                    reject(merged[argument]);
+                                    merged[argument] = Definitions{};
+                                    overflow |= static_cast<uint8>(1u << argument);
+                                    break;
+                                }
+                        if (overflow & (1u << argument))
+                            reject(from[argument]);
+                    }
+                }
+                state = merged;
+            } else if (!reachable) {
+                state = State{};
+            }
+            if ((step.kind == StepKind::Call || step.kind == StepKind::TailCall) && step.callee) {
+                const auto& params = step.callee->params;
+                for (size_t parameter = 0; parameter < params.size() && parameter < argumentsCount; parameter++) {
+                    if (!params[parameter].name || !params[parameter].name[0])
+                        continue; // a parameter an inferred prototype does not know
+                    const auto& definitions = state[parameter];
+                    for (uint8 k = 0; k < definitions.count; k++) {
+                        auto& reach = reaches[definitions.steps[k]];
+                        if (!reach.parameter.empty() && (reach.parameter != params[parameter].name || reach.function != step.callee->functionName))
+                            reach.rejected = true; // two calls take it as two parameters
+                        reach.function  = step.callee->functionName;
+                        reach.parameter = params[parameter].name;
+                        // the display names a write that falls into the block of a call; a tail jump has no argument names of its own
+                        if ((definitions.jumped & (1u << k)) || step.kind == StepKind::TailCall)
+                            reach.jumped = true;
+                        else
+                            reach.linear = true;
+                    }
+                }
+            }
+            if (step.kind == StepKind::IndirectJump || targetOf[i] <= i) // a switch / a branch back: the calls it reaches there are not followed
+                for (size_t argument = 0; argument < argumentsCount; argument++)
+                    reject(state[argument]);
+            if (step.kind == StepKind::Call)
+                state = State{}; // the argument registers are volatile
+            if (step.writes)
+                for (size_t argument = 0; argument < argumentsCount; argument++)
+                    if (step.writes & (1u << argument)) {
+                        state[argument]          = Definitions{};
+                        state[argument].steps[0] = static_cast<uint32>(i);
+                        state[argument].count    = 1;
+                    }
+            if (targetOf[i] != SIZE_MAX && targetOf[i] > i)
+                snapshots[i] = state;
+            reachable = step.kind != StepKind::Return && step.kind != StepKind::Jump && step.kind != StepKind::TailCall && step.kind != StepKind::IndirectJump;
+        }
+        for (const auto& [index, reach] : reaches)
+            if (reach.jumped && !reach.linear && !reach.rejected && !reach.parameter.empty())
+                argumentDefinitions.emplace(steps[index].address, std::make_pair(std::string(reach.function), std::string(reach.parameter)));
     }
 
     // a cmp of a register with a constant (cmp eax, 0x102 / cmp w0, #0x102 / cmn x0, #1: -1) when the register holds the return value of a
@@ -4407,6 +4722,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             int8 vaListTo  = -1;
             int8 storeFrom = -1, loadTo = -1;
             int32 slot = 0;
+            // x64: a write of the slot [rsp + 8 * index] (index < 16), the register a mov stores there (an argument of the next call)
+            int8 outgoingWritten = -1, outgoingFrom = -1;
         };
         std::vector<Step> steps;
         std::vector<std::pair<int32, uint32>> stores; // a variadic function: the slots its code writes (offset, size)
@@ -4418,17 +4735,21 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         const uint8* bytes = data.GetData();
         size_t size        = data.GetLength();
         uint64 address     = start;
+        const bool keepSteps = keepArgumentSteps && !variadic && (arch == DissasmArch::X64 || isArm64); // CollectArgumentDefinitions
+        std::vector<ArgumentStep> argumentSteps;
         while (steps.size() < MAX_STEPS && cs_disasm_iter(detailHandle, &bytes, &size, &address, insn)) {
             Step step{ insn->address, 0, -1, -1, -1, StepKind::Other, NO_TARGET, nullptr };
             const auto flow = GetInstructionFlow(*insn, arch);
             const auto operands = GetInstructionOperands(*insn, arch, labelBase);
             const auto inside = [&](uint64 target) { return target >= start && target < end; };
             const uint64 direct = operands.directTarget.has_value() ? operands.directTarget.value() & addressMask : NO_TARGET;
+            std::optional<const AsmFunctionDetails*> callee; // CalleePrototype, once
             if (flow == X86Flow::Call && isArm64 && stackHelperCalls.contains(insn->address)) {
                 step.writes = (1u << 16) | (1u << 17); // bl __security_push_cookie / __chkstk: x16 / x17 only, the arguments stay
             } else if (flow == X86Flow::Call) {
                 step.kind   = StepKind::Call;
-                step.callee = IsInferenceCallee(CalleePrototype(*insn, arch));
+                callee      = CalleePrototype(*insn, arch);
+                step.callee = IsInferenceCallee(callee.value());
                 step.writes = volatileMask;
             } else if (flow == X86Flow::Jump) {
                 if (direct != NO_TARGET && inside(direct)) {
@@ -4436,7 +4757,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     step.target = direct;
                 } else {
                     step.kind   = StepKind::TailCall; // jmp sub_X / jmp [__imp_X] / b sub_X: the arguments are passed on
-                    step.callee = IsInferenceCallee(CalleePrototype(*insn, arch));
+                    callee      = CalleePrototype(*insn, arch);
+                    step.callee = IsInferenceCallee(callee.value());
                 }
             } else if (flow == X86Flow::ConditionalJump) {
                 step.kind   = StepKind::ConditionalJump;
@@ -4505,13 +4827,54 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                             step.comparedRegister = static_cast<int8>(index);
                             step.comparedValue    = x86.operands[1].imm;
                         }
+                    // the stack slots of the arguments of the next call: mov qword ptr [rsp + 0x28], rbx
+                    for (uint8 i = 0; i < x86.op_count; i++)
+                        if (const auto& op = x86.operands[i]; op.type == X86_OP_MEM && (op.access & CS_AC_WRITE) && op.mem.base == X86_REG_RSP &&
+                                                              op.mem.index == X86_REG_INVALID && op.mem.disp >= 0 && op.mem.disp < 0x80) {
+                            step.outgoingWritten = static_cast<int8>(op.mem.disp / 8);
+                            if (insn->id == X86_INS_MOV && i == 0 && x86.op_count == 2 && op.mem.disp % 8 == 0 && x86.operands[1].type == X86_OP_REG &&
+                                x86.operands[1].size >= 4)
+                                if (const int index = registerIndex(x86.operands[1].reg); index >= 0 && index < REGISTERS)
+                                    step.outgoingFrom = static_cast<int8>(index);
+                        }
                 }
             }
             steps.push_back(step);
+            if (keepSteps) { // the step of CollectArgumentDefinitions from this one (DecodeArgumentStep gives the same)
+                ArgumentStep kept{ insn->address, NO_TARGET, nullptr, NO_TARGET, 0, ArgumentStepKind::Other };
+                switch (step.kind) {
+                case StepKind::Call:
+                    kept.kind       = ArgumentStepKind::Call;
+                    kept.callee     = callee.value_or(nullptr);
+                    kept.callTarget = direct;
+                    break;
+                case StepKind::TailCall:
+                    kept.callee     = callee.value_or(nullptr);
+                    kept.callTarget = direct;
+                    kept.kind       = direct != NO_TARGET || kept.callee ? ArgumentStepKind::TailCall : ArgumentStepKind::IndirectJump;
+                    break;
+                case StepKind::Jump:
+                case StepKind::ConditionalJump:
+                    kept.kind   = step.kind == StepKind::Jump ? ArgumentStepKind::Jump : ArgumentStepKind::ConditionalJump;
+                    kept.target = step.target;
+                    break;
+                case StepKind::Return:
+                    kept.kind = ArgumentStepKind::Return;
+                    break;
+                default:
+                    for (size_t argument = 0; argument < argumentsCount; argument++) // the writes of the argument registers
+                        if (step.writes & (1u << argumentRegister(argument)))
+                            kept.writes |= static_cast<uint8>(1u << argument);
+                    break;
+                }
+                argumentSteps.push_back(kept);
+            }
             if (step.kind == StepKind::Return && insn->address + insn->size >= end)
                 break;
         }
         cs_free(insn, 1);
+        if (keepSteps)
+            argumentStepsOf[start] = std::move(argumentSteps);
 
         // the branches inside of the function, by target: their steps (the state they bring)
         std::unordered_map<uint64, size_t> stepOfAddress;
@@ -4554,9 +4917,16 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         std::vector<std::optional<std::pair<std::string_view, std::string_view>>> parameters(argumentsCount);
         std::vector<const AsmFunctionDetails*> returningCallees; // the callees of RETURNED_BY - k
         std::vector<int8> returns;                                // what each return / tail jump returns
-        bool reachable = true; // the step before falls through
+        // Windows x64: the incoming argument the stack slots of the arguments of the next call hold ([rsp + 0x20]: the fifth), from the
+        // stores after the last write of rsp, a branch target or a call
+        std::array<int8, 16> outgoing;
+        outgoing.fill(NO_VALUE);
+        const bool outgoingSlots = !isArm64 && !isArm32 && !systemV;
+        bool reachable           = true; // the step before falls through
         for (size_t i = 0; i < steps.size(); i++) {
             const auto& step = steps[i];
+            if (branchesTo.contains(i) || !reachable)
+                outgoing.fill(NO_VALUE);
             if (const auto branches = branchesTo.find(i); branches != branchesTo.end()) {
                 // a branch target: what every branch to it agrees on; a register written up to a branch back to it is not known
                 State merged = state;
@@ -4607,6 +4977,22 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                         continue;
                     parameters[incoming] = std::make_pair(std::string_view(params[parameter].name), std::string_view(params[parameter].type));
                 }
+                // the parameters after the fourth: the stack slots of the call (__stdio_common_vswprintf(..., argList): mov [rsp + 0x28], rbx)
+                for (size_t parameter = argumentsCount;
+                     outgoingSlots && step.kind == StepKind::Call && parameter < params.size() && parameter < outgoing.size();
+                     parameter++) {
+                    const int8 incoming = outgoing[parameter];
+                    if (incoming < 0 || static_cast<size_t>(incoming) >= argumentsCount || parameters[incoming].has_value() || !params[parameter].name ||
+                        !params[parameter].name[0])
+                        continue;
+                    parameters[incoming] = std::make_pair(std::string_view(params[parameter].name), std::string_view(params[parameter].type));
+                }
+            }
+            if (outgoingSlots) {
+                if (step.kind == StepKind::Call || (step.writes & (1u << 4))) // a call, a write of rsp (push, sub rsp): other slots
+                    outgoing.fill(NO_VALUE);
+                if (step.outgoingWritten >= 0)
+                    outgoing[step.outgoingWritten] = step.outgoingFrom >= 0 ? state[step.outgoingFrom] : NO_VALUE;
             }
             if (step.target != NO_TARGET) {
                 snapshots[i] = state;
@@ -6089,6 +6475,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         InferPrototypes();
         AddGccMethodPrototypes();
         TrackComInterfaces();
+        CollectArgumentDefinitions();
         if (!is64 && arch == DissasmArch::X86)
             MarkX86ExceptionScopes();
         if (paddingReached && pendingRanges.empty()) {
@@ -6175,6 +6562,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         zone->inferredPrototypes        = std::move(inferredPrototypes);
         zone->methodPrototypes          = std::move(methodPrototypes);
         zone->returnValueConstants      = std::move(returnValueConstants);
+        zone->argumentDefinitions       = std::move(argumentDefinitions);
         zone->interfaceCalls            = std::move(interfaceCalls);
         zone->noReturnFunctions.assign(noReturnStarts.begin(), noReturnStarts.end());
         std::sort(zone->noReturnFunctions.begin(), zone->noReturnFunctions.end());

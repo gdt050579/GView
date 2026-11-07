@@ -410,6 +410,10 @@ struct DissasmCodeZone : public ParseZone {
     // WaitForSingleObject -> WAIT_TIMEOUT, cmp eax, 0xb7 after GetLastError -> ERROR_ALREADY_EXISTS); by the address of the cmp. Recomputed by
     // the deep scan (the walks of InferPrototypes), not saved
     std::unordered_map<uint64, std::string> returnValueConstants;
+    // the writes of argument registers that reach a call only through a jump (mov rcx, rbx; jmp loc_X ... loc_X: call CloseHandle; a tail
+    // jump): the function and the parameter they are (CollectArgumentDefinitions), by the address of the write; the display names them as
+    // the arguments of the block of a call (AnnounceCallInstruction). Recomputed by the deep scan, not saved
+    std::unordered_map<uint64, std::pair<std::string, std::string>> argumentDefinitions;
     // the methods of the COM interfaces the calls reach (beyond IDA): the interface of an object from the API that gives it (CoCreateInstance
     // with IID_IWbemLocator, QueryInterface, a method that gives another: ConnectServer -> IWbemServices), followed through the variables,
     // its vtable and the slot of the call (call [rax + 0x18], the CFG dispatch) -> "IWbemLocator::ConnectServer"; by the address of the

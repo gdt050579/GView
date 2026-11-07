@@ -1917,6 +1917,35 @@ static std::string_view GetShownFormat(const DissasmAsmPreCacheLine& line)
     return text;
 }
 
+// the name of the argument before the generated text of the line: lpFileName "C:\\file.txt"; a constant with its symbolic name:
+// dwDesiredAccess = GENERIC_READ
+void GView::View::DissasmViewer::NameArgumentLine(DissasmAsmPreCacheLine& line, std::string_view functionName, const char* name)
+{
+    std::string text = name;
+    std::string constant;
+    if (const auto value = GetArgumentImmediate(line); value.has_value())
+        constant = FormatApiConstant(functionName, name, value.value());
+    if (line.constantComment) { // a status named on the line: the value of the argument (ExitStatus = STATUS_ACCESS_DENIED)
+        if (constant.empty())
+            constant = line.autoComment;
+        line.autoComment.clear();
+        line.constantComment = false;
+    }
+    if (!constant.empty())
+        text += " = " + constant;
+    if (!line.autoComment.empty() && !line.autoComment.starts_with(text)) {
+        // the marks of the exception scopes are not a part of the value: dwBytes; try {
+        const std::string_view comment = line.autoComment;
+        const bool exceptionMark       = comment.starts_with("try {") || comment.starts_with("__try {") || comment.starts_with("} // starts at") ||
+                                   comment.starts_with("__except(") || comment.starts_with("catch(") || comment.starts_with("cleanup()");
+        text += exceptionMark ? "; " : " ";
+        text += line.autoComment;
+        line.autoComment = std::move(text);
+    } else if (line.autoComment.empty()) {
+        line.autoComment = std::move(text);
+    }
+}
+
 void DissasmAsmPreCacheData::AnnounceCallInstruction(
       const AsmFunctionDetails* functionDetails,
       bool registerArguments,
@@ -1928,33 +1957,7 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(
     // the lines prepared so far (above the call); the call line itself is not added yet
     if (cachedAsmLines.empty())
         return;
-    // the name of the argument before the generated text of the line: lpFileName "C:\\file.txt"; a constant with its symbolic name:
-    // dwDesiredAccess = GENERIC_READ
-    auto nameArgument = [functionDetails](DissasmAsmPreCacheLine& line, const char* name) {
-        std::string text = name;
-        std::string constant;
-        if (const auto value = GetArgumentImmediate(line); value.has_value())
-            constant = FormatApiConstant(functionDetails->functionName, name, value.value());
-        if (line.constantComment) { // a status named on the line: the value of the argument (ExitStatus = STATUS_ACCESS_DENIED)
-            if (constant.empty())
-                constant = line.autoComment;
-            line.autoComment.clear();
-            line.constantComment = false;
-        }
-        if (!constant.empty())
-            text += " = " + constant;
-        if (!line.autoComment.empty() && !line.autoComment.starts_with(text)) {
-            // the marks of the exception scopes are not a part of the value: dwBytes; try {
-            const std::string_view comment = line.autoComment;
-            const bool exceptionMark       = comment.starts_with("try {") || comment.starts_with("__try {") || comment.starts_with("} // starts at") ||
-                                       comment.starts_with("__except(") || comment.starts_with("catch(") || comment.starts_with("cleanup()");
-            text += exceptionMark ? "; " : " ";
-            text += line.autoComment;
-            line.autoComment = std::move(text);
-        } else if (line.autoComment.empty()) {
-            line.autoComment = std::move(text);
-        }
-    };
+    auto nameArgument = [functionDetails](DissasmAsmPreCacheLine& line, const char* name) { NameArgumentLine(line, functionDetails->functionName, name); };
     const uint32 startingLine = cachedAsmLines.back().currentLine;
     const auto paramsCount    = static_cast<uint32>(functionDetails->params.size());
     // beyond IDA (its decompiler does it): the arguments after a format (printf, DbgPrintEx, scanf) named by the conversions of the string
@@ -2007,6 +2010,10 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(
                 slot = pushedSlot < MAX_ARGUMENTS ? pushedSlot++ : DissasmAsmPreCacheLine::NO_ARGUMENT;
             else if (operands.starts_with("rsp, ") || operands == "rbp, rsp")
                 pushedSlot = MAX_ARGUMENTS;
+            // ARM64EC: the variadic arguments after x3 are in the stack x4 points to (str w8, [sp]: the first of them), x4 / x5 (their address,
+            // their size) are no arguments
+            if (hasFormat && variadicSlots < 8 && slot != DissasmAsmPreCacheLine::NO_ARGUMENT && slot >= variadicSlots)
+                slot = slot >= 8 ? static_cast<uint8>(variadicSlots + (slot - 8)) : DissasmAsmPreCacheLine::NO_ARGUMENT;
             if (slot >= slotsCount || named[slot])
                 continue;
             named[slot] = true;
@@ -2021,9 +2028,6 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(
             if (const char* text = ArgumentText(functionDetails->params[slot])) // not a parameter an inferred prototype does not know
                 nameArgument(*it, text);
         }
-        for (size_t index = 0; index < formatArgumentLines.size(); index++)
-            if (paramsCount + index >= variadicSlots) // ARM64EC: x4 points to the ones after the fourth, x5 is their size
-                formatArgumentLines[index] = nullptr;
         nameFormatArguments(false, variadicFloatsApart);
         return;
     }

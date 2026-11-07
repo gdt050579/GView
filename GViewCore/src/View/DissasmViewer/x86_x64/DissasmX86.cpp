@@ -1180,6 +1180,9 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         DropCommentShownInOperands();
 #endif
         AddConstantComment(*this, *insn, operands, params);
+        // an argument of a call that the block of the write jumps to (CollectArgumentDefinitions): named as the walk of the call names its block
+        if (const auto definition = params.zone->argumentDefinitions.find(insn->address); definition != params.zone->argumentDefinitions.end())
+            NameArgumentLine(*this, definition->second.first, definition->second.second.c_str());
         return true;
     }
 
