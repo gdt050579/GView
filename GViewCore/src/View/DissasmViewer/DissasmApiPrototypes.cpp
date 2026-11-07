@@ -895,7 +895,7 @@ constexpr std::string_view PROTOTYPES[] = {
     "IStream* SHOpenRegStream2W(HKEY hkey, LPCWSTR pszSubkey, LPCWSTR pszValue, DWORD grfMode)",
     "void SHChangeNotifyRegisterThread(SCNRT_STATUS status)",
     "void PathRemoveExtensionW(LPWSTR pszPath)",
-    "BOOL VerQueryValueW(LPCVOID pBlock, LPCWSTR lpSubBlock, LPvoid* lplpBuffer, PUINT puLen)",
+    "BOOL VerQueryValueW(LPCVOID pBlock, LPCWSTR lpSubBlock, LPVOID* lplpBuffer, PUINT puLen)",
     "HRESULT SHGetItemFromDataObject(IDataObject* pdtobj, DATAOBJ_GET_ITEM_FLAGS dwFlags, REFIID riid, void** ppv)",
     "HRESULT PropVariantCopy(PROPVARIANT* pvarDest, const PROPVARIANT* pvarSrc)",
     "HRESULT PropVariantToBoolean(REFPROPVARIANT propvarIn, BOOL* pfRet)",
@@ -1029,15 +1029,15 @@ constexpr std::string_view PROTOTYPES[] = {
     "NTSTATUS IofCallDriver(PDEVICE_OBJECT DeviceObject, PIRP Irp)",
     "MM_MDL_PAGE_CONTENTS_STATE MmMdlPageContentsState(PMDL MemoryDescriptorList, MM_MDL_PAGE_CONTENTS_STATE State)",
     "BOOLEAN ClfsLsnEqual(const CLFS_LSN* plsn1, const CLFS_LSN* plsn2)",
-    "BOOLEAN CcPinRead(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, ULONG Length, ULONG Flags, Pvoid* Bcb, Pvoid* Buffer)",
+    "BOOLEAN CcPinRead(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, ULONG Length, ULONG Flags, PVOID* Bcb, PVOID* Buffer)",
     "void SeLockSubjectContext(PSECURITY_SUBJECT_CONTEXT SubjectContext)",
-    "BOOLEAN CcPreparePinWrite(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, ULONG Length, BOOLEAN Zero, ULONG Flags, Pvoid* Bcb, Pvoid* Buffer)",
+    "BOOLEAN CcPreparePinWrite(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, ULONG Length, BOOLEAN Zero, ULONG Flags, PVOID* Bcb, PVOID* Buffer)",
     "PVOID ExAllocateFromNPagedLookasideList(PNPAGED_LOOKASIDE_LIST Lookaside)",
     "NTSTATUS ClfsReserveAndAppendLog(PVOID pvMarshalContext, PCLFS_WRITE_ENTRY rgWriteEntries, ULONG cWriteEntries, PCLFS_LSN plsnUndoNext, PCLFS_LSN plsnPrevious, ULONG cReserveRecords, PLONGLONG rgcbReservation, ULONG fFlags, PCLFS_LSN plsn)",
     "void RtlInitAnsiString(PANSI_STRING DestinationString, PCSZ SourceString)",
     "LONG KeResetEvent(PRKEVENT Event)",
     "NTSTATUS EtwUnregister(REGHANDLE RegHandle)",
-    "NTSTATUS ObReferenceObjectByHandle(HANDLE Handle, ACCESS_MASK DesiredAccess, POBJECT_TYPE ObjectType, KPROCESSOR_MODE AccessMode, Pvoid* Object, POBJECT_HANDLE_INFORMATION HandleInformation)",
+    "NTSTATUS ObReferenceObjectByHandle(HANDLE Handle, ACCESS_MASK DesiredAccess, POBJECT_TYPE ObjectType, KPROCESSOR_MODE AccessMode, PVOID* Object, POBJECT_HANDLE_INFORMATION HandleInformation)",
     "BOOLEAN FsRtlIsNonEmptyDirectoryReparsePointAllowed(ULONG ReparseTag)",
     "NTSTATUS RtlCheckRegistryKey(ULONG RelativeTo, PWSTR Path)",
     "void ExReleaseResourceForThreadLite(PERESOURCE Resource, ERESOURCE_THREAD ResourceThreadId)",
@@ -1050,11 +1050,11 @@ constexpr std::string_view PROTOTYPES[] = {
     "NTSTATUS ZwQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass, PVOID KeyValueInformation, ULONG Length, PULONG ResultLength)",
     "BOOLEAN RtlAreBitsSet(PRTL_BITMAP BitMapHeader, ULONG StartingIndex, ULONG Length)",
     "NTSTATUS EtwWrite(REGHANDLE RegHandle, PCEVENT_DESCRIPTOR EventDescriptor, LPCGUID ActivityId, ULONG UserDataCount, PEVENT_DATA_DESCRIPTOR UserData)",
-    "NTSTATUS FsRtlFindExtraCreateParameter(PECP_LIST EcpList, LPCGUID EcpType, Pvoid* EcpContext, ULONG* EcpContextSize)",
+    "NTSTATUS FsRtlFindExtraCreateParameter(PECP_LIST EcpList, LPCGUID EcpType, PVOID* EcpContext, ULONG* EcpContextSize)",
     "NTSTATUS IoRetrievePriorityInfo(PIRP Irp, PFILE_OBJECT FileObject, PETHREAD Thread, PIO_PRIORITY_INFO PriorityInfo)",
     "void MmProbeAndLockPages(PMDL MemoryDescriptorList, KPROCESSOR_MODE AccessMode, LOCK_OPERATION Operation)",
     "BOOLEAN FsRtlLookupLastBaseMcbEntry(PBASE_MCB Mcb, PLONGLONG Vbn, PLONGLONG Lbn)",
-    "PVOID RtlEnumerateGenericTableLikeADirectory(PRTL_AVL_TABLE Table, PRTL_AVL_MATCH_FUNCTION MatchFunction, PVOID MatchData, ULONG NextFlag, Pvoid* RestartKey, PULONG DeleteCount, PVOID Buffer)",
+    "PVOID RtlEnumerateGenericTableLikeADirectory(PRTL_AVL_TABLE Table, PRTL_AVL_MATCH_FUNCTION MatchFunction, PVOID MatchData, ULONG NextFlag, PVOID* RestartKey, PULONG DeleteCount, PVOID Buffer)",
     "void MmUnmapReservedMapping(PVOID BaseAddress, ULONG PoolTag, PMDL MemoryDescriptorList)",
     "BOOLEAN RtlEqualUnicodeString(PCUNICODE_STRING String1, PCUNICODE_STRING String2, BOOLEAN CaseInSensitive)",
     "NTSTATUS ClfsMgmtQueryPolicy(PLOG_FILE_OBJECT LogFile, CLFS_MGMT_POLICY_TYPE PolicyType, PCLFS_MGMT_POLICY Policy, PULONG PolicyLength)",
@@ -1069,7 +1069,7 @@ constexpr std::string_view PROTOTYPES[] = {
     "PULONG RtlSubAuthoritySid(PSID Sid, ULONG SubAuthority)",
     "NTSTATUS ExUuidCreate(UUID* Uuid)",
     "NTSTATUS PsLookupProcessByProcessId(HANDLE ProcessId, PEPROCESS* Process)",
-    "NTSTATUS SeQueryInformationToken(PACCESS_TOKEN Token, TOKEN_INFORMATION_CLASS TokenInformationClass, Pvoid* TokenInformation)",
+    "NTSTATUS SeQueryInformationToken(PACCESS_TOKEN Token, TOKEN_INFORMATION_CLASS TokenInformationClass, PVOID* TokenInformation)",
     "NTSTATUS RtlAnsiStringToUnicodeString(PUNICODE_STRING DestinationString, PCANSI_STRING SourceString, BOOLEAN AllocateDestinationString)",
     "PEPROCESS IoGetRequestorProcess(PIRP Irp)",
     "BOOLEAN IoIs32bitProcess(PIRP Irp)",
@@ -1121,10 +1121,10 @@ constexpr std::string_view PROTOTYPES[] = {
     "NTSTATUS FsRtlValidateReparsePointBuffer(ULONG BufferLength, PREPARSE_DATA_BUFFER ReparseBuffer)",
     "NTSTATUS ClfsGetLogFileInformation(PLOG_FILE_OBJECT plfoLog, PCLFS_INFORMATION pinfoBuffer, PULONG pcbInfoBuffer)",
     "BOOLEAN CcPurgeCacheSection(PSECTION_OBJECT_POINTERS SectionObjectPointer, PLARGE_INTEGER FileOffset, ULONG Length, ULONG Flags)",
-    "NTSTATUS ClfsReadLogRecord(PVOID pvMarshalContext, PCLFS_LSN plsnFirst, CLFS_CONTEXT_MODE peContextMode, Pvoid* ppvReadBuffer, PULONG pcbReadBuffer, PCLFS_RECORD_TYPE peRecordType, PCLFS_LSN plsnUndoNext, PCLFS_LSN plsnPrevious, Pvoid* ppvReadContext)",
+    "NTSTATUS ClfsReadLogRecord(PVOID pvMarshalContext, PCLFS_LSN plsnFirst, CLFS_CONTEXT_MODE peContextMode, PVOID* ppvReadBuffer, PULONG pcbReadBuffer, PCLFS_RECORD_TYPE peRecordType, PCLFS_LSN plsnUndoNext, PCLFS_LSN plsnPrevious, PVOID* ppvReadContext)",
     "ULONG RtlFindLastBackwardRunClear(PRTL_BITMAP BitMapHeader, ULONG FromIndex, PULONG StartingRunIndex)",
-    "PVOID RtlLookupFirstMatchingElementGenericTableAvl(PRTL_AVL_TABLE Table, PVOID Buffer, Pvoid* RestartKey)",
-    "PVOID RtlEnumerateGenericTableWithoutSplayingAvl(PRTL_AVL_TABLE Table, Pvoid* RestartKey)",
+    "PVOID RtlLookupFirstMatchingElementGenericTableAvl(PRTL_AVL_TABLE Table, PVOID Buffer, PVOID* RestartKey)",
+    "PVOID RtlEnumerateGenericTableWithoutSplayingAvl(PRTL_AVL_TABLE Table, PVOID* RestartKey)",
     "void FsRtlAddToTunnelCacheEx(TUNNEL* Cache, ULONGLONG DirectoryKey, UNICODE_STRING* ShortName, UNICODE_STRING* LongName, ULONG Flags, ULONG DataLength, void* Data)",
     "ULONG MmDoesFileHaveUserWritableReferences(PSECTION_OBJECT_POINTERS SectionPointer)",
     "BOOLEAN FsRtlCurrentBatchOplock(POPLOCK Oplock)",
@@ -1155,12 +1155,12 @@ constexpr std::string_view PROTOTYPES[] = {
     "BOOLEAN TmIsTransactionActive(PKTRANSACTION Transaction)",
     "BOOLEAN FsRtlCurrentOplockH(POPLOCK Oplock)",
     "ULONG RtlFindNextForwardRunClear(PRTL_BITMAP BitMapHeader, ULONG FromIndex, PULONG StartingRunIndex)",
-    "NTSTATUS ClfsReadNextLogRecord(PVOID pvReadContext, Pvoid* ppvBuffer, PULONG pcbBuffer, PCLFS_RECORD_TYPE peRecordType, PCLFS_LSN plsnUser, PCLFS_LSN plsnUndoNext, PCLFS_LSN plsnPrevious, PCLFS_LSN plsnRecord)",
+    "NTSTATUS ClfsReadNextLogRecord(PVOID pvReadContext, PVOID* ppvBuffer, PULONG pcbBuffer, PCLFS_RECORD_TYPE peRecordType, PCLFS_LSN plsnUser, PCLFS_LSN plsnUndoNext, PCLFS_LSN plsnPrevious, PCLFS_LSN plsnRecord)",
     "BOOLEAN RtlPrefixString(const STRING* String1, const STRING* String2, BOOLEAN CaseInSensitive)",
     "void FsRtlAcknowledgeEcp(PVOID EcpContext)",
     "void RtlCaptureContext(PCONTEXT ContextRecord)",
     "PRUNTIME_FUNCTION RtlLookupFunctionEntry(ULONG64 ControlPc, PULONG64 ImageBase, PUNWIND_HISTORY_TABLE HistoryTable)",
-    "PEXCEPTION_ROUTINE RtlVirtualUnwind(ULONG HandlerType, ULONG64 ImageBase, ULONG64 ControlPc, PRUNTIME_FUNCTION FunctionEntry, PCONTEXT ContextRecord, Pvoid* HandlerData, PULONG64 EstablisherFrame, PKNONVOLATILE_CONTEXT_POINTERS ContextPointers)",
+    "PEXCEPTION_ROUTINE RtlVirtualUnwind(ULONG HandlerType, ULONG64 ImageBase, ULONG64 ControlPc, PRUNTIME_FUNCTION FunctionEntry, PCONTEXT ContextRecord, PVOID* HandlerData, PULONG64 EstablisherFrame, PKNONVOLATILE_CONTEXT_POINTERS ContextPointers)",
     "NTSTATUS NtQueryInformationToken(HANDLE TokenHandle, TOKEN_INFORMATION_CLASS TokenInformationClass, PVOID TokenInformation, ULONG TokenInformationLength, PULONG ReturnLength)",
     "ULONG RtlNtStatusToDosError(NTSTATUS Status)",
     "NTSTATUS NtSetInformationProcess(HANDLE ProcessHandle, PROCESSINFOCLASS ProcessInformationClass, PVOID ProcessInformation, ULONG ProcessInformationLength)",
@@ -1261,6 +1261,44 @@ constexpr std::string_view PROTOTYPES[] = {
     "void CSPrintErrorLineFile2(DWORD dwLineFile, HRESULT hr, HRESULT hrQuiet)",
     "void CSPrintErrorLineFileData(LPCWSTR pwszData, DWORD dwLineFile, HRESULT hr)",
     "void CSPrintErrorLineFileData2(LPCWSTR pwszData, DWORD dwLineFile, HRESULT hr, HRESULT hrQuiet)",
+    // the certificate templates and the CAs of the directory (certca.h)
+    "HRESULT CAFindByName(LPCWSTR wszCAName, LPCWSTR wszScope, DWORD dwFlags, HCAINFO* phCAInfo)",
+    "HRESULT CAFindByCertType(LPCWSTR wszCertType, LPCWSTR wszScope, DWORD dwFlags, HCAINFO* phCAInfo)",
+    "HRESULT CAEnumFirstCA(LPCWSTR wszScope, DWORD dwFlags, HCAINFO* phCAInfo)",
+    "HRESULT CAEnumNextCA(HCAINFO hPrevCA, HCAINFO* phCAInfo)",
+    "HRESULT CACreateNewCA(LPCWSTR wszCAName, LPCWSTR wszScope, DWORD dwFlags, HCAINFO* phCAInfo)",
+    "HRESULT CAUpdateCA(HCAINFO hCAInfo)",
+    "DWORD CACountCAs(HCAINFO hCAInfo)",
+    "HRESULT CACloseCA(HCAINFO hCA)",
+    "HRESULT CAGetCAProperty(HCAINFO hCAInfo, LPCWSTR wszPropertyName, LPWSTR** pawszPropertyValue)",
+    "HRESULT CAFreeCAProperty(HCAINFO hCAInfo, LPWSTR* awszPropertyValue)",
+    "HRESULT CASetCAProperty(HCAINFO hCAInfo, LPCWSTR wszPropertyName, LPWSTR* awszPropertyValue)",
+    "HRESULT CAGetCAFlags(HCAINFO hCAInfo, DWORD* pdwFlags)",
+    "HRESULT CASetCAFlags(HCAINFO hCAInfo, DWORD dwFlags)",
+    "HRESULT CAGetCACertificate(HCAINFO hCAInfo, PCCERT_CONTEXT* ppCert)",
+    "HRESULT CASetCACertificate(HCAINFO hCAInfo, PCCERT_CONTEXT pCert)",
+    "HRESULT CAGetCAExpiration(HCAINFO hCAInfo, DWORD* pdwExpiration, DWORD* pdwUnits)",
+    "HRESULT CAGetCASecurity(HCAINFO hCAInfo, PSECURITY_DESCRIPTOR* ppSD)",
+    "HRESULT CASetCASecurity(HCAINFO hCAInfo, PSECURITY_DESCRIPTOR pSD)",
+    "HRESULT CAAccessCheck(HCAINFO hCAInfo, HANDLE ClientToken)",
+    "HRESULT CAEnumCertTypesForCA(HCAINFO hCAInfo, DWORD dwFlags, HCERTTYPE* phCertType)",
+    "HRESULT CAEnumCertTypesForCAEx(HCAINFO hCAInfo, LPCWSTR wszScope, DWORD dwFlags, HCERTTYPE* phCertType)",
+    "HRESULT CAEnumCertTypesEx(LPCWSTR wszScope, DWORD dwFlags, HCERTTYPE* phCertType)",
+    "HRESULT CAFindCertTypeByName(LPCWSTR wszCertType, HCAINFO hCAInfo, DWORD dwFlags, HCERTTYPE* phCertType)",
+    "HRESULT CAEnumNextCertType(HCERTTYPE hPrevCertType, HCERTTYPE* phCertType)",
+    "DWORD CACountCertTypes(HCERTTYPE hCertType)",
+    "HRESULT CACloseCertType(HCERTTYPE hCertType)",
+    "HRESULT CAGetCertTypeProperty(HCERTTYPE hCertType, LPCWSTR wszPropertyName, LPWSTR** pawszPropertyValue)",
+    "HRESULT CAGetCertTypePropertyEx(HCERTTYPE hCertType, LPCWSTR wszPropertyName, LPVOID pPropertyValue)",
+    "HRESULT CAFreeCertTypeProperty(HCERTTYPE hCertType, LPWSTR* awszPropertyValue)",
+    "HRESULT CAGetCertTypeExtensions(HCERTTYPE hCertType, PCERT_EXTENSIONS* ppCertExtensions)",
+    "HRESULT CAFreeCertTypeExtensions(HCERTTYPE hCertType, PCERT_EXTENSIONS pCertExtensions)",
+    "HRESULT CAGetCertTypeFlagsEx(HCERTTYPE hCertType, DWORD dwOption, DWORD* pdwFlags)",
+    "HRESULT CAGetCertTypeKeySpec(HCERTTYPE hCertType, DWORD* pdwKeySpec)",
+    "HRESULT CAGetCertTypeExpiration(HCERTTYPE hCertType, FILETIME* pftExpiration, FILETIME* pftOverlap)",
+    "HRESULT CACertTypeGetSecurity(HCERTTYPE hCertType, PSECURITY_DESCRIPTOR* ppSD)",
+    "HRESULT CACertTypeAccessCheck(HCERTTYPE hCertType, HANDLE ClientToken)",
+    "HRESULT CACertTypeAccessCheckEx(HCERTTYPE hCertType, HANDLE ClientToken, DWORD dwOption)",
     "BOOL DbgIsSSActive(DWORD dwSSMask)",
     "int DbgPrintf(DWORD dwSubSystemId, LPCSTR lpFmt, ...)",
     "BOOL GetComputerNameExW(COMPUTER_NAME_FORMAT NameType, LPWSTR lpBuffer, LPDWORD nSize)",
@@ -2678,10 +2716,18 @@ bool IsConstructorOrDestructor(std::string_view functionName, std::string_view s
     return !className.empty() && (own == className || (own.size() == className.size() + 1 && own.front() == '~' && own.substr(1) == className));
 }
 
-// MSVC: a class / struct / union passed or returned by value (not a pointer or a reference to it)
+// a pointer to a function (void (*)(void*), struct DirectUI::PropertyInfo const * (__cdecl *)(void)): one pointer; not a pointer to a member
+// function (void (__cdecl A::*)(void): its size depends on the class)
+bool IsPointerToFunction(std::string_view type)
+{
+    return type.ends_with(')') && type.find("*)(") != std::string_view::npos && type.find("::*") == std::string_view::npos;
+}
+
+// MSVC: a class / struct / union passed or returned by value (not a pointer or a reference to it, nor a pointer to a function returning one)
 bool IsClassByValue(std::string_view type)
 {
-    return (type.starts_with("class ") || type.starts_with("struct ") || type.starts_with("union ")) && !type.ends_with('*') && !type.ends_with('&');
+    return (type.starts_with("class ") || type.starts_with("struct ") || type.starts_with("union ")) && !type.ends_with('*') && !type.ends_with('&') &&
+           !IsPointerToFunction(type);
 }
 
 // GCC: the integer registers of System V a parameter takes: 1 for a pointer, a reference, an integer, an enum of the standard library
@@ -2716,7 +2762,7 @@ int32 SystemVIntegerRegisters(std::string_view type)
                                                      "std::future_errc",
                                                      "std::byte",
                                                      "__mbstate_t" };
-    if (type.ends_with('*') || type.ends_with('&') || std::find(std::begin(INTEGERS), std::end(INTEGERS), type) != std::end(INTEGERS) ||
+    if (type.ends_with('*') || type.ends_with('&') || IsPointerToFunction(type) || std::find(std::begin(INTEGERS), std::end(INTEGERS), type) != std::end(INTEGERS) ||
         std::find(std::begin(ENUMS), std::end(ENUMS), type) != std::end(ENUMS) || type.starts_with("__gnu_cxx::__normal_iterator<") ||
         (type.starts_with("std::chrono::time_point<") && type.find("std::chrono::duration<long,") != std::string_view::npos))
         return 1;

@@ -4790,6 +4790,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         constexpr uint32 MAX_STEPS     = 4096;
         constexpr int REGISTERS        = 32;
         constexpr int32 UNKNOWN_DEPTH  = INT32_MIN; // the depth of rsp after a write of it that is not followed
+        constexpr int32 NO_FRAME_POINTER = INT32_MIN, FRAME_POINTER_LOST = INT32_MIN + 1;
         const bool isArm64             = arch == DissasmArch::Arm64;
         const auto* variadic           = isArm64 && variadicFrame && variadicFrame->variadic.has_value() ? &variadicFrame->variadic.value() : nullptr;
         const bool isArm32             = arch == DissasmArch::Arm || arch == DissasmArch::Thumb;
@@ -4842,12 +4843,19 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             int32 slot = 0;
             // x64: a write of the slot [rsp + 8 * index] (index < 16), the register a mov stores there (an argument of the next call)
             int8 outgoingWritten = -1, outgoingFrom = -1;
-            // Windows x64: the change of rsp (push, pop, sub / add rsp, imm; UNKNOWN_DEPTH: another write of it); a mov of [rsp + stackOffset]
-            // to a register (stackLoadTo) or a write of that slot (stackStore): the incoming arguments after the fourth
-            int32 rspChange   = 0;
-            int8 stackLoadTo  = -1;
-            bool stackStore   = false;
-            int32 stackOffset = 0;
+            // Windows x64 / ARM64: the change of the stack pointer (push, pop, sub / add rsp, imm; sub / add sp, sp, #imm, the writeback of
+            // stp x29, x30, [sp, #-0x20]!; UNKNOWN_DEPTH: another write of it); an access of [rsp + stackOffset] / [sp, #n] (stackBase 1) or
+            // [x29, #n] (2): the registers it loads (stackLoadTo) or stores (stackStoreFrom; a pair of ARM64: the next slot of stackSize
+            // bytes), a write of the slot (stackStore): the incoming arguments after the fourth (x64), the argument registers spilled
+            int32 rspChange          = 0;
+            int8 stackBase           = 0;
+            bool stackStore          = false;
+            uint8 stackSize          = 8;
+            int32 stackOffset        = 0;
+            int8 stackLoadTo[2]      = { -1, -1 };
+            int8 stackStoreFrom[2]   = { -1, -1 };
+            bool stackAddress        = false;            // lea rcx, [rsp + 0x30] / add x1, sp, #0x18: the address of the slot taken
+            int32 framePointerFromSp = NO_FRAME_POINTER; // ARM64: mov x29, sp / add x29, sp, #n (n); FRAME_POINTER_LOST: another write of x29
         };
         std::vector<Step> steps;
         std::vector<std::pair<int32, uint32>> stores; // a variadic function: the slots its code writes (offset, size)
@@ -4929,6 +4937,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                         }
                     if (variadic && step.kind == StepKind::Other)
                         DecodeVariadicStep(*insn, *variadicFrame, *variadic, step, stores, scratchConstants);
+                    if (isArm64)
+                        DecodeArm64StackStep(*insn, step);
                 } else {
                     const cs_x86& x86 = insn->detail->x86;
                     for (uint8 i = 0; i < x86.op_count; i++)
@@ -4978,13 +4988,19 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                         for (uint8 i = 0; i < x86.op_count; i++)
                             if (const auto& op = x86.operands[i]; op.type == X86_OP_MEM && op.mem.base == X86_REG_RSP && op.mem.index == X86_REG_INVALID &&
                                                                   op.mem.disp >= 0 && op.mem.disp < 0x100000) {
-                                step.stackOffset = static_cast<int32>(op.mem.disp);
-                                if (op.access & CS_AC_WRITE)
+                                step.stackOffset  = static_cast<int32>(op.mem.disp);
+                                step.stackBase    = 1;
+                                step.stackAddress = insn->id == X86_INS_LEA;
+                                if (op.access & CS_AC_WRITE) {
                                     step.stackStore = true;
-                                else if (
+                                    if (insn->id == X86_INS_MOV && i == 0 && x86.op_count == 2 && x86.operands[1].type == X86_OP_REG &&
+                                        x86.operands[1].size >= 4)
+                                        if (const int index = registerIndex(x86.operands[1].reg); index >= 0 && index < REGISTERS)
+                                            step.stackStoreFrom[0] = static_cast<int8>(index);
+                                } else if (
                                       insn->id == X86_INS_MOV && i == 1 && x86.op_count == 2 && x86.operands[0].type == X86_OP_REG && x86.operands[0].size >= 4)
                                     if (const int index = registerIndex(x86.operands[0].reg); index >= 0 && index < REGISTERS)
-                                        step.stackLoadTo = static_cast<int8>(index);
+                                        step.stackLoadTo[0] = static_cast<int8>(index);
                             }
                     }
                 }
@@ -5068,9 +5084,69 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         // bytes below the rsp of the entry) before the function writes their slot; up to MAX_STACK_PARAMETERS of them
         constexpr size_t MAX_STACK_PARAMETERS = 8;
         const bool stackParameters            = !isArm64 && !isArm32 && !systemV && arch == DissasmArch::X64;
-        int32 depth                           = 0;
-        std::unordered_map<size_t, int32> depthSnapshots;
-        uint32 writtenStackParameters = 0; // a bit each
+        uint32 writtenStackParameters         = 0; // a bit each
+        // the depth of the stack pointer before each step (Windows x64, ARM64): the bytes below the one of the entry, the one the code falling
+        // into a branch target and every forward branch to it agree on (else not known), after a write of it not followed: not known
+        const bool stackDepths = stackParameters || isArm64;
+        std::vector<int32> depthAt;
+        if (stackDepths) {
+            depthAt.assign(steps.size(), UNKNOWN_DEPTH);
+            std::unordered_map<size_t, int32> depthSnapshots;
+            int32 depth    = 0;
+            bool fallsInto = true;
+            for (size_t i = 0; i < steps.size(); i++) {
+                std::optional<int32> agreed;
+                if (fallsInto)
+                    agreed = depth;
+                bool conflict = false;
+                if (const auto branches = branchesTo.find(i); branches != branchesTo.end())
+                    for (const size_t source : branches->second)
+                        if (source < i) {
+                            const int32 from = depthSnapshots.at(source);
+                            conflict |= agreed.has_value() && agreed.value() != from;
+                            agreed = from;
+                        }
+                depth      = agreed.has_value() && !conflict ? agreed.value() : UNKNOWN_DEPTH;
+                depthAt[i] = depth;
+                if (steps[i].target != NO_TARGET)
+                    depthSnapshots[i] = depth;
+                if (depth != UNKNOWN_DEPTH)
+                    depth = steps[i].rspChange == UNKNOWN_DEPTH ? UNKNOWN_DEPTH : depth - steps[i].rspChange;
+                fallsInto = steps[i].kind != StepKind::Return && steps[i].kind != StepKind::Jump && steps[i].kind != StepKind::TailCall;
+            }
+        }
+        // the slot of a stack access from the stack pointer of the entry (x29 from the step that sets it from sp: ARM64); none when not known
+        int32 framePointer = NO_FRAME_POINTER; // x29 - the sp of the entry
+        const auto slotOf  = [&](size_t i) -> std::optional<int64> {
+            const auto& step = steps[i];
+            if (step.stackBase == 1 && depthAt[i] != UNKNOWN_DEPTH)
+                return static_cast<int64>(step.stackOffset) - depthAt[i];
+            if (step.stackBase == 2 && framePointer != NO_FRAME_POINTER && framePointer != FRAME_POINTER_LOST)
+                return static_cast<int64>(step.stackOffset) + framePointer;
+            return std::nullopt;
+        };
+        // the argument registers spilled: a slot the function writes once (in the order of the code), in its code before any branch, holds the
+        // incoming argument the register had; a load of it gives that argument again (mov [rsp + 8], rcx .. mov rcx, [rsp + 0x30]; str x0, [sp,
+        // #0x18] .. ldr x0, [sp, #0x18])
+        std::unordered_map<int64, uint32> slotWrites;
+        if (stackDepths) {
+            for (size_t i = 0; i < steps.size(); i++) {
+                if (steps[i].framePointerFromSp != NO_FRAME_POINTER)
+                    framePointer = steps[i].framePointerFromSp == FRAME_POINTER_LOST || depthAt[i] == UNKNOWN_DEPTH || framePointer != NO_FRAME_POINTER
+                                         ? FRAME_POINTER_LOST
+                                         : steps[i].framePointerFromSp - depthAt[i];
+                if (steps[i].stackStore || steps[i].stackAddress)
+                    if (const auto slot = slotOf(i); slot.has_value()) {
+                        // its address taken: a callee may write it (not followed)
+                        slotWrites[slot.value()] += steps[i].stackAddress ? 2 : 1;
+                        if (steps[i].stackStoreFrom[1] >= 0)
+                            slotWrites[slot.value() + steps[i].stackSize]++;
+                    }
+            }
+            framePointer = NO_FRAME_POINTER;
+        }
+        std::unordered_map<int64, int8> spilled;
+        bool entryCode = true; // no branch, no branch target so far
         std::vector<std::optional<std::pair<std::string_view, std::string_view>>> parameters(argumentsCount + (stackParameters ? MAX_STACK_PARAMETERS : 0));
         std::vector<const AsmFunctionDetails*> returningCallees; // the callees of RETURNED_BY - k
         std::vector<int8> returns;                                // what each return / tail jump returns
@@ -5084,22 +5160,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const auto& step = steps[i];
             if (branchesTo.contains(i) || !reachable)
                 outgoing.fill(NO_VALUE);
-            if (stackParameters) {
-                // a branch target: the depth every forward branch to it agrees on (and the code that falls into it)
-                std::optional<int32> agreed;
-                if (reachable)
-                    agreed = depth;
-                bool conflict = false;
-                if (const auto branches = branchesTo.find(i); branches != branchesTo.end())
-                    for (const size_t source : branches->second)
-                        if (source < i) {
-                            const int32 from = depthSnapshots.at(source);
-                            conflict |= agreed.has_value() && agreed.value() != from;
-                            agreed = from;
-                        }
-                // code after a ret / jmp that no forward branch reaches, branches with other depths: not known
-                depth = agreed.has_value() && !conflict ? agreed.value() : UNKNOWN_DEPTH;
-            }
+            entryCode = entryCode && !branchesTo.contains(i) && step.target == NO_TARGET && step.kind != StepKind::Jump &&
+                        step.kind != StepKind::ConditionalJump && step.kind != StepKind::Return && step.kind != StepKind::TailCall;
             if (const auto branches = branchesTo.find(i); branches != branchesTo.end()) {
                 // a branch target: what every branch to it agrees on; a register written up to a branch back to it is not known
                 State merged = state;
@@ -5171,8 +5233,6 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 snapshots[i] = state;
                 if (variadic)
                     vaSnapshots[i] = vaList;
-                if (stackParameters)
-                    depthSnapshots[i] = depth;
             }
             if (step.comparedRegister >= 0)
                 RecordReturnComparison(step.address, state[step.comparedRegister], returningCallees, step.comparedValue);
@@ -5181,6 +5241,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 returns.push_back(state[0]);
             else if (step.kind == StepKind::TailCall)
                 returns.push_back(ReturnedValueOf(returningCallees, step.callee));
+            const int8 stateBeforeStep[2] = { step.stackStoreFrom[0] >= 0 ? state[step.stackStoreFrom[0]] : NO_VALUE,
+                                              step.stackStoreFrom[1] >= 0 ? state[step.stackStoreFrom[1]] : NO_VALUE };
             if (step.copyTo >= 0 && step.copyTo < REGISTERS && step.copyFrom >= 0 && step.copyFrom < REGISTERS) {
                 state[step.copyTo] = state[step.copyFrom];
                 vaList             = (vaList & ~(1u << step.copyTo)) | (((vaList >> step.copyFrom) & 1u) << step.copyTo);
@@ -5195,19 +5257,29 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 state[step.constantTo] = CONSTANT_VALUE;
                 vaList &= ~(1u << step.constantTo);
             }
-            if (stackParameters && depth != UNKNOWN_DEPTH && (step.stackStore || step.stackLoadTo >= 0)) {
-                // the slot from the rsp of the entry: 0x28 + 8 * k is the incoming argument 4 + k
-                const int64 fromEntry = static_cast<int64>(step.stackOffset) - depth;
-                if (fromEntry >= 0x28 && (fromEntry - 0x28) % 8 == 0 && (fromEntry - 0x28) / 8 < static_cast<int64>(MAX_STACK_PARAMETERS)) {
+            if (stackDepths && step.framePointerFromSp != NO_FRAME_POINTER)
+                framePointer = step.framePointerFromSp == FRAME_POINTER_LOST || depthAt[i] == UNKNOWN_DEPTH || framePointer != NO_FRAME_POINTER
+                                     ? FRAME_POINTER_LOST
+                                     : step.framePointerFromSp - depthAt[i];
+            if (const auto slot = stackDepths && step.stackBase != 0 ? slotOf(i) : std::nullopt; slot.has_value()) {
+                // the slot from the rsp of the entry: 0x28 + 8 * k is the incoming argument 4 + k (Windows x64)
+                const int64 fromEntry = slot.value();
+                if (stackParameters && fromEntry >= 0x28 && (fromEntry - 0x28) % 8 == 0 && (fromEntry - 0x28) / 8 < static_cast<int64>(MAX_STACK_PARAMETERS)) {
                     const auto k = static_cast<size_t>((fromEntry - 0x28) / 8);
                     if (step.stackStore)
                         writtenStackParameters |= 1u << k;
-                    else if (!(writtenStackParameters & (1u << k)))
-                        state[step.stackLoadTo] = static_cast<int8>(argumentsCount + k);
+                    else if (step.stackLoadTo[0] >= 0 && !(writtenStackParameters & (1u << k)))
+                        state[step.stackLoadTo[0]] = static_cast<int8>(argumentsCount + k);
+                }
+                for (uint8 half = 0; half < 2; half++) {
+                    const int64 at = fromEntry + half * step.stackSize;
+                    if (step.stackStoreFrom[half] >= 0 && entryCode && slotWrites[at] == 1 && stateBeforeStep[half] >= 0)
+                        spilled[at] = stateBeforeStep[half];
+                    if (step.stackLoadTo[half] >= 0)
+                        if (const auto value = spilled.find(at); value != spilled.end())
+                            state[step.stackLoadTo[half]] = value->second;
                 }
             }
-            if (stackParameters && depth != UNKNOWN_DEPTH)
-                depth = step.rspChange == UNKNOWN_DEPTH ? UNKNOWN_DEPTH : depth - step.rspChange;
             if (step.vaListTo >= 0 && step.vaListTo < REGISTERS)
                 vaList |= 1u << step.vaListTo;
             if (step.loadTo >= 0 && step.loadTo < REGISTERS && writtenOnce(step.slot))
@@ -5226,6 +5298,89 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
         // ARM: the conditional returns (popne {r4, pc}, bxlt lr in an IT block) are not steps: not what it returns
         return MakeInferredPrototype(start, parameters, {}, isArm32 ? nullptr : AgreedReturn(returns, returningCallees), variadic != nullptr);
+    }
+
+    // a step of the code of an ARM64 function (InferFunctionPrototype): the change of sp (sub / add sp, sp, #imm, the writeback of a stack
+    // access: [sp, #-0x20]! / [sp], #0x20; another write of sp: not known), a load / store through sp or x29 (two registers of a pair), x29
+    // set from sp (mov x29, sp / add x29, sp, #n)
+    template <typename Step>
+    static void DecodeArm64StackStep(const cs_insn& insn, Step& step)
+    {
+        constexpr int32 UNKNOWN_DEPTH = INT32_MIN, FRAME_POINTER_LOST = INT32_MIN + 1;
+        const cs_arm64& arm64     = insn.detail->arm64;
+        const auto shifted        = [](const cs_arm64_op& op) { return op.shift.type == ARM64_SFT_LSL ? op.imm << op.shift.value : op.imm; };
+        const auto writesRegister = [&arm64](unsigned int reg) {
+            for (uint8 i = 0; i < arm64.op_count; i++)
+                if (arm64.operands[i].type == ARM64_OP_REG && arm64.operands[i].reg == reg && (arm64.operands[i].access & CS_AC_WRITE))
+                    return true;
+            return false;
+        };
+        const bool immediateOfSp = arm64.op_count == 3 && arm64.operands[1].type == ARM64_OP_REG && arm64.operands[1].reg == ARM64_REG_SP &&
+                                   arm64.operands[2].type == ARM64_OP_IMM && shifted(arm64.operands[2]) >= 0 && shifted(arm64.operands[2]) < 0x1000000;
+        if (writesRegister(ARM64_REG_SP)) {
+            if ((insn.id == ARM64_INS_SUB || insn.id == ARM64_INS_ADD) && immediateOfSp)
+                step.rspChange = static_cast<int32>(insn.id == ARM64_INS_SUB ? -shifted(arm64.operands[2]) : shifted(arm64.operands[2]));
+            else
+                step.rspChange = UNKNOWN_DEPTH;
+        }
+        if (writesRegister(ARM64_REG_X29)) {
+            if (insn.id == ARM64_INS_MOV && arm64.op_count == 2 && arm64.operands[1].type == ARM64_OP_REG && arm64.operands[1].reg == ARM64_REG_SP)
+                step.framePointerFromSp = 0;
+            else if (insn.id == ARM64_INS_ADD && immediateOfSp)
+                step.framePointerFromSp = static_cast<int32>(shifted(arm64.operands[2]));
+            else if (insn.id != ARM64_INS_LDP && insn.id != ARM64_INS_LDR) // the restore of the epilogue: the code after it is another path
+                step.framePointerFromSp = FRAME_POINTER_LOST;
+        }
+        // add x1, sp, #0x18 / add x0, x29, #0x10: the address of a slot
+        if (insn.id == ARM64_INS_ADD && arm64.op_count == 3 && arm64.operands[0].type == ARM64_OP_REG && arm64.operands[0].reg != ARM64_REG_SP &&
+            arm64.operands[0].reg != ARM64_REG_X29 && arm64.operands[1].type == ARM64_OP_REG &&
+            (arm64.operands[1].reg == ARM64_REG_SP || arm64.operands[1].reg == ARM64_REG_X29) && arm64.operands[2].type == ARM64_OP_IMM &&
+            shifted(arm64.operands[2]) >= 0 && shifted(arm64.operands[2]) < 0x1000000) {
+            step.stackBase    = arm64.operands[1].reg == ARM64_REG_SP ? 1 : 2;
+            step.stackOffset  = static_cast<int32>(shifted(arm64.operands[2]));
+            step.stackAddress = true;
+            return;
+        }
+        const bool load  = insn.id == ARM64_INS_LDR || insn.id == ARM64_INS_LDUR || insn.id == ARM64_INS_LDP;
+        const bool store = insn.id == ARM64_INS_STR || insn.id == ARM64_INS_STUR || insn.id == ARM64_INS_STP;
+        if (!load && !store)
+            return;
+        const uint8 registers = insn.id == ARM64_INS_LDP || insn.id == ARM64_INS_STP ? 2 : 1;
+        if (arm64.op_count < registers + 1 || arm64.operands[registers].type != ARM64_OP_MEM)
+            return;
+        const auto& mem = arm64.operands[registers].mem;
+        if (mem.index != ARM64_REG_INVALID || (mem.base != ARM64_REG_SP && mem.base != ARM64_REG_X29))
+            return;
+        int32 offset = mem.disp;
+        if (arm64.writeback && mem.base == ARM64_REG_SP) {
+            if (arm64.op_count > registers + 1 && arm64.operands[registers + 1].type == ARM64_OP_IMM) { // [sp], #0x20: the access at sp
+                step.rspChange = static_cast<int32>(arm64.operands[registers + 1].imm);
+            } else { // [sp, #-0x20]!: the access at the new sp
+                step.rspChange = mem.disp;
+                offset         = 0;
+            }
+        } else if (arm64.writeback) {
+            return;
+        }
+        step.stackBase   = mem.base == ARM64_REG_SP ? 1 : 2;
+        step.stackOffset = offset;
+        step.stackStore  = store;
+        for (uint8 i = 0; i < registers; i++) {
+            const unsigned int reg = arm64.operands[i].reg;
+            int index              = -1;
+            if (reg >= ARM64_REG_X0 && reg <= ARM64_REG_X28)
+                index = static_cast<int>(reg - ARM64_REG_X0);
+            else if (reg >= ARM64_REG_W0 && reg <= ARM64_REG_W28) {
+                index          = static_cast<int>(reg - ARM64_REG_W0);
+                step.stackSize = 4;
+            }
+            if (index < 0)
+                continue;
+            if (store)
+                step.stackStoreFrom[i] = static_cast<int8>(index);
+            else
+                step.stackLoadTo[i] = static_cast<int8>(index);
+        }
     }
 
     // a step of the code of an ARM64 variadic function (InferFunctionPrototype): the address of the home of its first variadic register (add x3,

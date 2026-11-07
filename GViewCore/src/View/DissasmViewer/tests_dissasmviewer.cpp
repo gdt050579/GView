@@ -14920,3 +14920,173 @@ TEST_CASE("InferredIncomingStackParameters", "[Dissasm]Help")
     REQUIRE(std::string_view(written->prototype).find("uType") == std::string_view::npos);
     REQUIRE(FindListingLine(listing, "0x00000004  mov").find("; uType") != std::string_view::npos);
 }
+
+TEST_CASE("CertificateServicesPrototypes", "[Dissasm]Help")
+{
+    // the functions of certca.h (the CAs and the certificate templates of the directory) that certutil calls: stdcall, their arguments named;
+    // the pointer types of the table written as the SDK writes them (PVOID*, not Pvoid*)
+    REQUIRE(FindApiPrototype("CAGetCAProperty") != nullptr);
+    REQUIRE(FindApiPrototype("CAGetCAFlags")->params.size() == 2);
+    REQUIRE(std::string_view(FindApiPrototype("CcPinRead")->params[4].type) == "PVOID*");
+    REQUIRE(std::string_view(FindApiPrototype("VerQueryValueW")->params[2].type) == "LPVOID*");
+    std::vector<unsigned char> file = {
+        0x8D, 0x45, 0xF8,                   // 0x00: lea eax, [ebp - 8]
+        0x50,                               // 0x03: push eax             (pawszPropertyValue)
+        0x68, 0x00, 0x10, 0x40, 0x00,       // 0x04: push 0x401000        (wszPropertyName)
+        0x56,                               // 0x09: push esi             (hCAInfo)
+        0xFF, 0x15, 0x80, 0x10, 0x40, 0x00, // 0x0a: call dword ptr [CAGetCAProperty]
+        0x57,                               // 0x10: push edi             (hCA)
+        0xFF, 0x15, 0x84, 0x10, 0x40, 0x00, // 0x11: call dword ptr [CACloseCA]
+        0xC3,                               // 0x17: ret
+    };
+    file.resize(0x40, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.imports    = { { 0x401080, { "CAGetCAProperty", MemoryMappingType::FunctionMapping } },
+                          { 0x401084, { "CACloseCA", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000003  push   eax").ends_with("; pawszPropertyValue"));
+    REQUIRE(FindListingLine(listing, "0x00000004  push").find("; wszPropertyName") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000009  push   esi").ends_with("; hCAInfo"));
+    REQUIRE(FindListingLine(listing, "0x00000010  push   edi").ends_with("; hCA"));
+}
+
+TEST_CASE("DemangledFunctionPointerParameters", "[Dissasm]Help")
+{
+    // a pointer to a function among the parameters of a demangled name is one pointer, not a class by value (MSVC: struct X const *
+    // (__cdecl *)(void)) nor a type not known (GCC: void (*)(void*)); GCC: a pointer to a member function stays not known (its size)
+    const auto* setValue =
+          FindApiPrototype("public: long __cdecl DirectUI::Element::SetValue(struct DirectUI::PropertyInfo const * (__cdecl *)(void), int, class DirectUI::Value *)");
+    REQUIRE(setValue != nullptr);
+    REQUIRE(setValue->params.size() == 4); // this, the function, int, the value
+    REQUIRE(std::string_view(setValue->params[1].type) == "struct DirectUI::PropertyInfo const * (__cdecl *)(void)");
+    const auto* memberPointer = FindApiPrototype("A::A(void (B::*)())");
+    REQUIRE(memberPointer != nullptr);
+    REQUIRE(memberPointer->params.size() == 1); // this only: the registers after it not known
+    const auto* strstreambuf = FindApiPrototype("std::strstreambuf::strstreambuf(void* (*)(unsigned long), void (*)(void*))");
+    REQUIRE(strstreambuf != nullptr);
+    REQUIRE(strstreambuf->params.size() == 3); // this, the allocation, the free
+
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,       // 0x00: sub rsp, 0x28
+        0x4C, 0x8B, 0xC8,             // 0x04: mov r9, rax      (class DirectUI::Value *)
+        0x41, 0xB8, 0x01, 0x00, 0x00, 0x00, // 0x07: mov r8d, 1 (int)
+        0x48, 0x8B, 0xD7,             // 0x0d: mov rdx, rdi     (the function)
+        0x48, 0x8B, 0xCE,             // 0x10: mov rcx, rsi     (this)
+    };
+    const uint32 displacement = 0x200 - static_cast<uint32>(file.size() + 6); // 0x13: call qword ptr [SetValue]
+    file.insert(file.end(), { 0xFF, 0x15 });
+    for (uint32 i = 0; i < 4; i++)
+        file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x28, 0xC3 }); // add rsp, 0x28; ret
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200,
+                                  { "public: long __cdecl DirectUI::Element::SetValue(struct DirectUI::PropertyInfo const * (__cdecl *)(void), int, class DirectUI::Value *)",
+                                    MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000010  mov    rcx, rsi").ends_with("; this"));
+    REQUIRE(FindListingLine(listing, "0x0000000d  mov    rdx, rdi").ends_with("; struct DirectUI::PropertyInfo const * (__cdecl *)(void)"));
+    REQUIRE(FindListingLine(listing, "0x00000007  mov    r8d, 1").ends_with("; int"));
+    REQUIRE(FindListingLine(listing, "0x00000004  mov    r9, rax").ends_with("; class DirectUI::Value *"));
+}
+
+TEST_CASE("InferredSpilledArguments", "[Dissasm]Help")
+{
+    // the inference follows an argument register spilled to a stack slot the function writes once, in its code before any branch, and loads
+    // again (Windows x64: the home of rcx through rsp at a known depth; ARM64: through sp after the prologue); not a slot written twice, nor
+    // one whose address is taken (a callee may write it)
+    {
+        std::vector<unsigned char> file = {
+            0xE8, 0x3B, 0x00, 0x00, 0x00, // 0x00: call 0x40
+            0xE8, 0x76, 0x00, 0x00, 0x00, // 0x05: call 0x80
+            0xE8, 0xB1, 0x00, 0x00, 0x00, // 0x0a: call 0xc0
+            0xC3,                         // 0x0f: ret
+        };
+        const auto call = [&file]() { // call qword ptr [CloseHandle]
+            const uint32 displacement = 0x200 - static_cast<uint32>(file.size() + 6);
+            file.insert(file.end(), { 0xFF, 0x15 });
+            for (uint32 i = 0; i < 4; i++)
+                file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+        };
+        const auto spiller = [&file, &call](uint64 at, int mode) {
+            file.resize(at, 0xCC);
+            file.insert(file.end(), { 0x48, 0x89, 0x4C, 0x24, 0x08 }); // mov qword ptr [rsp + 8], rcx (the home of rcx)
+            file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x28 });       // sub rsp, 0x28
+            if (mode == 1)
+                file.insert(file.end(), { 0x48, 0x89, 0x54, 0x24, 0x30 }); // mov qword ptr [rsp + 0x30], rdx (the same slot again)
+            if (mode == 2) {
+                file.insert(file.end(), { 0x48, 0x8D, 0x4C, 0x24, 0x30 }); // lea rcx, [rsp + 0x30] (the address of the slot to a callee)
+                call();
+            }
+            file.insert(file.end(), { 0x31, 0xC9 });                       // xor ecx, ecx
+            file.insert(file.end(), { 0x48, 0x8B, 0x4C, 0x24, 0x30 });     // mov rcx, qword ptr [rsp + 0x30] (the home: the incoming rcx)
+            call();
+            file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x28, 0xC3 }); // add rsp, 0x28; ret
+        };
+        spiller(0x40, 0);
+        spiller(0x80, 1);
+        spiller(0xC0, 2);
+        file.resize(0x220, 0xCC);
+        ZoneLayout layout;
+        layout.size             = 0x200;
+        layout.entryPoint       = 0;
+        layout.language         = DisassemblyLanguage::x64;
+        layout.translateOffsets = true;
+        layout.imports          = { { 0x200, { "CloseHandle", MemoryMappingType::FunctionMapping } } };
+        DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+        INFO(dissasmInstance.GetListing());
+        const auto* spilled = dissasmInstance.zone->FindInferredPrototype(0x40);
+        REQUIRE(spilled != nullptr);
+        REQUIRE(std::string_view(spilled->prototype).find("(HANDLE hObject)") != std::string_view::npos);
+        const auto* twice = dissasmInstance.zone->FindInferredPrototype(0x80);
+        REQUIRE((twice == nullptr || std::string_view(twice->prototype).find("hObject") == std::string_view::npos));
+        const auto* address = dissasmInstance.zone->FindInferredPrototype(0xC0);
+        REQUIRE((address == nullptr || std::string_view(address->prototype).find("hObject") == std::string_view::npos));
+    }
+    {
+        std::vector<unsigned char> file = {
+            0xFD, 0x7B, 0xBF, 0xA9, // 0x00: stp x29, x30, [sp, #-0x10]!
+            0xFD, 0x03, 0x00, 0x91, // 0x04: mov x29, sp
+            0xE0, 0x03, 0x13, 0xAA, // 0x08: mov x0, x19
+            0x0D, 0x00, 0x00, 0x94, // 0x0c: bl 0x40
+            0xFD, 0x7B, 0xC1, 0xA8, // 0x10: ldp x29, x30, [sp], #0x10
+            0xC0, 0x03, 0x5F, 0xD6, // 0x14: ret
+        };
+        file.resize(0x40, 0x00);
+        file.insert(file.end(), {
+                                      0xFD, 0x7B, 0xBE, 0xA9, // 0x40: stp x29, x30, [sp, #-0x20]!
+                                      0xFD, 0x03, 0x00, 0x91, // 0x44: mov x29, sp
+                                      0xE0, 0x0F, 0x00, 0xF9, // 0x48: str x0, [sp, #0x18]   (spilled)
+                                      0x00, 0x00, 0x80, 0xD2, // 0x4c: mov x0, #0
+                                      0xE0, 0x0F, 0x40, 0xF9, // 0x50: ldr x0, [sp, #0x18]   (the incoming x0)
+                                      0x08, 0x00, 0x00, 0xB0, // 0x54: adrp x8, 0x1000
+                                      0x08, 0x09, 0x40, 0xF9, // 0x58: ldr x8, [x8, #0x10]   (the slot of CloseHandle)
+                                      0x00, 0x01, 0x3F, 0xD6, // 0x5c: blr x8
+                                      0xFD, 0x7B, 0xC2, 0xA8, // 0x60: ldp x29, x30, [sp], #0x20
+                                      0xC0, 0x03, 0x5F, 0xD6, // 0x64: ret
+                                });
+        const uint64 codeSize = file.size();
+        file.resize(0x1040, 0x00);
+        ZoneLayout layout;
+        layout.size             = codeSize;
+        layout.entryPoint       = 0;
+        layout.language         = DisassemblyLanguage::ARM64;
+        layout.translateOffsets = true;
+        layout.imports          = { { 0x1010, { "CloseHandle", MemoryMappingType::FunctionMapping } } };
+        DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+        INFO(dissasmInstance.GetListing());
+        const auto* spilled = dissasmInstance.zone->FindInferredPrototype(0x40);
+        REQUIRE(spilled != nullptr);
+        REQUIRE(std::string_view(spilled->prototype).find("(HANDLE hObject)") != std::string_view::npos);
+    }
+}
