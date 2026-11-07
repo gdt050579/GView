@@ -4192,6 +4192,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         for (size_t index = 0; index < functionStarts.size(); index++) {
             const uint64 start = functionStarts[index], end = functionEnds[index];
             const auto arch = zone->GetArchAt(start);
+            if (arch == DissasmArch::X86) {
+                CollectX86JumpedPushes(start, end, hasPrototype);
+                continue;
+            }
             if (arch != DissasmArch::X64 && arch != DissasmArch::Arm64)
                 continue;
             // something to find: a tail jump with a prototype, or a call with one whose code after the call before it (the writes a call does
@@ -4369,6 +4373,119 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         for (const auto& [index, reach] : reaches)
             if (reach.jumped && !reach.linear && !reach.rejected && !reach.parameter.empty())
                 argumentDefinitions.emplace(steps[index].address, std::make_pair(std::string(reach.function), std::string(reach.parameter)));
+    }
+
+    // 32 bit x86: the arguments of a call pushed in a block that jumps to it (push esi; push 0x6a012e; jmp loc_X ... loc_X: call
+    // CSPrintErrorLineFile: the shared error paths of MSVC, before or after the block). The stack pointer at the jmp is the one at its target,
+    // so the pushes of the block before the jmp are the arguments of the call after the ones pushed from the target on. The block: from the
+    // branch / call before the jmp; the target: up to its first call, without another branch or write of the stack pointer on the way. The
+    // walk of the display stops at the jmp (AnnounceCallInstruction): no push is named twice
+    template <typename HasPrototype>
+    void CollectX86JumpedPushes(uint64 start, uint64 end, const HasPrototype& hasPrototype)
+    {
+        constexpr uint64 MAX_BLOCK = 0x200; // the bytes decoded before a jmp, from its target to the call
+        // the pushes of [from, to) as the walk sees them: a push, the pushes another instruction takes back (pop, add esp, imm), or a write of
+        // the stack pointer that ends the walk; nothing when the code does not end at `to`
+        enum class PushStepKind : uint8 { Push, Taken, Moved };
+        struct PushStep {
+            uint64 address;
+            PushStepKind kind;
+            uint32 taken;
+        };
+        std::vector<PushStep> pushSteps;
+        cs_insn* insn = nullptr;
+        // the call ending a decoded range of the target: its prototype
+        const AsmFunctionDetails* callee = nullptr;
+
+        const auto decode = [&](uint64 from, uint64 to, bool toCall) {
+            pushSteps.clear();
+            callee          = nullptr;
+            const auto data = obj->GetData().Get(codeStart + from, static_cast<uint32>(to - from), false);
+            if (!data.IsValid() || data.GetLength() != to - from)
+                return false;
+            const uint8* bytes = data.GetData();
+            size_t size        = data.GetLength();
+            uint64 address     = from;
+            while (address < to && cs_disasm_iter(detailHandle, &bytes, &size, &address, insn)) {
+                const cs_x86& x86 = insn->detail->x86;
+                if (toCall && address == to)
+                    return insn->id == X86_INS_CALL && (callee = CalleePrototype(*insn, DissasmArch::X86)) != nullptr;
+                if (insn->id == X86_INS_PUSH) {
+                    pushSteps.push_back({ insn->address, PushStepKind::Push, 0 });
+                    continue;
+                }
+                if (GetInstructionFlow(*insn, DissasmArch::X86) != X86Flow::None)
+                    return false; // the decoding does not take the path of the records
+                uint32 taken = insn->id == X86_INS_POP ? 1u : 0u;
+                bool moved   = insn->id != X86_INS_POP && insn->id != X86_INS_PUSH && insn->id != X86_INS_LEA &&
+                             std::find(insn->detail->regs_write, insn->detail->regs_write + insn->detail->regs_write_count, X86_REG_ESP) !=
+                                   insn->detail->regs_write + insn->detail->regs_write_count; // pushad, leave, enter
+                for (uint8 index = 0; index < x86.op_count; index++)
+                    if (x86.operands[index].type == X86_OP_REG && (x86.operands[index].access & CS_AC_WRITE) &&
+                        (x86.operands[index].reg == X86_REG_ESP || x86.operands[index].reg == X86_REG_SP)) {
+                        const bool added = insn->id == X86_INS_ADD && index == 0 && x86.op_count == 2 && x86.operands[1].type == X86_OP_IMM &&
+                                           x86.operands[1].imm > 0 && x86.operands[1].imm % 4 == 0 && x86.operands[1].imm < 0x1000;
+                        if (added)
+                            taken = static_cast<uint32>(x86.operands[1].imm / 4);
+                        else
+                            moved = true;
+                    }
+                if (moved)
+                    pushSteps.push_back({ insn->address, PushStepKind::Moved, 0 });
+                else if (taken)
+                    pushSteps.push_back({ insn->address, PushStepKind::Taken, taken });
+            }
+            return !toCall && address == to;
+        };
+        const size_t first = FirstRecordAt(start);
+        for (size_t position = first; position < flowRecords.size() && flowRecords[position].address < end; position++) {
+            const auto& jump = flowRecords[position];
+            if (jump.kind != FlowKind::Jump || jump.target == NO_TARGET || jump.target < start || jump.target >= end)
+                continue;
+            // the call the target reaches first: no other branch on the way
+            const size_t next = FirstRecordAt(jump.target);
+            if (next >= flowRecords.size() || flowRecords[next].kind != FlowKind::Call || flowRecords[next].address >= end ||
+                flowRecords[next].address - jump.target > MAX_BLOCK || !hasPrototype(flowRecords[next]))
+                continue;
+            const uint64 blockStart = position > first ? flowRecords[position - 1].address + flowRecords[position - 1].size : start;
+            if (blockStart >= jump.address || jump.address - blockStart > MAX_BLOCK)
+                continue; // no instruction before the jmp in its block
+            if (!insn && !(insn = cs_malloc(detailHandle)))
+                return;
+            // the pushes from the target to the call: the first arguments
+            const auto& call = flowRecords[next];
+            if (!decode(jump.target, call.address + call.size, true) || !callee)
+                continue;
+            const AsmFunctionDetails* prototype = callee;
+            uint32 slot                         = 0;
+            bool plain                          = true;
+            for (const auto& step : pushSteps)
+                if (step.kind == PushStepKind::Push)
+                    slot++;
+                else
+                    plain = false;
+            if (!plain || slot >= prototype->params.size() || !decode(blockStart, jump.address, false))
+                continue;
+            // the block before the jmp, walked back: the next arguments (the pushes taken back by a pop / add esp are not)
+            uint32 taken = 0;
+            for (auto step = pushSteps.rbegin(); step != pushSteps.rend() && slot < prototype->params.size(); ++step) {
+                if (step->kind == PushStepKind::Moved)
+                    break;
+                if (step->kind == PushStepKind::Taken) {
+                    taken += step->taken;
+                    continue;
+                }
+                if (taken > 0) {
+                    taken--;
+                    continue;
+                }
+                const auto& parameter = prototype->params[slot++];
+                if (parameter.name && parameter.name[0]) // not a parameter an inferred prototype does not know
+                    argumentDefinitions.emplace(step->address, std::make_pair(std::string(prototype->functionName), std::string(parameter.name)));
+            }
+        }
+        if (insn)
+            cs_free(insn, 1);
     }
 
     // a cmp of a register with a constant (cmp eax, 0x102 / cmp w0, #0x102 / cmn x0, #1: -1) when the register holds the return value of a
@@ -4672,6 +4789,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     {
         constexpr uint32 MAX_STEPS     = 4096;
         constexpr int REGISTERS        = 32;
+        constexpr int32 UNKNOWN_DEPTH  = INT32_MIN; // the depth of rsp after a write of it that is not followed
         const bool isArm64             = arch == DissasmArch::Arm64;
         const auto* variadic           = isArm64 && variadicFrame && variadicFrame->variadic.has_value() ? &variadicFrame->variadic.value() : nullptr;
         const bool isArm32             = arch == DissasmArch::Arm || arch == DissasmArch::Thumb;
@@ -4724,6 +4842,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             int32 slot = 0;
             // x64: a write of the slot [rsp + 8 * index] (index < 16), the register a mov stores there (an argument of the next call)
             int8 outgoingWritten = -1, outgoingFrom = -1;
+            // Windows x64: the change of rsp (push, pop, sub / add rsp, imm; UNKNOWN_DEPTH: another write of it); a mov of [rsp + stackOffset]
+            // to a register (stackLoadTo) or a write of that slot (stackStore): the incoming arguments after the fourth
+            int32 rspChange   = 0;
+            int8 stackLoadTo  = -1;
+            bool stackStore   = false;
+            int32 stackOffset = 0;
         };
         std::vector<Step> steps;
         std::vector<std::pair<int32, uint32>> stores; // a variadic function: the slots its code writes (offset, size)
@@ -4837,6 +4961,32 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                                 if (const int index = registerIndex(x86.operands[1].reg); index >= 0 && index < REGISTERS)
                                     step.outgoingFrom = static_cast<int8>(index);
                         }
+                    if (!systemV && arch == DissasmArch::X64) {
+                        // the depth of rsp: push / pop, sub / add rsp, imm; another write of it is not followed
+                        if (insn->id == X86_INS_PUSH || insn->id == X86_INS_PUSHFQ)
+                            step.rspChange = -8;
+                        else if (insn->id == X86_INS_POP || insn->id == X86_INS_POPFQ)
+                            step.rspChange = 8;
+                        else if (
+                              (insn->id == X86_INS_SUB || insn->id == X86_INS_ADD) && x86.op_count == 2 && x86.operands[0].type == X86_OP_REG &&
+                              x86.operands[0].reg == X86_REG_RSP && x86.operands[1].type == X86_OP_IMM && x86.operands[1].imm >= 0 &&
+                              x86.operands[1].imm < 0x100000)
+                            step.rspChange = static_cast<int32>(insn->id == X86_INS_SUB ? -x86.operands[1].imm : x86.operands[1].imm);
+                        else if (step.writes & (1u << 4))
+                            step.rspChange = UNKNOWN_DEPTH;
+                        // mov rbx, qword ptr [rsp + 0x70] / a write of a slot through rsp
+                        for (uint8 i = 0; i < x86.op_count; i++)
+                            if (const auto& op = x86.operands[i]; op.type == X86_OP_MEM && op.mem.base == X86_REG_RSP && op.mem.index == X86_REG_INVALID &&
+                                                                  op.mem.disp >= 0 && op.mem.disp < 0x100000) {
+                                step.stackOffset = static_cast<int32>(op.mem.disp);
+                                if (op.access & CS_AC_WRITE)
+                                    step.stackStore = true;
+                                else if (
+                                      insn->id == X86_INS_MOV && i == 1 && x86.op_count == 2 && x86.operands[0].type == X86_OP_REG && x86.operands[0].size >= 4)
+                                    if (const int index = registerIndex(x86.operands[0].reg); index >= 0 && index < REGISTERS)
+                                        step.stackLoadTo = static_cast<int8>(index);
+                            }
+                    }
                 }
             }
             steps.push_back(step);
@@ -4914,7 +5064,14 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         for (size_t argument = 0; argument < argumentsCount; argument++)
             state[argumentRegister(argument)] = static_cast<int8>(argument);
         std::unordered_map<size_t, State> snapshots; // the state at each branch (before it)
-        std::vector<std::optional<std::pair<std::string_view, std::string_view>>> parameters(argumentsCount);
+        // Windows x64: the incoming arguments after the fourth ([rsp + 0x28] at the entry: the fifth), read through rsp at a known depth (the
+        // bytes below the rsp of the entry) before the function writes their slot; up to MAX_STACK_PARAMETERS of them
+        constexpr size_t MAX_STACK_PARAMETERS = 8;
+        const bool stackParameters            = !isArm64 && !isArm32 && !systemV && arch == DissasmArch::X64;
+        int32 depth                           = 0;
+        std::unordered_map<size_t, int32> depthSnapshots;
+        uint32 writtenStackParameters = 0; // a bit each
+        std::vector<std::optional<std::pair<std::string_view, std::string_view>>> parameters(argumentsCount + (stackParameters ? MAX_STACK_PARAMETERS : 0));
         std::vector<const AsmFunctionDetails*> returningCallees; // the callees of RETURNED_BY - k
         std::vector<int8> returns;                                // what each return / tail jump returns
         // Windows x64: the incoming argument the stack slots of the arguments of the next call hold ([rsp + 0x20]: the fifth), from the
@@ -4927,6 +5084,22 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const auto& step = steps[i];
             if (branchesTo.contains(i) || !reachable)
                 outgoing.fill(NO_VALUE);
+            if (stackParameters) {
+                // a branch target: the depth every forward branch to it agrees on (and the code that falls into it)
+                std::optional<int32> agreed;
+                if (reachable)
+                    agreed = depth;
+                bool conflict = false;
+                if (const auto branches = branchesTo.find(i); branches != branchesTo.end())
+                    for (const size_t source : branches->second)
+                        if (source < i) {
+                            const int32 from = depthSnapshots.at(source);
+                            conflict |= agreed.has_value() && agreed.value() != from;
+                            agreed = from;
+                        }
+                // code after a ret / jmp that no forward branch reaches, branches with other depths: not known
+                depth = agreed.has_value() && !conflict ? agreed.value() : UNKNOWN_DEPTH;
+            }
             if (const auto branches = branchesTo.find(i); branches != branchesTo.end()) {
                 // a branch target: what every branch to it agrees on; a register written up to a branch back to it is not known
                 State merged = state;
@@ -4982,7 +5155,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                      outgoingSlots && step.kind == StepKind::Call && parameter < params.size() && parameter < outgoing.size();
                      parameter++) {
                     const int8 incoming = outgoing[parameter];
-                    if (incoming < 0 || static_cast<size_t>(incoming) >= argumentsCount || parameters[incoming].has_value() || !params[parameter].name ||
+                    if (incoming < 0 || static_cast<size_t>(incoming) >= parameters.size() || parameters[incoming].has_value() || !params[parameter].name ||
                         !params[parameter].name[0])
                         continue;
                     parameters[incoming] = std::make_pair(std::string_view(params[parameter].name), std::string_view(params[parameter].type));
@@ -4998,6 +5171,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 snapshots[i] = state;
                 if (variadic)
                     vaSnapshots[i] = vaList;
+                if (stackParameters)
+                    depthSnapshots[i] = depth;
             }
             if (step.comparedRegister >= 0)
                 RecordReturnComparison(step.address, state[step.comparedRegister], returningCallees, step.comparedValue);
@@ -5020,6 +5195,19 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 state[step.constantTo] = CONSTANT_VALUE;
                 vaList &= ~(1u << step.constantTo);
             }
+            if (stackParameters && depth != UNKNOWN_DEPTH && (step.stackStore || step.stackLoadTo >= 0)) {
+                // the slot from the rsp of the entry: 0x28 + 8 * k is the incoming argument 4 + k
+                const int64 fromEntry = static_cast<int64>(step.stackOffset) - depth;
+                if (fromEntry >= 0x28 && (fromEntry - 0x28) % 8 == 0 && (fromEntry - 0x28) / 8 < static_cast<int64>(MAX_STACK_PARAMETERS)) {
+                    const auto k = static_cast<size_t>((fromEntry - 0x28) / 8);
+                    if (step.stackStore)
+                        writtenStackParameters |= 1u << k;
+                    else if (!(writtenStackParameters & (1u << k)))
+                        state[step.stackLoadTo] = static_cast<int8>(argumentsCount + k);
+                }
+            }
+            if (stackParameters && depth != UNKNOWN_DEPTH)
+                depth = step.rspChange == UNKNOWN_DEPTH ? UNKNOWN_DEPTH : depth - step.rspChange;
             if (step.vaListTo >= 0 && step.vaListTo < REGISTERS)
                 vaList |= 1u << step.vaListTo;
             if (step.loadTo >= 0 && step.loadTo < REGISTERS && writtenOnce(step.slot))

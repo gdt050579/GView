@@ -1983,6 +1983,31 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(
         bool named[MAX_ARGUMENTS]          = {};
         const uint32 slotsCount            = std::min(paramsCount + static_cast<uint32>(formatArgumentLines.size()), MAX_ARGUMENTS);
         uint32 remaining                   = slotsCount;
+        // ARM64EC: a call of a variadic function passes the address of its stack arguments in x4 and their size in x5 (mov x4, sp; mov x5,
+        // #0x10), whatever its parameters; the last writes of them before the call
+        const bool stackArgumentsOfEC = variadicSlots < 8 && functionDetails->prototype.ends_with("...)");
+        bool namedEC[2]               = {};
+        if (stackArgumentsOfEC)
+            remaining += 2;
+        // ARM64: a stp of two stack arguments (stp x8, x9, [sp, #8]) is one line with two slots: its names together, once both are known
+        // (the first register first)
+        struct PairNames {
+            DissasmAsmPreCacheLine* line;
+            std::string texts[2];
+        };
+        std::vector<PairNames> pairNames;
+        const auto nameSlot = [&](DissasmAsmPreCacheLine& line, bool second, const char* text) {
+            if (!line.argumentPair) {
+                nameArgument(line, text);
+                return;
+            }
+            auto pair = std::find_if(pairNames.begin(), pairNames.end(), [&line](const PairNames& names) { return names.line == &line; });
+            if (pair == pairNames.end())
+                pair = pairNames.insert(pairNames.end(), PairNames{ &line, {} });
+            pair->texts[second ? 1 : 0] = text;
+        };
+        std::vector<bool> secondOfPair(formatArgumentLines.size(), false); // the format arguments that are the second register of a stp
+        bool stackMoved = false;
         // System V: the arguments after the sixth are pushed, the last push the seventh (push 0x82 ; nr of __syscall_cancel); another write of
         // rsp before them (sub rsp, 8 aligning them, the prologue) ends them
         uint8 pushedSlot = systemVPushes ? 6 : MAX_ARGUMENTS;
@@ -2010,25 +2035,54 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(
                 slot = pushedSlot < MAX_ARGUMENTS ? pushedSlot++ : DissasmAsmPreCacheLine::NO_ARGUMENT;
             else if (operands.starts_with("rsp, ") || operands == "rbp, rsp")
                 pushedSlot = MAX_ARGUMENTS;
+            // ARM64: a write of sp before the call (sub sp, sp, #0x200, stp x29, x30, [sp, #-0x10]!): the stores through sp before it are
+            // not the stack arguments of the call
+            if (slot != DissasmAsmPreCacheLine::NO_ARGUMENT && slot >= 8 && stackMoved)
+                continue;
+            if (operands.starts_with("sp, ") ||
+                (operands.find("[sp") != std::string_view::npos && (operands.ends_with("]!") || operands.find("], #") != std::string_view::npos)))
+                stackMoved = true;
+            if (stackArgumentsOfEC && (slot == 4 || slot == 5) && !it->argumentPair) {
+                if (!namedEC[slot - 4]) {
+                    namedEC[slot - 4] = true;
+                    remaining--;
+                    nameArgument(*it, slot == 4 ? "stack arguments" : "stack arguments size");
+                }
+                continue;
+            }
             // ARM64EC: the variadic arguments after x3 are in the stack x4 points to (str w8, [sp]: the first of them), x4 / x5 (their address,
             // their size) are no arguments
             if (hasFormat && variadicSlots < 8 && slot != DissasmAsmPreCacheLine::NO_ARGUMENT && slot >= variadicSlots)
                 slot = slot >= 8 ? static_cast<uint8>(variadicSlots + (slot - 8)) : DissasmAsmPreCacheLine::NO_ARGUMENT;
-            if (slot >= slotsCount || named[slot])
-                continue;
-            named[slot] = true;
-            remaining--;
-            if (slot >= paramsCount) {
-                formatArgumentLines[slot - paramsCount] = &*it;
-                continue;
+            for (uint32 pairIndex = 0; pairIndex < (it->argumentPair ? 2u : 1u); pairIndex++) {
+                const uint32 pairSlot = slot == DissasmAsmPreCacheLine::NO_ARGUMENT ? slot : slot + pairIndex;
+                if (pairSlot >= slotsCount || named[pairSlot])
+                    continue;
+                named[pairSlot] = true;
+                remaining--;
+                if (pairSlot >= paramsCount) {
+                    formatArgumentLines[pairSlot - paramsCount] = &*it;
+                    secondOfPair[pairSlot - paramsCount]        = pairIndex == 1;
+                    continue;
+                }
+                // the text of the format, read before its name is added to the line
+                if (hasFormat && pairSlot + 1 == paramsCount)
+                    format = GetShownFormat(*it);
+                if (const char* text = ArgumentText(functionDetails->params[pairSlot])) // not a parameter an inferred prototype does not know
+                    nameSlot(*it, pairIndex == 1, text);
             }
-            // the text of the format, read before its name is added to the line
-            if (hasFormat && slot + 1 == paramsCount)
-                format = GetShownFormat(*it);
-            if (const char* text = ArgumentText(functionDetails->params[slot])) // not a parameter an inferred prototype does not know
-                nameArgument(*it, text);
         }
-        nameFormatArguments(false, variadicFloatsApart);
+        if (!format.empty()) {
+            const auto texts =
+                  GetFormatArgumentTexts(format, functionDetails->functionName.find("scanf") != std::string_view::npos, false, variadicFloatsApart);
+            for (size_t index = 0; index < texts.size() && index < formatArgumentLines.size(); index++)
+                if (formatArgumentLines[index] && !texts[index].empty())
+                    nameSlot(*formatArgumentLines[index], secondOfPair[index], texts[index].c_str());
+        }
+        for (const auto& pair : pairNames) // %d, %s
+            nameArgument(
+                  *pair.line,
+                  ((pair.texts[0].empty() ? std::string("?") : pair.texts[0]) + ", " + (pair.texts[1].empty() ? std::string("?") : pair.texts[1])).c_str());
         return;
     }
 

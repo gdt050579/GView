@@ -1133,8 +1133,12 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     const auto operands = params.zone->GetOperandsInfo(*insn);
     {
         // mov rcx, ... / mov [rsp + 0x20], ... / mov x0, ... / mov r1, ... / mov [esp + 4], ...: an argument of the next call
-        const auto slot = GetArgumentSlot(*insn, params.zone->GetArchAt(insn->address), params.zone->systemVCalls);
-        argumentSlot    = slot.has_value() ? slot.value() : NO_ARGUMENT;
+        const auto arch = params.zone->GetArchAt(insn->address);
+        const auto slot = GetArgumentSlot(*insn, arch, params.zone->systemVCalls);
+        // stp x8, x9, [sp, #8]: two stack arguments
+        const auto pair = arch == DissasmArch::Arm64 && !slot.has_value() ? GetArm64ArgumentPairSlot(*insn) : std::nullopt;
+        argumentSlot    = slot.has_value() ? slot.value() : (pair.has_value() ? pair.value() : NO_ARGUMENT);
+        argumentPair    = pair.has_value();
     }
     calleePushes    = NO_PUSHES;
     constantComment = false;
@@ -1275,6 +1279,10 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         SetSymbolicOperands(*insn, operands, params); // push offset aText
         DropCommentShownInOperands();
     }
+    // an argument of a call that the block of the push jumps to (CollectX86JumpedPushes), once its operands give its value
+    if (flags == DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
+        if (const auto definition = params.zone->argumentDefinitions.find(insn->address); definition != params.zone->argumentDefinitions.end())
+            NameArgumentLine(*this, definition->second.first, definition->second.second.c_str());
     return true;
 }
 

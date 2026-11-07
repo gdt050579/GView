@@ -292,6 +292,7 @@ namespace View
             // the argument of the x64 calling convention written by the instruction (GetX64ArgumentSlot)
             static constexpr uint8 NO_ARGUMENT = 0xFF;
             uint8 argumentSlot                 = NO_ARGUMENT;
+            bool argumentPair                  = false; // ARM64: stp x8, x9, [sp, #8]: the slot after argumentSlot too
             // 32 bit: a call to a function of the zone that pops its arguments (ret 8): the pushes it takes (DissasmCodeZone::calleeStackPurges)
             static constexpr uint8 NO_PUSHES = 0xFF;
             uint8 calleePushes               = NO_PUSHES;
@@ -375,6 +376,7 @@ namespace View
                 shouldAddButton        = other.shouldAddButton;
                 isZoneCollapsed        = other.isZoneCollapsed;
                 argumentSlot           = other.argumentSlot;
+                argumentPair           = other.argumentPair;
                 calleePushes           = other.calleePushes;
                 constantComment        = other.constantComment;
                 localVariableKind      = other.localVariableKind;

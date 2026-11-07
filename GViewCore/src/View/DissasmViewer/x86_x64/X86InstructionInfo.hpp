@@ -83,6 +83,8 @@ std::string DescribeInstruction(std::string_view mnemonic, std::string_view oper
 //  - ARM64: w0 / x0 .. w7 / x7 written, then str xN, [sp, #n]: 8 + n / 8
 //  - ARM / Thumb: r0 .. r3 written, then str rN, [sp, #n]: 4 + n / 4
 std::optional<AppCUI::uint8> GetArgumentSlot(const cs_insn& insn, DissasmArch arch, bool systemV);
+// ARM64: the first of the two stack argument slots a stp of two 64 bit registers writes (stp x8, x9, [sp, #8]: 9, as GetArgumentSlot numbers them)
+std::optional<AppCUI::uint8> GetArm64ArgumentPairSlot(const cs_insn& insn);
 X86Flow GetArm64Flow(const cs_insn& insn);
 X86OperandsInfo GetArm64OperandsInfo(const cs_insn& insn);
 X86InstructionKind GetArm64InstructionKind(unsigned int id, std::string_view mnemonic);

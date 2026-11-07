@@ -14766,3 +14766,157 @@ TEST_CASE("Arm64ECStackFormatArguments", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x00000014  mov    x4, sp").find("; %") == std::string_view::npos);
     REQUIRE(FindListingLine(listing, "0x00000018  mov    x5, #0x10").find("; %") == std::string_view::npos);
 }
+
+TEST_CASE("X86PushesThroughAJump", "[Dissasm]Help")
+{
+    // 32 bit x86: the arguments of a call pushed in a block that jumps to it (CollectX86JumpedPushes): the stack pointer at the jmp is the one
+    // at its target, the pushes before the jmp are the arguments after the ones pushed from the target on; a jmp back to the call too; not
+    // when the target moves the stack pointer before the call
+    std::vector<unsigned char> file = {
+        0x85, 0xC0,                         // 0x00: test eax, eax
+        0x74, 0x03,                         // 0x02: je loc_7
+        0x57,                               // 0x04: push edi            (lpString2: through the jmp)
+        0xEB, 0x01,                         // 0x05: jmp loc_8
+        0x53,                               // 0x07: loc_7: push ebx     (lpString2: falls into the call, the walk of the display)
+        0x56,                               // 0x08: loc_8: push esi     (lpString1)
+        0xFF, 0x15, 0x80, 0x10, 0x40, 0x00, // 0x09: call dword ptr [lstrcmpiW]
+        0x85, 0xC0,                         // 0x0f: test eax, eax
+        0x75, 0x03,                         // 0x11: jne loc_16
+        0x52,                               // 0x13: push edx            (no name: the target moves the stack pointer)
+        0xEB, 0x1A,                         // 0x14: jmp loc_30
+        0x51,                               // 0x16: loc_16: push ecx    (lpString2: a jmp back to the call)
+        0xEB, 0xEF,                         // 0x17: jmp loc_8
+    };
+    file.resize(0x30, 0xCC);
+    file.insert(file.end(), {
+                                  0x83, 0xC4, 0x04,                   // 0x30: loc_30: add esp, 4
+                                  0x56,                               // 0x33: push esi            (lpString2)
+                                  0x57,                               // 0x34: push edi            (lpString1)
+                                  0xFF, 0x15, 0x80, 0x10, 0x40, 0x00, // 0x35: call dword ptr [lstrcmpiW]
+                                  0xC3,                               // 0x3b: ret
+                            });
+    file.resize(0x40, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.imports    = { { 0x401080, { "lstrcmpiW", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(dissasmInstance.zone->argumentDefinitions.contains(0x04));
+    REQUIRE(dissasmInstance.zone->argumentDefinitions.contains(0x16));
+    REQUIRE(!dissasmInstance.zone->argumentDefinitions.contains(0x07));
+    REQUIRE(!dissasmInstance.zone->argumentDefinitions.contains(0x13));
+    REQUIRE(FindListingLine(listing, "0x00000004  push   edi").ends_with("; lpString2"));
+    REQUIRE(FindListingLine(listing, "0x00000007  push   ebx").ends_with("; lpString2"));
+    REQUIRE(FindListingLine(listing, "0x00000008  push   esi").ends_with("; lpString1"));
+    REQUIRE(FindListingLine(listing, "0x00000016  push   ecx").ends_with("; lpString2"));
+    REQUIRE(FindListingLine(listing, "0x00000013  push   edx").find(';') == std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000033  push   esi").ends_with("; lpString2"));
+}
+
+TEST_CASE("Arm64ECStackArgumentPairs", "[Dissasm]Help")
+{
+    // ARM64EC: a variadic call passes the address of its stack arguments in x4 and their size in x5; a stp of two 64 bit registers to the
+    // stack is two arguments (one line, both names); a store through sp before a write of sp is no stack argument of the call
+    std::vector<unsigned char> file = {
+        0x02, 0x00, 0x00, 0xB0, // 0x00: adrp x2, 0x1000
+        0x42, 0x80, 0x00, 0x91, // 0x04: add x2, x2, #0x20     (format "%s %d %x %u")
+        0xE3, 0x03, 0x13, 0xAA, // 0x08: mov x3, x19           (%s)
+        0xE9, 0x2B, 0x00, 0xA9, // 0x0c: stp x9, x10, [sp]     (%d, %x)
+        0xEB, 0x13, 0x00, 0xB9, // 0x10: str w11, [sp, #0x10]  (%u)
+        0xE4, 0x03, 0x00, 0x91, // 0x14: mov x4, sp            (stack arguments)
+        0x05, 0x03, 0x80, 0xD2, // 0x18: mov x5, #0x18         (stack arguments size)
+        0x01, 0x08, 0x80, 0xD2, // 0x1c: mov x1, #0x40         (count)
+        0xE0, 0x03, 0x16, 0xAA, // 0x20: mov x0, x22           (buffer)
+        0x08, 0x00, 0x00, 0xB0, // 0x24: adrp x8, 0x1000
+        0x08, 0x09, 0x40, 0xF9, // 0x28: ldr x8, [x8, #0x10]   (the slot of snprintf)
+        0x00, 0x01, 0x3F, 0xD6, // 0x2c: blr x8
+        0xEC, 0x03, 0x00, 0xB9, // 0x30: str w12, [sp]         (no name: sp moves after it)
+        0xFF, 0x83, 0x00, 0xD1, // 0x34: sub sp, sp, #0x20
+        0x02, 0x00, 0x00, 0xB0, // 0x38: adrp x2, 0x1000
+        0x42, 0xC0, 0x00, 0x91, // 0x3c: add x2, x2, #0x30     (format "%s %d")
+        0xE3, 0x03, 0x13, 0xAA, // 0x40: mov x3, x19           (%s)
+        0xE4, 0x03, 0x00, 0x91, // 0x44: mov x4, sp            (stack arguments)
+        0x05, 0x01, 0x80, 0xD2, // 0x48: mov x5, #8            (stack arguments size)
+        0x01, 0x08, 0x80, 0xD2, // 0x4c: mov x1, #0x40
+        0xE0, 0x03, 0x16, 0xAA, // 0x50: mov x0, x22
+        0x08, 0x00, 0x00, 0xB0, // 0x54: adrp x8, 0x1000
+        0x08, 0x09, 0x40, 0xF9, // 0x58: ldr x8, [x8, #0x10]
+        0x00, 0x01, 0x3F, 0xD6, // 0x5c: blr x8
+        0xFF, 0x83, 0x00, 0x91, // 0x60: add sp, sp, #0x20
+        0xC0, 0x03, 0x5F, 0xD6, // 0x64: ret
+    };
+    const uint64 codeSize = file.size();
+    file.resize(0x1020, 0x00);
+    for (const char c : std::string_view("%s %d %x %u"))
+        file.push_back(static_cast<unsigned char>(c));
+    file.resize(0x1030, 0x00);
+    for (const char c : std::string_view("%s %d"))
+        file.push_back(static_cast<unsigned char>(c));
+    file.resize(0x1040, 0x00);
+    ZoneLayout layout;
+    layout.size             = codeSize;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::ARM64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x1010, { "snprintf", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    dissasmInstance.settingsData.arm64ECCode[0] = codeSize; // ARM64EC code (Settings::AddArm64ECCode)
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000008  mov    x3, x19").ends_with("; %s"));
+    REQUIRE(FindListingLine(listing, "0x0000000c  stp    x9, x10, [sp]").ends_with("; %d, %x"));
+    REQUIRE(FindListingLine(listing, "0x00000010  str    w11, [sp, #0x10]").ends_with("; %u"));
+    REQUIRE(FindListingLine(listing, "0x00000014  mov    x4, sp").ends_with("; stack arguments"));
+    REQUIRE(FindListingLine(listing, "0x00000018  mov    x5, #0x18").ends_with("; stack arguments size"));
+    REQUIRE(FindListingLine(listing, "0x00000030  str    w12, [sp]").find("; %") == std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000040  mov    x3, x19").ends_with("; %s"));
+    REQUIRE(FindListingLine(listing, "0x00000044  mov    x4, sp").ends_with("; stack arguments"));
+    REQUIRE(FindListingLine(listing, "0x00000048  mov    x5, #8").ends_with("; stack arguments size"));
+}
+
+TEST_CASE("InferredIncomingStackParameters", "[Dissasm]Help")
+{
+    // Windows x64: an incoming argument after the fourth ([rsp + 0x28] at the entry: the fifth) read through rsp at a known depth and passed
+    // to a call names the parameter of the inferred prototype; its callers' stack slot then too; not a slot the function writes before
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x38,                         // 0x00: sub rsp, 0x38
+        0xC7, 0x44, 0x24, 0x20, 0x30, 0x00, 0x00, 0x00, // 0x04: mov dword ptr [rsp + 0x20], 0x30 (uType of sub_40)
+        0xE8, 0x2F, 0x00, 0x00, 0x00,                   // 0x0c: call 0x40
+        0xE8, 0x6A, 0x00, 0x00, 0x00,                   // 0x11: call 0x80
+        0x48, 0x83, 0xC4, 0x38,                         // 0x16: add rsp, 0x38
+        0xC3,                                           // 0x1a: ret
+    };
+    const auto wrapper = [&file](uint64 at, bool writeFirst) {
+        file.resize(at, 0xCC);
+        file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x28 }); // sub rsp, 0x28
+        if (writeFirst)
+            file.insert(file.end(), { 0xC7, 0x44, 0x24, 0x50, 0x00, 0x00, 0x00, 0x00 }); // mov dword ptr [rsp + 0x50], 0 (the slot written)
+        file.insert(file.end(), { 0x44, 0x8B, 0x4C, 0x24, 0x50 }); // mov r9d, dword ptr [rsp + 0x50] (0x50 - 0x28: the fifth argument)
+        const uint32 displacement = 0x200 - static_cast<uint32>(file.size() + 6); // call qword ptr [MessageBoxW]
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+        file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x28, 0xC3 }); // add rsp, 0x28; ret
+    };
+    wrapper(0x40, false);
+    wrapper(0x80, true);
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "MessageBoxW", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    const auto* inferred = dissasmInstance.zone->FindInferredPrototype(0x40);
+    REQUIRE(inferred != nullptr);
+    REQUIRE(std::string_view(inferred->prototype).find("(HWND hWnd, LPCWSTR lpText, LPCWSTR lpCaption, a4, UINT uType)") != std::string_view::npos);
+    const auto* written = dissasmInstance.zone->FindInferredPrototype(0x80);
+    REQUIRE(written != nullptr);
+    REQUIRE(std::string_view(written->prototype).find("uType") == std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000004  mov").find("; uType") != std::string_view::npos);
+}
