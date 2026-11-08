@@ -690,6 +690,14 @@ namespace App
             int64 storedAtMs{ 0 };
             bool materialized{ false }; // also in the in-memory file system
         };
+        // BrowserLaunch.cpp: one-click launch of Learning and Evaluation Mode (<page>#launch=<code>&server=<url>), as
+        // redeemed by the page (GView/web/gview-page.js). Polled from OnFrame; handled once, when the desktop has focus.
+        struct LearningLaunch {
+            std::string serverOrigin;     // the server the code was redeemed at (URL.origin)
+            std::string connectionString; // empty on error (wiped after use)
+            std::string error;            // human readable, for the student
+        };
+        bool LaunchOnFrame(bool desktopHasFocus);
         bool StorageAvailable();
         std::vector<StoredFile> StoredFiles();
         bool IsStoredPath(const std::string& relativePath); // in the store, even if not loaded into memory
@@ -1029,6 +1037,11 @@ namespace App
 
     // Learning and Evaluation Mode UI (LearningModeWindow.cpp / LearningSubmitDialog.cpp)
     void ShowLearningModeWindow(std::string_view prefilledConnectionString, bool autoConnect);
+#ifdef BUILD_FOR_WASM
+    // launch link of the web build: validates the connection string, asks once per server origin, ends the current
+    // connection if it is another one, then connects as if the string had been pasted (stored after a verified connect)
+    void RunLearningLaunch(const Browser::LearningLaunch& launch);
+#endif
     void ShowLearningSubmitDialog(std::string_view problemName);
     // Course notes (LearningNotesWindow.cpp). focusItem: the open catalogue item (its notes first, preselected scope),
     // "" for none; taskObject: the task window it was opened from (note_add telemetry) or nullptr; openNoteForItem:

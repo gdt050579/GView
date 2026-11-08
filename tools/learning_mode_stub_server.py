@@ -12,6 +12,8 @@ Implements the server side of docs/source/learning_mode_protocol.rst for end-to-
   POST /GView/GetResource/<name>      resource content
   POST /GView/SubmitFlag              grading with idempotency keys (a resent clientSubmissionId answers duplicate:true)
   POST /GView/Telemetry               batches, de-duplicated on (sessionId, seq): {"accepted": n, "duplicates": m}
+  POST /GView/WebLaunch               one-click launch of the web build (--launch-code): {"code"} -> the connection
+                                      string, once; 401 afterwards; 403 without an allowed Origin; 426 below protocol 2
   POST /GView/GetNotes                course notes (spec §10.11): the student's own notes + the teacher notes for them
   POST /GView/SaveNote                compare-and-set on "revision"; a retried create / update is answered 200
   POST /GView/DeleteNote              unknown id => 404
@@ -31,6 +33,8 @@ prevent screenshots), or a 426 UNSUPPORTED_CLIENT with --refuse-platform web-was
 
   python tools/learning_mode_stub_server.py --quiet --require-explanation          # desktop end-to-end tests
   python tools/learning_mode_stub_server.py --http --cors-origin http://127.0.0.1:8765 --storage-mode file   # web
+  python tools/learning_mode_stub_server.py --http --cors-origin http://127.0.0.1:8765 --launch-code <32-64 chars>
+      then open http://127.0.0.1:8765/GView.html#launch=<code>&server=http%3A%2F%2F127.0.0.1%3A8443
 
 Fault injection: --tamper-policy (signature does not verify), --corrupt-blob (GCM tag fails), --delay-ms (slow
 server: responsiveness and cancellation). The signing key is derived from a public seed: FOR TESTS ONLY.
@@ -48,9 +52,11 @@ import base64
 import collections
 import datetime
 import hashlib
+import hmac
 import ipaddress
 import json
 import os
+import re
 import ssl
 import sys
 import tempfile
@@ -80,6 +86,11 @@ EXPOSED_RESPONSE_HEADERS = ("X-GView-Delivery, X-GView-SHA256, X-GView-Encrypted
 
 def b64(data: bytes) -> str:
     return base64.b64encode(data).decode("ascii")
+
+
+def subject_of(token: str) -> str:
+    """Policy subject of an access token (hex(sha256(token))[0:16]); also what the log shows instead of the token."""
+    return hashlib.sha256(token.encode()).hexdigest()[:16]
 
 
 def make_mz(label: str, sections: int) -> bytes:
@@ -121,9 +132,12 @@ class StubState:
         self.key = Ed25519PrivateKey.from_private_bytes(SIGNING_SEED)
         self.public_hex = self.key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
         self.token = args.token
+        # the student of --launch-code may be another one (--launch-token): both access tokens are accepted
+        self.launch_token = args.launch_token or args.token
+        self.tokens = {self.token, self.launch_token}
+        self.launch_used = False     # --launch-code is single use
         self.server_url = args.server_url
         self.ca_pem = None  # set when the server uses its own self-signed certificate
-        self.policy_id = "pol_stub_" + hashlib.sha256((self.token + self.server_url).encode()).hexdigest()[:8]
         self.attempts = {}           # problem -> attempts
         self.solved = set()
         self.submissions = {}        # clientSubmissionId -> response
@@ -167,22 +181,25 @@ class StubState:
         self.notes_requests = collections.deque()  # timestamps of note requests (rate limit)
 
     # ------------------------------------------------------------------ policy
-    def content_key(self) -> bytes:
-        return HKDF(algorithm=hashes.SHA256(), length=32, salt=self.policy_id.encode(), info=b"GView-Content-v1").derive(
-            self.token.encode())
+    def policy_id(self, token: str) -> str:
+        return "pol_stub_" + hashlib.sha256((token + self.server_url).encode()).hexdigest()[:8]
 
-    def policy_bytes(self, platform: str) -> bytes:
+    def content_key(self, token: str) -> bytes:
+        return HKDF(algorithm=hashes.SHA256(), length=32, salt=self.policy_id(token).encode(),
+                    info=b"GView-Content-v1").derive(token.encode())
+
+    def policy_bytes(self, platform: str, token: str) -> bytes:
         web = platform.startswith("web-")
         now = int(time.time())
         policy = {
             "schema": 2,
-            "id": self.policy_id,
+            "id": self.policy_id(token),
             "digest": "",
             "purpose": "GView learning stub server",
             "issuedAt": now,
             "startsAt": now - 60,
             "endsAt": now + self.args.policy_minutes * 60,
-            "subject": hashlib.sha256(self.token.encode()).hexdigest()[:16],
+            "subject": subject_of(token),
             "serverUrl": self.server_url,
             "disabledFeatures": ["Copy", "Export", "Clipboard", "LLMHints"],
             "storageMode": self.args.storage_mode,
@@ -194,7 +211,7 @@ class StubState:
                           "idleThresholdSeconds": 120, "eventLevel": True},
             "submission": {"allowInTool": True, "requireExplanation": False, "explanationMaxChars": 2000},
             "contentEncryption": "aes-256-gcm-hkdf-v1",
-            "contentKeyId": hashlib.sha256(self.content_key()).hexdigest()[:16],
+            "contentKeyId": hashlib.sha256(self.content_key(token)).hexdigest()[:16],
         }
         if self.args.notes != "absent":
             policy["notes"] = {"enabled": self.args.notes == "on", "maxChars": self.args.notes_max_chars}
@@ -202,8 +219,8 @@ class StubState:
         policy["digest"] = hashlib.sha256(canonical).hexdigest()
         return json.dumps(policy, sort_keys=True, separators=(",", ":")).encode()
 
-    def connect_response(self, platform: str) -> dict:
-        data = self.policy_bytes(platform)
+    def connect_response(self, platform: str, token: str) -> dict:
+        data = self.policy_bytes(platform, token)
         signature = self.key.sign(data)
         if self.args.tamper_policy:
             data = data.replace(b'"stub-course"', b'"stub-coursX"')  # one byte changed after signing
@@ -231,7 +248,7 @@ class StubState:
         return {"status": "ok", "weeks": [{"id": 1, "name": "Week 1", "title": "Getting started", "order": 1,
                                            "problems": problems, "resources": resources}]}
 
-    def delivery(self, name: str):
+    def delivery(self, name: str, token: str):
         it = self.items[name]
         plaintext = it["content"]
         memory = it["mode"] == "memory" or self.args.storage_mode == "memory"
@@ -240,8 +257,8 @@ class StubState:
                    "X-GView-Filename": it["fileName"], "X-GView-Item-Version": "1"}
         if memory:
             iv = os.urandom(12)
-            aad = name.encode() + b"\x00" + self.policy_id.encode()
-            body = b"GVE1" + iv + AESGCM(self.content_key()).encrypt(iv, plaintext, aad)
+            aad = name.encode() + b"\x00" + self.policy_id(token).encode()
+            body = b"GVE1" + iv + AESGCM(self.content_key(token)).encrypt(iv, plaintext, aad)
             if self.args.corrupt_blob:
                 body = body[:-1] + bytes([body[-1] ^ 0x01])
             headers["X-GView-Encrypted"] = "1"
@@ -250,8 +267,9 @@ class StubState:
             headers["X-GView-Encrypted"] = "0"
         return body, headers
 
-    def connection_string(self) -> str:
-        parts = [b64(self.token.encode()), b64(self.server_url.encode()), b64(self.public_hex.encode())]
+    def connection_string(self, token: str = None, server_url: str = None) -> str:
+        parts = [b64((token or self.token).encode()), b64((server_url or self.server_url).encode()),
+                 b64(self.public_hex.encode())]
         extra = {"label": "GView stub course"}
         if self.ca_pem:
             extra["caPem"] = b64(self.ca_pem)
@@ -334,7 +352,11 @@ class Handler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length) if length else b""
         if st.args.delay_ms > 0:
             time.sleep(st.args.delay_ms / 1000.0)
-        if self.headers.get("XAppUserID") != st.token:
+        if self.path == "/GView/WebLaunch":
+            self.web_launch(raw)
+            return
+        token = self.headers.get("XAppUserID")
+        if token not in st.tokens:
             self.error(401, "UNAUTHORIZED", "invalid access token")
             return
         platform = self.headers.get("X-GView-Platform", "")
@@ -349,8 +371,9 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path
         with st.lock:
             if path == "/GView/Connect":
-                self.note(f"connect from client={self.headers.get('X-GView-Client')} platform={platform or '?'}")
-                self.reply_json(200, st.connect_response(platform))
+                self.note(f"connect from client={self.headers.get('X-GView-Client')} platform={platform or '?'} "
+                          f"subject={subject_of(token)}")
+                self.reply_json(200, st.connect_response(platform, token))
             elif path == "/GView/GetWeeks":
                 self.reply_json(200, st.weeks())
             elif path.startswith("/GView/GetProblems/") or path.startswith("/GView/GetResource/"):
@@ -359,12 +382,12 @@ class Handler(BaseHTTPRequestHandler):
                 if it is None or name in st.disabled or it["problem"] != path.startswith("/GView/GetProblems/"):
                     self.error(404, "NOT_FOUND", "no such item")
                     return
-                data, headers = st.delivery(name)
+                data, headers = st.delivery(name, token)
                 self.reply(200, data, content_type="application/octet-stream", extra=headers)
             elif path == "/GView/SubmitFlag":
                 self.submit(body)
             elif path == "/GView/Telemetry":
-                self.telemetry(body)
+                self.telemetry(body, token)
             elif path in NOTE_ENDPOINTS and st.args.notes != "absent":
                 self.notes_endpoint(path, body)
             else:
@@ -597,6 +620,46 @@ class Handler(BaseHTTPRequestHandler):
         st.teacher_notes.remove(t)
         self.reply_json(200, {"status": "ok"})
 
+    def web_launch(self, raw: bytes):
+        """POST /GView/WebLaunch {"code"}: one-click launch of the web build. --launch-code is answered once with the
+        connection string of --launch-token (and --launch-server-url), then with 401 like an expired / used code."""
+        st = self.state
+        origin = self.headers.get("Origin")
+        if not origin or origin not in st.args.cors_origin:
+            self.error(403, "FORBIDDEN", "This GView page is not allowed by the course server (origin not allowed).")
+            return
+        try:
+            protocol = int(self.headers.get("X-GView-Protocol") or "0")
+        except ValueError:
+            protocol = 0
+        if protocol < 2:
+            self.error(426, "UNSUPPORTED_CLIENT", "X-GView-Protocol 2 is required")
+            return
+        try:
+            body = json.loads(raw.decode("utf-8")) if raw else {}
+        except ValueError:
+            body = None
+        code = body.get("code") if isinstance(body, dict) else None
+        if not isinstance(code, str) or not code:
+            self.error(400, "BAD_REQUEST", "code is required")
+            return
+        if st.args.launch_delay_ms > 0:
+            time.sleep(st.args.launch_delay_ms / 1000.0)
+        with st.lock:
+            valid = (st.args.launch_code is not None and not st.launch_used and
+                     hmac.compare_digest(code.encode(), st.args.launch_code.encode()))
+            if valid:
+                st.launch_used = True
+        if not valid:
+            self.note(f"web launch refused (unknown, used or expired code) origin={origin}")
+            self.error(401, "UNAUTHORIZED", "invalid or expired launch code")
+            return
+        # the code and the connection string are never logged
+        self.note(f"web launch redeemed origin={origin} platform={self.headers.get('X-GView-Platform', '?')} "
+                  f"client={self.headers.get('X-GView-Client', '?')} subject={subject_of(st.launch_token)}")
+        self.reply_json(200, {"status": "ok", "connectionString": st.connection_string(
+            st.launch_token, st.args.launch_server_url or st.server_url)})
+
     def submit(self, body):
         st = self.state
         sid = body.get("clientSubmissionId", "")
@@ -629,7 +692,7 @@ class Handler(BaseHTTPRequestHandler):
             st.submissions[sid] = resp
         self.reply_json(200, resp)
 
-    def telemetry(self, body):
+    def telemetry(self, body, token):
         st = self.state
         session = body.get("sessionId", "?")
         fresh = duplicates = 0
@@ -642,8 +705,8 @@ class Handler(BaseHTTPRequestHandler):
             fresh += 1
             self.note(f"telemetry {session[:8]} #{ev.get('seq')} {ev.get('type')} {ev.get('item', '')}")
         st.telemetry_events += fresh
-        self.note(f"telemetry batch platform={body.get('platform')} new={fresh} duplicates={duplicates} "
-                  f"total={st.telemetry_events}")
+        self.note(f"telemetry batch platform={body.get('platform')} subject={subject_of(token)} new={fresh} "
+                  f"duplicates={duplicates} total={st.telemetry_events}")
         self.reply_json(200, {"status": "ok", "accepted": fresh, "duplicates": duplicates})
 
 
@@ -667,6 +730,13 @@ def main():
     ap.add_argument("--tamper-policy", action="store_true", help="send a policy whose signature does not verify")
     ap.add_argument("--corrupt-blob", action="store_true", help="flip a bit in encrypted deliveries")
     ap.add_argument("--delay-ms", type=int, default=0, help="wait this long before answering every POST")
+    ap.add_argument("--launch-code", help="one-time code of POST /GView/WebLaunch (one-click launch of the web build): "
+                                          "answered once with a connection string, then with 401")
+    ap.add_argument("--launch-token", help="access token of the student of --launch-code (default: --token); "
+                                           "both tokens are accepted")
+    ap.add_argument("--launch-server-url", help="server URL put in the connection string of --launch-code (default: "
+                                                "--server-url; another value tests the client's origin check)")
+    ap.add_argument("--launch-delay-ms", type=int, default=0, help="extra wait before answering /GView/WebLaunch")
     ap.add_argument("--notes", choices=["on", "off", "absent"], default="on",
                     help="course notes in the policy: on, off (student note endpoints answer 403) or absent (no notes)")
     ap.add_argument("--notes-forbidden", action="store_true",
@@ -677,6 +747,10 @@ def main():
     ap.add_argument("--notes-rate-limit", type=int, default=60, help="note requests per minute (429 above)")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
+    if args.launch_code is not None and not re.fullmatch(r"[A-Za-z0-9_-]{32,64}", args.launch_code):
+        ap.error("--launch-code must match ^[A-Za-z0-9_-]{32,64}$ (the client ignores any other code)")
+    if args.launch_server_url:
+        args.launch_server_url = args.launch_server_url.rstrip("/").lower()
 
     tls = not args.http
     if args.server_url is None:
@@ -705,6 +779,9 @@ def main():
     print(f"GView learning stub server on {args.server_url} (CORS origins: {', '.join(args.cors_origin) or 'none'})")
     print(f"policy public key : {state.public_hex}")
     print(f"connection string : {state.connection_string()}")
+    if args.launch_code is not None:
+        print(f"web launch        : POST /GView/WebLaunch answers once (student {subject_of(state.launch_token)}"
+              f"{', server ' + args.launch_server_url if args.launch_server_url else ''})")
     if not tls:
         print("plain HTTP: the client needs [GView] LearningAllowPlainHttpLocalhost=true (and a page served from localhost)")
     elif state.ca_pem:

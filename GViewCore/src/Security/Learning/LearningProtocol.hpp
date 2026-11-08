@@ -68,11 +68,36 @@ Utils::GStatus ValidateServerUrl(std::string_view url, bool allowPlainHttpLocalh
 Utils::GStatus ParseConnectionString(std::string_view connectionString, bool allowPlainHttpLocalhost, ConnectionInfo& out);
 std::string BuildConnectionString(std::string_view token, std::string_view serverUrl, std::string_view publicKeyHex, std::string_view extraJson);
 
+// ---------------------------------------------------------------- launch link of the web build
+// <page>#launch=<one-time code>&server=<url>: the page redeems the code at POST <server>/GView/WebLaunch and gives the
+// returned connection string to GView (GView/web/gview-page.js, docs/source/learning_mode_protocol.rst).
+//
+// "scheme://host[:port]" of a server URL (lower case, default port omitted: the same text as URL.origin in a browser);
+// empty when the URL is not accepted by ValidateServerUrl (plain http is accepted here for the loopback hosts only)
+std::string ServerOrigin(std::string_view url);
+// A connection string received from a launch code redeemed at serverOrigin: the same parser and checks as a pasted one,
+// plus: version 2 with the policy public key, and its server has the origin the code was redeemed at.
+Utils::GStatus ValidateLaunchConnectionString(std::string_view connectionString, std::string_view serverOrigin, bool allowPlainHttpLocalhost, ConnectionInfo& out);
+// Space separated list of the launch servers approved in this browser ([GView] LearningTrustedLaunchOrigins)
+constexpr size_t MAX_TRUSTED_LAUNCH_ORIGINS = 32;
+bool OriginListContains(std::string_view list, std::string_view origin);
+// adds the origin (the oldest entries are dropped beyond MAX_TRUSTED_LAUNCH_ORIGINS); an invalid origin is ignored
+std::string OriginListAdd(std::string_view list, std::string_view origin);
+
 // hex(sha256(token))[0:16]
 std::string SubjectForToken(const SecureString& token);
 bool IsValidItemName(std::string_view name) noexcept;
 // basename only, no separators / reserved names / control characters; never empty
 std::string SanitizeFileName(std::string_view name);
+// A single file-system-safe path component (folder or file name) built from untrusted UTF-8 text, valid on Windows,
+// Linux and macOS: path separators, characters Windows rejects (< > : " | ? *), control characters and invalid UTF-8
+// become '_'; leading/trailing dots and spaces are removed (so "." / ".." / hidden names cannot come out of it); Windows
+// device names (CON, PRN, AUX, NUL, COM0-9, LPT0-9, with or without an extension) get a '_' prefix; a longer result is
+// cut to maxBytes (keeping a short extension) without splitting a UTF-8 sequence. Returns fallback when nothing usable
+// remains. Idempotent: sanitizing its own output returns it unchanged.
+std::string SanitizePathComponent(std::string_view text, std::string_view fallback, size_t maxBytes = 128);
+// Folder name of a course server: "https://user@Course.Example.edu:8443/api" -> "course.example.edu_8443"
+std::string ServerFolderName(std::string_view serverUrl);
 // replaces control characters (except \n and \t when multiline) and truncates
 std::string SanitizeDisplayText(std::string_view text, size_t maxLen, bool multiline);
 

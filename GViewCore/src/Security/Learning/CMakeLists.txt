@@ -3,6 +3,7 @@ target_sources(GViewCore PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/LearningProtocol.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/LearningHttp.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ContentDelivery.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/TaskFiles.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Telemetry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/LearningNotes.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/LearningSession.cpp

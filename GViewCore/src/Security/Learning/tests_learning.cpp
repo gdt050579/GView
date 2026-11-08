@@ -2,6 +2,7 @@
 // No network: an in-process FakeTransport plays the course server; policies are signed with a fresh Ed25519 key.
 
 #include "Learning/LearningSession.hpp"
+#include "Learning/TaskFiles.hpp"
 
 #include <catch.hpp>
 
@@ -417,6 +418,81 @@ TEST_CASE("Learning: connection string v1/v2 parsing", "[learning][protocol]")
         REQUIRE_FALSE(ValidateServerUrl("https://course.example.edu:99999", false, n).ok);
         REQUIRE_FALSE(ValidateServerUrl("ftp://course.example.edu", false, n).ok);
         REQUIRE(ValidateServerUrl("https://[::1]:8443/gview", false, n).ok);
+    }
+}
+
+TEST_CASE("Learning: launch link of the web build (origin, connection string, trusted origins)", "[learning][protocol]")
+{
+    SECTION("server origin, as URL.origin of a browser")
+    {
+        REQUIRE(ServerOrigin("https://Course.Example.edu/gview/") == "https://course.example.edu");
+        REQUIRE(ServerOrigin("https://course.example.edu:443") == "https://course.example.edu");
+        REQUIRE(ServerOrigin("https://course.example.edu:8443/x") == "https://course.example.edu:8443");
+        REQUIRE(ServerOrigin("http://127.0.0.1:80") == "http://127.0.0.1");
+        REQUIRE(ServerOrigin("http://127.0.0.1:8770") == "http://127.0.0.1:8770");
+        REQUIRE(ServerOrigin("https://[::1]:8443/gview") == "https://[::1]:8443");
+        REQUIRE(ServerOrigin("http://example.org").empty()); // plain http only for the loopback
+        REQUIRE(ServerOrigin("https://user@course.example.edu").empty());
+        REQUIRE(ServerOrigin("https://course.example.edu/?x").empty());
+        REQUIRE(ServerOrigin("javascript:alert(1)").empty());
+        REQUIRE(ServerOrigin("").empty());
+    }
+    SECTION("connection string redeemed with a launch code")
+    {
+        ConnectionInfo ci;
+        const auto cs = BuildConnectionString(TEST_TOKEN, "https://course.example.edu/gview", ServerKey().PublicHex(), R"({"label":"x"})");
+        REQUIRE(ValidateLaunchConnectionString(cs, "https://course.example.edu", false, ci).ok);
+        REQUIRE(ci.serverUrl == "https://course.example.edu/gview");
+        REQUIRE(ci.publicKey == ServerKey().publicKey);
+        REQUIRE(ValidateLaunchConnectionString(cs, "https://COURSE.example.edu:443", false, ci).ok);
+
+        // another server than the one the code was redeemed at
+        auto st = ValidateLaunchConnectionString(cs, "https://evil.example.org", false, ci);
+        REQUIRE_FALSE(st.ok);
+        REQUIRE(st.message.find("another server") != std::string::npos);
+        REQUIRE_FALSE(ValidateLaunchConnectionString(cs, "https://course.example.edu:8443", false, ci).ok);
+        REQUIRE_FALSE(ValidateLaunchConnectionString(cs, "http://course.example.edu", false, ci).ok);
+        const auto other = BuildConnectionString(TEST_TOKEN, "https://course.example.edu.evil.org", ServerKey().PublicHex(), "");
+        REQUIRE_FALSE(ValidateLaunchConnectionString(other, "https://course.example.edu", false, ci).ok);
+
+        // version 1 (no policy public key): refused, even if [GView] PolicyPublicKey would complete a pasted one
+        REQUIRE_FALSE(ValidateLaunchConnectionString(BuildConnectionString(TEST_TOKEN, TEST_SERVER, "", ""), TEST_SERVER, false, ci).ok);
+        // same parser as a pasted string
+        REQUIRE_FALSE(ValidateLaunchConnectionString("not base64!!", TEST_SERVER, false, ci).ok);
+        REQUIRE_FALSE(ValidateLaunchConnectionString(BuildConnectionString(TEST_TOKEN, TEST_SERVER, "zz", ""), TEST_SERVER, false, ci).ok);
+        REQUIRE_FALSE(ValidateLaunchConnectionString(cs, "", false, ci).ok);
+
+        // plain http: only with the setting, as for a pasted string
+        const auto local = BuildConnectionString(TEST_TOKEN, "http://127.0.0.1:8770", ServerKey().PublicHex(), "");
+        REQUIRE_FALSE(ValidateLaunchConnectionString(local, "http://127.0.0.1:8770", false, ci).ok);
+        REQUIRE(ValidateLaunchConnectionString(local, "http://127.0.0.1:8770", true, ci).ok);
+        REQUIRE_FALSE(ValidateLaunchConnectionString(local, "http://localhost:8770", true, ci).ok); // another origin
+    }
+    SECTION("trusted launch origins")
+    {
+        std::string list;
+        REQUIRE_FALSE(OriginListContains(list, "https://course.example.edu"));
+        list = OriginListAdd(list, "https://course.example.edu");
+        REQUIRE(list == "https://course.example.edu");
+        REQUIRE(OriginListContains(list, "https://course.example.edu"));
+        REQUIRE_FALSE(OriginListContains(list, "https://course.example"));
+        REQUIRE_FALSE(OriginListContains(list, ""));
+        list = OriginListAdd(list, "https://course.example.edu"); // no duplicate
+        list = OriginListAdd(list, "http://127.0.0.1:8770");
+        REQUIRE(list == "https://course.example.edu http://127.0.0.1:8770");
+        // not an origin: ignored
+        REQUIRE(OriginListAdd(list, "https://x.example.edu/path") == list);
+        REQUIRE(OriginListAdd(list, "https://a.edu https://b.edu") == list);
+        REQUIRE(OriginListAdd(list, "http://example.org") == list);
+        REQUIRE(OriginListContains("  https://a.edu,https://b.edu ", "https://b.edu"));
+        // bounded: the oldest entries are dropped
+        std::string many;
+        for (size_t i = 0; i < MAX_TRUSTED_LAUNCH_ORIGINS + 3; i++)
+            many = OriginListAdd(many, "https://h" + std::to_string(i) + ".example.edu");
+        REQUIRE_FALSE(OriginListContains(many, "https://h0.example.edu"));
+        REQUIRE_FALSE(OriginListContains(many, "https://h2.example.edu"));
+        REQUIRE(OriginListContains(many, "https://h3.example.edu"));
+        REQUIRE(OriginListContains(many, "https://h" + std::to_string(MAX_TRUSTED_LAUNCH_ORIGINS + 2) + ".example.edu"));
     }
 }
 
@@ -900,6 +976,164 @@ TEST_CASE("Learning: file mode atomic write", "[learning][content]")
     std::filesystem::remove_all(dir, ec);
 }
 
+TEST_CASE("Learning: path component sanitizing", "[learning][content]")
+{
+    const auto S = [](std::string_view s) { return SanitizePathComponent(s, "fallback", 32); };
+    REQUIRE(S("Lab 3") == "Lab 3");
+    REQUIRE(S("Lab 3/4") == "Lab 3_4"); // separators never survive (a folder name keeps both parts)
+    REQUIRE(S("..\\..\\x") == "_.._x");
+    REQUIRE(S("..") == "fallback");
+    REQUIRE(S(" .hidden. ") == "hidden");
+    REQUIRE(S("") == "fallback");
+    REQUIRE(S("nul") == "_nul");
+    REQUIRE(S("COM7.txt") == "_COM7.txt");
+    REQUIRE(S("conin$") == "_conin$");
+    REQUIRE(S("console") == "console");
+    REQUIRE(S("a\tb\x7F" "c") == "a_b_c");
+    REQUIRE(S("Săptămâna 3") == "Săptămâna 3");           // valid UTF-8 is kept
+    REQUIRE(S("bad\xC3(\xFF") == "bad_(_");                 // invalid UTF-8 becomes '_'
+    REQUIRE(S("\xED\xA0\x80" "x") == "___x");               // UTF-16 surrogate encoded in UTF-8
+    REQUIRE(S("\xC0\xAF") == "__");                          // overlong '/'
+    // long names: cut on a UTF-8 boundary, the extension is kept
+    const std::string longName = std::string(40, 'a') + ".exe";
+    REQUIRE(S(longName) == std::string(28, 'a') + ".exe");
+    std::string accents;
+    for (int i = 0; i < 20; i++)
+        accents += "\xC4\x83"; // U+0103, two bytes each
+    const std::string cut = S(accents);
+    REQUIRE(cut.size() == 32);
+    REQUIRE(cut == accents.substr(0, 32));
+    REQUIRE(SanitizePathComponent(accents + "b", "x", 31).size() == 30); // never half a character
+    // idempotent: the store relies on it to compare names
+    for (const std::string_view s : { "a<b>:c", "CON.txt", "  x  ", "Săptămâna/3", "bad\xC3(" })
+        REQUIRE(S(S(s)) == S(s));
+
+    REQUIRE(ServerFolderName("https://rzaharia.dev") == "rzaharia.dev");
+    REQUIRE(ServerFolderName("https://User:pw@Course.Example.EDU:8443/api/v2?x=1") == "course.example.edu_8443");
+    REQUIRE(ServerFolderName("http://127.0.0.1:8770") == "127.0.0.1_8770");
+    REQUIRE(ServerFolderName("http://[::1]:8770/") == "[__1]_8770");
+    REQUIRE(ServerFolderName("") == "server");
+    REQUIRE(ServerFolderName("https://../") == "server");
+
+    const auto folder = TaskFolder("/base", "https://rzaharia.dev", "Lab 5: Heap/Stack");
+    REQUIRE(folder.filename() == "Lab 5_ Heap_Stack");
+    REQUIRE(folder.parent_path().filename() == "rzaharia.dev");
+    REQUIRE(TaskFolder("/base", "https://rzaharia.dev", "..").filename() == "Course");
+}
+
+TEST_CASE("Learning: task file store", "[learning][content]")
+{
+    const auto dir = std::filesystem::temp_directory_path() / "gview_learning_test_store";
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    const auto readAll = [](const std::filesystem::path& p) {
+        std::ifstream f(p, std::ios::binary);
+        return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    };
+    const auto overwrite = [](const std::filesystem::path& p, std::string_view text) {
+        std::ofstream f(p, std::ios::binary | std::ios::trunc);
+        f.write(text.data(), static_cast<std::streamsize>(text.size()));
+    };
+    using State             = TaskFileStore::LocalState;
+    const std::string v1    = "version one";
+    const std::string v2    = "version two";
+    const std::string other = "another task";
+
+    std::filesystem::path p1;
+    {
+        TaskFileStore store(dir);
+        REQUIRE_FALSE(store.FindUpToDate("p1", Sha256Hex(v1)).has_value());
+        auto plan = store.PlanFor("p1", "task.exe", Sha256Hex(v1));
+        REQUIRE(plan.state == State::Missing);
+        REQUIRE(plan.file == "task.exe");
+        REQUIRE(store.Store(plan, "p1", BufferView(v1), Sha256Hex(v1), 1, p1).ok);
+        REQUIRE(readAll(p1) == v1);
+
+        // another item delivering the same file name (any case) gets its own file
+        auto planOther = store.PlanFor("p2", "TASK.EXE", Sha256Hex(other));
+        REQUIRE(planOther.state == State::Missing);
+        REQUIRE(planOther.file == "p2-TASK.EXE");
+        std::filesystem::path p2;
+        REQUIRE(store.Store(planOther, "p2", BufferView(other), Sha256Hex(other), 1, p2).ok);
+        REQUIRE(readAll(p1) == v1);
+        REQUIRE(readAll(p2) == other);
+    }
+    {
+        // a new store reads the manifest back
+        TaskFileStore store(dir);
+        REQUIRE(store.FindUpToDate("p1", Sha256Hex(v1)) == p1);
+        REQUIRE(store.RecordedVersion("p1") == 1);
+        REQUIRE(store.KnownFile("p2").has_value());
+        REQUIRE_FALSE(store.FindUpToDate("p1", Sha256Hex(v2)).has_value());
+        // same content on disk and on the server
+        REQUIRE(store.PlanFor("p1", "renamed.exe", Sha256Hex(v1)).state == State::SameAsServer);
+        // unchanged on disk, new version on the server: replace without asking (the item keeps its file name)
+        auto plan = store.PlanFor("p1", "renamed.exe", Sha256Hex(v2));
+        REQUIRE(plan.state == State::Outdated);
+        REQUIRE(plan.path == p1);
+        std::filesystem::path out;
+        REQUIRE(store.Store(plan, "p1", BufferView(v2), Sha256Hex(v2), 2, out).ok);
+        REQUIRE(readAll(p1) == v2);
+        REQUIRE(store.RecordedVersion("p1") == 2);
+    }
+    {
+        // the student changed the file: Modified, even when the server version changes again
+        overwrite(p1, "patched by the student");
+        TaskFileStore store(dir);
+        REQUIRE_FALSE(store.FindUpToDate("p1", Sha256Hex(v2)).has_value());
+        auto plan = store.PlanFor("p1", "task.exe", Sha256Hex(v2));
+        REQUIRE(plan.state == State::Modified);
+        store.Keep(plan, "p1", Sha256Hex(v2), 2); // "No": keep the student's file
+        REQUIRE(store.PlanFor("p1", "task.exe", Sha256Hex(v2)).state == State::Modified);
+        REQUIRE(store.PlanFor("p1", "task.exe", Sha256Hex("v3")).state == State::Modified);
+        REQUIRE(readAll(p1) == "patched by the student");
+    }
+    {
+        // a file GView did not record (no manifest entry) is never taken for the server version
+        overwrite(dir / "foreign.bin", "unrelated");
+        TaskFileStore store(dir);
+        auto plan = store.PlanFor("p3", "foreign.bin", Sha256Hex(v1));
+        REQUIRE(plan.state == State::Modified);
+        store.Keep(plan, "p3", Sha256Hex(v1), 7); // "No": the bytes kept are not the server's version 7
+        REQUIRE(store.RecordedVersion("p3") == 0);
+        REQUIRE(store.PlanFor("p3", "foreign.bin", Sha256Hex(v1)).state == State::Modified);
+        // "x" and "x.part" (the temporary file of a write) never belong to two items
+        std::filesystem::path part;
+        auto planPart = store.PlanFor("p6", "notes.part", Sha256Hex(v1));
+        REQUIRE(store.Store(planPart, "p6", BufferView(v1), Sha256Hex(v1), 1, part).ok);
+        REQUIRE(store.PlanFor("p7", "notes", Sha256Hex(v2)).file == "p7-notes");
+        REQUIRE(store.PlanFor("p8", "NOTES.PART.part", Sha256Hex(v2)).file == "p8-NOTES.PART.part");
+        overwrite(dir / "same.bin", v1);
+        auto same = store.PlanFor("p4", "same.bin", Sha256Hex(v1));
+        REQUIRE(same.state == State::SameAsServer);
+        store.Keep(same, "p4", Sha256Hex(v1), 1);
+        REQUIRE(store.FindUpToDate("p4", Sha256Hex(v1)).has_value());
+        // the manifest itself can never be a task file
+        REQUIRE(store.PlanFor("p5", ".gview-items.json", Sha256Hex(v1)).file != TASK_MANIFEST_FILE_NAME);
+    }
+    {
+        // a tampered manifest: bad names and paths are ignored (it is hidden on Windows: delete it before rewriting it)
+        std::filesystem::remove(dir / TASK_MANIFEST_FILE_NAME, ec);
+        overwrite(
+              dir / TASK_MANIFEST_FILE_NAME,
+              R"({"items":{"p1":{"file":"../../evil","sha256":"00"},"bad name":{"file":"x"},"p9":{"file":"ok.bin","itemVersion":-1},)"
+              R"("p3":{"file":"dup.bin","itemVersion":3},"p4":{"file":"DUP.BIN","itemVersion":4}}})");
+        TaskFileStore store(dir);
+        REQUIRE_FALSE(store.KnownFile("p1").has_value());
+        REQUIRE(store.RecordedVersion("p9") == 0);
+        REQUIRE(store.RecordedVersion("p3") == 3);
+        REQUIRE(store.RecordedVersion("p4") == 0); // a second item claiming the same file is dropped
+        REQUIRE(store.PlanFor("p4", "DUP.BIN", Sha256Hex(v1)).file == "p4-DUP.BIN");
+        auto plan = store.PlanFor("p1", "task.exe", Sha256Hex(v1));
+        REQUIRE(plan.path.parent_path() == dir);
+        std::filesystem::remove(dir / TASK_MANIFEST_FILE_NAME, ec);
+        overwrite(dir / TASK_MANIFEST_FILE_NAME, "not json");
+        TaskFileStore damaged(dir);
+        REQUIRE_FALSE(damaged.KnownFile("p2").has_value());
+    }
+    std::filesystem::remove_all(dir, ec);
+}
+
 TEST_CASE("Learning: locked buffer hygiene", "[learning][content]")
 {
     LockedBuffer b;
@@ -1090,6 +1324,17 @@ TEST_CASE("Learning: session connect T1 (valid policy)", "[learning][session]")
     REQUIRE(refreshed.ok);
     REQUIRE(s.IsCatalogueLoaded());
     REQUIRE(fx.transport->policyHeaders.back() == "pol_2026w1_ab12cd");
+
+    // UsesConnection: the launch of the web build decides with it whether the current session must be ended first
+    ConnectionInfo same, otherToken, otherServer;
+    REQUIRE(ParseConnectionString(fx.ConnectionString(), false, same).ok);
+    REQUIRE(ParseConnectionString(BuildConnectionString("tok_ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ0123456789abcd", TEST_SERVER, "", ""), false, otherToken).ok);
+    REQUIRE(ParseConnectionString(BuildConnectionString(TEST_TOKEN, "https://other.example.edu", "", ""), false, otherServer).ok);
+    REQUIRE(s.UsesConnection(same));
+    REQUIRE_FALSE(s.UsesConnection(otherToken));
+    REQUIRE_FALSE(s.UsesConnection(otherServer));
+    REQUIRE(s.EndSession("user").ok);
+    REQUIRE_FALSE(s.UsesConnection(same));
 }
 
 TEST_CASE("Learning: session rejects invalid policies (T2/T3)", "[learning][session]")

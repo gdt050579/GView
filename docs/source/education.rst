@@ -16,7 +16,9 @@ Step-by-step workflow
 
 The student launches GView, selects *Options > Learning and Evaluation Mode* (or
 starts ``GView learn <connectionString>``) and pastes the connection string received from
-the teacher. The connection string contains the student's secret access token, the server
+the teacher. With the browser build, the course page can do this step for the student: its
+*Open GView in the browser* button opens GView already connected, through a one-time launch code
+(:doc:`wasm`, *Opening GView from a course page*). The connection string contains the student's secret access token, the server
 address and the public key used to verify policies. GView connects over verified TLS; if
 the server accepts the token, it returns a policy (JSON) signed with Ed25519.
 

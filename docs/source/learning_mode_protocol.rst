@@ -25,7 +25,7 @@ GView then:
    file chosen by the student (``file``), verifying SHA-256 in both cases;
 5. submits flags (with an optional explanation) using idempotency keys;
 6. sends privacy-preserving telemetry (event-level + counters) in the background;
-7. keeps the student's private notes and shows the teachers' course notes (`17. Course notes`_), when the course
+7. keeps the student's private notes and shows the teachers' course notes (`18. Course notes`_), when the course
    server offers them.
 
 **What is guaranteed** (against a student using an unmodified GView build):
@@ -78,7 +78,9 @@ Key                                 Meaning
 ``ServerConnectionString``          Saved only after a *successful, verified* connect; used to reconnect on open.
 ``PolicyPublicKey``                 64 hex chars; used when the connection string has no key (v1).
 ``LearningAllowPlainHttpLocalhost`` ``true``/``false`` (default ``false``), see above.
-``LearningDownloadFolder``          Default folder for ``file`` deliveries (empty = ``<Documents>/GView/<week>``).
+``LearningDownloadFolder``          Base folder for ``file`` deliveries (empty = ``<Documents>/GView``), see `File mode`_.
+``LearningTrustedLaunchOrigins``    Web build only: course servers approved for the one-click launch (space separated
+                                    origins, written after the first *Connect* of the trust prompt; see section 17).
 ``Key.LearningSubmitFlag``          Shortcut of "Submit flag for this task" in a task window (default Ctrl+Alt+F).
 =================================== ================================================================================
 
@@ -133,7 +135,7 @@ Endpoint                       Client behaviour
 ``/GView/GetResource/<name>``  Resource download (``file``/``text`` kinds only; ``link`` uses the catalogue URL).
 ``/GView/SubmitFlag``          Submission (`10. Submission`_).
 ``/GView/Telemetry``           Batches (`9. Telemetry`_).
-``/GView/GetNotes``            Course notes (`17. Course notes`_): after Connect when ``policy.notes.enabled``, and
+``/GView/GetNotes``            Course notes (`18. Course notes`_): after Connect when ``policy.notes.enabled``, and
                                each time the Notes window opens.
 ``/GView/SaveNote``            Autosave of a student note (compare-and-set on ``revision``).
 ``/GView/DeleteNote``          Deletion of a student note (``404`` = already gone).
@@ -313,9 +315,28 @@ default, ordinary heap), parser/viewer-derived structures (strings, disassembly 
 Pinning can fail silently (Windows working-set quota, Linux ``RLIMIT_MEMLOCK``); content is then still wiped but may
 have been paged.
 
-File mode: the student picks the destination in a Save dialog (default ``LearningDownloadFolder`` or
-``<Documents>/GView/<week>``); the content is written to ``<name>.part``, re-hashed from disk, then atomically moved
-into place (``MoveFileExW(REPLACE_EXISTING|WRITE_THROUGH)`` / ``rename``). Any failure removes the ``.part`` file.
+File mode
+^^^^^^^^^
+
+There is no Save dialog. A delivered file goes to ``<base>/<server>/<week>/<file>``: ``<base>`` is
+``LearningDownloadFolder`` or ``<Documents>/GView``, ``<server>`` the host of the server URL (``course.example.edu``,
+a port becomes ``_8443``), ``<week>`` the week name and ``<file>`` the delivered file name. Every component comes from
+the server and is made safe for Windows, Linux and macOS (``SanitizePathComponent``: separators, ``<>:"|?*``, control
+characters and invalid UTF-8 become ``_``; leading/trailing dots and spaces are dropped; device names such as ``CON``
+get a ``_`` prefix; long names are cut on a UTF-8 boundary, keeping the extension).
+
+Each week folder holds a manifest, ``.gview-items.json`` (hidden on Windows), mapping every item to its file and to the
+SHA-256 of the version GView wrote (``TaskFiles.hpp``):
+
+* a file name already owned by another item (compared case-insensitively) is prefixed with the item name
+  (``p2-task.exe``); item names are unique on a server, so weeks whose names sanitize alike cannot collide either;
+* opening an item whose local copy still hashes to the catalogue ``sha256`` opens that copy without a download;
+* otherwise the item is downloaded and compared: same content - the local copy is opened; local copy unchanged since
+  GView wrote it but the server has a new version - it is replaced; local copy changed (or a file GView did not write
+  is in the way) - the student is asked whether to replace it with the server version or open it as it is.
+
+Writes go to ``<name>.part``, are re-hashed from disk, then atomically moved into place
+(``MoveFileExW(REPLACE_EXISTING|WRITE_THROUGH)`` / ``rename``). Any failure removes the ``.part`` file.
 
 Secrets: the access token is held in a ``SecureString`` (wiped allocator) and the content key in a ``LockedBuffer``;
 both are erased by *End session* and at exit. libcurl's own copy of the header list is freed without wiping, the
@@ -523,10 +544,10 @@ N    Course notes: ``policy notes object``, ``note text helpers``, ``note reques
      ``--notes-forbidden``, ``--notes off``)
 ==== ========================================================================================== ========================
 
-Totals on this machine (course notes, 2026-11-08, RelWithDebInfo): ``libGViewCore.exe "[learning]"`` runs 49 cases (46
-unit cases + the three hidden end-to-end cases, which skip without a stub server), 1109 assertions pass; against
+Totals on this machine (course notes, 2026-11-08, RelWithDebInfo): ``libGViewCore.exe "[learning]"`` runs 52 cases (49
+unit cases + the three hidden end-to-end cases, which skip without a stub server), 1260 assertions pass; against
 four stub servers (default, ``--staff``, ``--notes-forbidden``, ``--notes off``) ``"[integration]"`` passes 2 cases / 122
-assertions; the full ``ctest`` suite (321 tests) passes; the WebAssembly build of ``GViewCore`` compiles. Cross-implementation vectors (`Test vectors`_) are asserted by
+assertions; the full ``ctest`` suite (324 tests) passes; the WebAssembly build of ``GViewCore`` compiles. Cross-implementation vectors (`Test vectors`_) are asserted by
 ``cross-implementation test vectors``.
 
 How to reproduce::
@@ -606,7 +627,7 @@ All of these are additional strictness or clarifications; ``plans/LEARNING_MODE_
 9. Redirects are never followed; ``caPem`` replaces (does not extend) the system trust store.
 10. Item names must match ``[A-Za-z0-9_-]{1,64}`` (Django ``SlugField`` compatible).
 11. ``/GView/Heartbeat`` is not used by the client.
-12. Course notes: the clarifications listed in `17. Course notes`_ (*Clarifications of spec §10.11*).
+12. Course notes: the clarifications listed in `18. Course notes`_ (*Clarifications of spec §10.11*).
 
 15. Open questions for the server implementer
 ---------------------------------------------
@@ -694,7 +715,97 @@ under a non-extractable key (*File > Stored files > Forget Learning connection*)
 ``file`` mode land in the home folder and are kept like any other file; ``memory`` content is never written to the
 file system and therefore never stored.
 
-17. Course notes
+17. One-click launch of the web build
+-------------------------------------
+
+The course portal can open the web build already connected: the student presses *Open GView in the browser* and
+pastes nothing. The connection string is never put in a URL (it holds a long-lived bearer token, and URLs end up in
+the history, history sync and screenshots). The URL carries a **one-time launch code** instead, which the page
+exchanges for the connection string. Desktop builds are not concerned: the portal still shows them the connection
+string, and ``GView learn <connectionString>`` is unchanged.
+
+**Launch URL.** The portal redirects the student to::
+
+   <GView page URL>#launch=<code>&server=<url-encoded base URL of the course server>
+
+=========== ============================================================================================================
+Parameter   Format
+=========== ============================================================================================================
+``launch``  ``^[A-Za-z0-9_-]{32,64}$`` (one-time code; anything else and the whole launch is refused as invalid)
+``server``  absolute ``https://`` URL; ``http://`` only to ``localhost``/``127.0.0.1``/``[::1]`` and only when the page
+            itself is served from the local machine (same rule as ``PageIsServedLocally``). No user info, query or
+            fragment. Endpoint = ``server`` (trailing ``/`` removed) + ``/GView/WebLaunch``
+=========== ============================================================================================================
+
+Unknown parameters are ignored. The fragment is never sent to the web server that hosts GView.
+
+**Endpoint.** ``POST <server>/GView/WebLaunch`` with ``Content-Type: application/json``, ``X-GView-Protocol: 2``,
+``X-GView-Client: <version>``, ``X-GView-Platform: web-wasm32`` and the body ``{"code": "<launch code>"}``; no
+``XAppUserID`` (the code is the credential). ``fetch`` options: ``credentials: "omit"``, ``cache: "no-store"``,
+``redirect: "error"``, ``referrerPolicy: "no-referrer"``. The server answers the CORS preflight like every other
+endpoint, for its allowed GView origins only (any other origin, or no ``Origin``: ``403 FORBIDDEN``).
+
+============================================== ==========================================================================
+Answer                                         Client
+============================================== ==========================================================================
+200 ``{"status":"ok","connectionString":...}`` continue with the connection string (below)
+401 ``UNAUTHORIZED``                           "This launch link has expired or was already used. Open GView again from
+                                               the course page."
+403 ``FORBIDDEN``                              the ``details`` of the server (this page's origin is not allowed)
+426 ``UNSUPPORTED_CLIENT``                     "The course server requires a newer GView version ..."
+429 ``RATE_LIMITED``                           "Too many attempts, wait N s ..." (``Retry-After``)
+5xx, network error, timeout                    a generic error that says to open GView again from the course page
+============================================== ==========================================================================
+
+The code is single use and expires 5 minutes after the click: the request is **never retried** automatically (a lost
+answer may already have consumed it). A new code is obtained by opening GView again from the course page.
+
+**Page (``gview-page.js``), before GView starts.**
+
+1. If the fragment has a ``launch`` parameter, it is removed at once with ``history.replaceState`` - whatever the
+   values - so a reload, a bookmark or the history never carry the code.
+2. ``launch`` and ``server`` are validated; an invalid link is reported as such and **nothing is sent**.
+3. The ``WebLaunch`` request starts immediately, in parallel with the download of ``GView.wasm`` (several MB).
+4. The outcome is published in ``globalThis.gviewLaunch`` (``state``: ``none``/``pending``/``ok``/``error``/``taken``,
+   ``serverOrigin``, ``connectionString``, ``error``, ``done``). GView polls it from its frames without blocking and
+   the page empties ``connectionString`` as soon as GView has taken it.
+
+The code and the connection string are never written to the console, the status bar, ``localStorage`` or
+``sessionStorage``.
+
+**GView (``App/BrowserLaunch.cpp``, ``RunLearningLaunch`` in ``App/LearningModeWindow.cpp``),** once the persistent
+storage is restored, the outcome is known and no modal window is open:
+
+1. The connection string is validated with the same parser and checks as a pasted one, and must be version 2 with
+   the policy public key; the origin of its server URL must equal the origin the code was redeemed at
+   (``ValidateLaunchConnectionString``). Otherwise nothing is connected.
+2. **Trust prompt, once per server origin and browser:** *"Connect to the course server <host>? Only continue if you
+   opened GView from your course page."* [Connect] [Cancel]. *Connect* adds the origin to
+   ``[GView] LearningTrustedLaunchOrigins`` (not secret; kept with the other settings); later launches from that
+   origin connect without asking. This keeps a crafted link (``#launch=x&server=https://attacker``) from silently
+   pointing GView at another server on a deployment whose page CSP allows any ``https:`` server.
+3. **Another connection is replaced.** If a session with another server or token is active, it is ended like *End
+   session* does (``session_end`` with reason ``user``, its pending telemetry sent with **its own** token, restrictions
+   removed). A different stored connection string is forgotten.
+4. The connection string is connected exactly as if it had been pasted into *Options > Learning and Evaluation Mode*,
+   whose window opens on the connection and the catalogue.
+5. It is stored (encrypted secret ``learning.connectionString``) only after a successful, verified connect - so a
+   reload reconnects like after a paste, when the Learning and Evaluation Mode window is opened.
+6. Any error opens that window with the message above and an **empty** connection field, so the string can still be
+   pasted by hand; a connection string stored before is left untouched.
+
+Test server: ``tools/learning_mode_stub_server.py --launch-code <code>`` answers ``/GView/WebLaunch`` once and with
+``401`` afterwards (``--launch-token`` another student, ``--launch-server-url`` a connection string for another server,
+``--launch-delay-ms`` a slow answer). For a page served locally::
+
+   python tools/learning_mode_stub_server.py --http --cors-origin http://127.0.0.1:8765 --launch-code <code>
+   # page setting: [GView] LearningAllowPlainHttpLocalhost = true, then open
+   # http://127.0.0.1:8765/GView.html#launch=<code>&server=http%3A%2F%2F127.0.0.1%3A8443
+
+Without ``--cors-origin`` the request is refused (403), and in its default TLS mode the stub hands out a connection
+string with ``caPem``, which the web client refuses.
+
+18. Course notes
 ----------------
 
 Students write private notes in GView while they analyse a task; the course server keeps them and returns them only to

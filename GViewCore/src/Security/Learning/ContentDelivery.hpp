@@ -49,8 +49,9 @@ Utils::GStatus ProcessDownloadResponse(HttpResponse& response, const CatalogueIt
 std::filesystem::path PathFromUtf8(std::string_view utf8);
 std::string PathToUtf8(const std::filesystem::path& p);
 
-// File mode helpers
-std::filesystem::path DefaultDownloadFolder(std::string_view configuredFolder, std::string_view weekName);
+// File mode helpers (TaskFiles.hpp builds the per-server / per-week folders under this base)
+// [GView] LearningDownloadFolder when set, otherwise <Documents>/GView
+std::filesystem::path DownloadBaseFolder(std::string_view configuredFolder);
 Utils::GStatus WriteFileAtomic(
       const std::filesystem::path& folder, std::string_view fileName, BufferView data, std::string_view expectedSha256Hex, std::filesystem::path& outPath);
 

@@ -27,6 +27,9 @@ namespace GView::Security::Learning
 enum class SessionState : uint8 { Disconnected, Connecting, Active, Legacy, Expired, Error };
 std::string_view SessionStateName(SessionState s) noexcept;
 
+// status message of a normal Active session (the UI does not repeat it: the state already says so)
+constexpr std::string_view ACTIVE_STATUS_MESSAGE = "Connected. Course policy verified and applied.";
+
 struct LearningSettings {
     bool allowPlainHttpLocalhost{ false };
     std::vector<uint8> fallbackPublicKey; // [GView] PolicyPublicKey
@@ -339,6 +342,8 @@ class LearningSession
     {
         return state != SessionState::Disconnected;
     }
+    // the current session belongs to this server and access token (constant-time token comparison)
+    bool UsesConnection(const ConnectionInfo& ci) const noexcept;
     bool CanOpenItems() const noexcept;
     bool CanSubmit() const noexcept;
     const Catalogue& GetCatalogue() const noexcept
