@@ -4067,6 +4067,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // a call through a taken branch or a tail jump, never along the code that falls into a call, and that every call it reaches takes as the
     // same parameter; not one live at a branch back (a loop: the calls it reaches before) or at an indirect jump (a switch)
     std::vector<uint64> forwardTargets; // CollectArgumentDefinitions: the targets of the forward branches of a function (sorted)
+    // a write that reaches the call along the code that falls into it farther than the walk of the display looks back (24 lines of x64 /
+    // ARM64: more instructions are more lines; nearer: the display names it, its own way, once): named by CollectFunctionArgumentDefinitions;
+    // a call with at least so many bytes of code before it in its block, in a function the first round of InferPrototypes decoded (its steps
+    // kept: not decoded again)
+    static constexpr uint32 FAR_ARGUMENT_STEPS = 24;
+    static constexpr uint64 FAR_CALL_BYTES     = 0x80;
     // an instruction of a function for CollectArgumentDefinitions: the argument registers it writes, its branch, its callee
     enum class ArgumentStepKind : uint8 { Other, Call, TailCall, Jump, ConditionalJump, Return, IndirectJump };
     struct ArgumentStep {
@@ -4074,8 +4080,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         uint64 target; // a branch inside of the function; NO_TARGET otherwise
         const AsmFunctionDetails* callee;
         uint64 callTarget; // the direct target of a call / a jump out of the function; NO_TARGET otherwise
-        uint8 writes;      // a bit per argument register
+        uint8 writes;      // a bit per argument register (Windows x64: 4 .. 7, the stack slots of the fifth .. eighth: [rsp + 0x20] ..)
         ArgumentStepKind kind;
+        bool movesStack = false; // Windows x64: a write of rsp (push, sub rsp): the stack slots are others
     };
     // the steps of the x64 / ARM64 functions the first round of InferPrototypes decodes (the same code: not decoded again), by start
     std::unordered_map<uint64, std::vector<ArgumentStep>> argumentStepsOf;
@@ -4098,6 +4105,28 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (arguments[argument] == family)
                 return static_cast<int>(argument);
         return -1;
+    }
+
+    // Windows x64: the stack slots of the arguments after the fourth an instruction writes (mov qword ptr [rsp + 0x20], rbx: the fifth, bit 4 ..
+    // 7), whether it writes rsp (push, pop, sub / add rsp)
+    std::pair<uint8, bool> ArgumentStackWrites(const cs_insn& insn, DissasmArch arch) const
+    {
+        if (arch != DissasmArch::X64 || zone->systemVCalls || !insn.detail)
+            return { 0, false };
+        uint8 writes      = 0;
+        bool moves        = false;
+        const cs_x86& x86 = insn.detail->x86;
+        for (uint8 i = 0; i < x86.op_count; i++) {
+            const auto& op = x86.operands[i];
+            if (op.type == X86_OP_MEM && (op.access & CS_AC_WRITE) && op.mem.base == X86_REG_RSP && op.mem.index == X86_REG_INVALID && op.mem.disp >= 0x20 &&
+                op.mem.disp < 0x40 && op.mem.disp % 8 == 0 && op.size >= 4)
+                writes |= static_cast<uint8>(1u << (4 + (op.mem.disp - 0x20) / 8));
+            if (op.type == X86_OP_REG && (op.access & CS_AC_WRITE) && GetX64RegisterFamily(op.reg) == 4)
+                moves = true;
+        }
+        for (uint8 i = 0; i < insn.detail->regs_write_count; i++)
+            moves = moves || GetX64RegisterFamily(insn.detail->regs_write[i]) == 4;
+        return { writes, moves };
     }
 
     // the prototype of the callee of a step kept by the first round of InferPrototypes, as CalleePrototype gives it now (the prototypes
@@ -4165,6 +4194,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             for (uint8 i = 0; i < insn.detail->regs_write_count; i++)
                 if (const int argument = ArgumentRegisterOf(insn.detail->regs_write[i], arch); argument >= 0)
                     step.writes |= static_cast<uint8>(1u << argument);
+            const auto [stackWrites, movesStack] = ArgumentStackWrites(insn, arch);
+            step.writes |= stackWrites;
+            step.movesStack = movesStack;
         }
         return step;
     }
@@ -4211,16 +4243,21 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             }
             std::sort(forwardTargets.begin(), forwardTargets.end());
             uint64 previousCall = start; // the code after it
+            uint64 blockStart   = start; // after the last call / jmp / ret: the code the walk of the display goes through to a call
             for (size_t position = first; position < flowRecords.size() && flowRecords[position].address < end && !found; position++) {
                 const auto& record = flowRecords[position];
                 const bool inside  = record.target != NO_TARGET && record.target >= start && record.target < end;
                 if (record.kind == FlowKind::Call) {
                     const auto target = std::upper_bound(forwardTargets.begin(), forwardTargets.end(), previousCall);
-                    found             = target != forwardTargets.end() && *target <= record.address && hasPrototype(record);
-                    previousCall      = record.address;
+                    // a forward branch target before it, or more code before it than the walk of the display looks back through
+                    const bool far = record.address - blockStart >= FAR_CALL_BYTES && argumentStepsOf.contains(start);
+                    found          = ((target != forwardTargets.end() && *target <= record.address) || far) && hasPrototype(record);
+                    previousCall   = record.address;
                 } else if (record.kind == FlowKind::Jump && !inside) {
                     found = record.target == NO_TARGET || hasPrototype(record); // a tail jump (through an import slot: jmp TerminateProcess)
                 }
+                if (record.kind != FlowKind::ConditionalJump)
+                    blockStart = record.address + record.size;
             }
             if (found)
                 CollectFunctionArgumentDefinitions(start, end, arch);
@@ -4232,7 +4269,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     {
         constexpr uint32 MAX_STEPS      = 4096; // as InferFunctionPrototype
         constexpr uint8 MAX_DEFINITIONS = 8;    // the writes of a register followed at once (more: forgotten, none of them named)
-        const size_t argumentsCount     = arch == DissasmArch::Arm64 ? 8u : (zone->systemVCalls ? 6u : 4u);
+        // Windows x64: the four registers, then the stack slots of the fifth .. eighth arguments (ArgumentStackWrites)
+        const size_t argumentsCount     = arch == DissasmArch::Arm64 ? 8u : (zone->systemVCalls ? 6u : 8u);
+        const size_t registersCount     = arch == DissasmArch::Arm64 ? 8u : (zone->systemVCalls ? 6u : 4u);
         using Step                      = ArgumentStep;
         using StepKind                  = ArgumentStepKind;
 
@@ -4279,7 +4318,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         // what each write reaches: the parameter of the calls (one name, else a conflict), along the code that falls into them or through a jump
         struct Reach {
             std::string_view function, parameter;
-            bool linear = false, jumped = false, rejected = false;
+            // linear: along the code that falls into a call within FAR_ARGUMENT_STEPS instructions (the display names it); far: farther
+            bool linear = false, far = false, jumped = false, rejected = false;
         };
         std::unordered_map<uint32, Reach> reaches;
         struct Definitions { // the writes of a register that reach the current step, whether a branch was taken on the way (a bit each)
@@ -4336,7 +4376,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             }
             if ((step.kind == StepKind::Call || step.kind == StepKind::TailCall) && step.callee) {
                 const auto& params = step.callee->params;
-                for (size_t parameter = 0; parameter < params.size() && parameter < argumentsCount; parameter++) {
+                // a tail jump: its stack arguments are above the return address of the caller (not followed)
+                const size_t followed = step.kind == StepKind::TailCall ? registersCount : argumentsCount;
+                for (size_t parameter = 0; parameter < params.size() && parameter < followed; parameter++) {
                     if (!params[parameter].name || !params[parameter].name[0])
                         continue; // a parameter an inferred prototype does not know
                     const auto& definitions = state[parameter];
@@ -4346,9 +4388,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                             reach.rejected = true; // two calls take it as two parameters
                         reach.function  = step.callee->functionName;
                         reach.parameter = params[parameter].name;
-                        // the display names a write that falls into the block of a call; a tail jump has no argument names of its own
+                        // the display names a write that falls into the block of a call (not past the lines it looks back through); a tail
+                        // jump has no argument names of its own
                         if ((definitions.jumped & (1u << k)) || step.kind == StepKind::TailCall)
                             reach.jumped = true;
+                        else if (i - definitions.steps[k] > FAR_ARGUMENT_STEPS)
+                            reach.far = true;
                         else
                             reach.linear = true;
                     }
@@ -4358,7 +4403,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 for (size_t argument = 0; argument < argumentsCount; argument++)
                     reject(state[argument]);
             if (step.kind == StepKind::Call)
-                state = State{}; // the argument registers are volatile
+                state = State{}; // the argument registers are volatile (the stack slots: the frame of the callee)
+            if (step.movesStack) // another depth: the writes of the stack slots before it are no arguments of the calls after it
+                for (size_t argument = registersCount; argument < argumentsCount; argument++)
+                    state[argument] = Definitions{};
             if (step.writes)
                 for (size_t argument = 0; argument < argumentsCount; argument++)
                     if (step.writes & (1u << argument)) {
@@ -4371,7 +4419,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             reachable = step.kind != StepKind::Return && step.kind != StepKind::Jump && step.kind != StepKind::TailCall && step.kind != StepKind::IndirectJump;
         }
         for (const auto& [index, reach] : reaches)
-            if (reach.jumped && !reach.linear && !reach.rejected && !reach.parameter.empty())
+            if ((reach.jumped || reach.far) && !reach.linear && !reach.rejected && !reach.parameter.empty())
                 argumentDefinitions.emplace(steps[index].address, std::make_pair(std::string(reach.function), std::string(reach.parameter)));
     }
 
@@ -5027,11 +5075,15 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 case StepKind::Return:
                     kept.kind = ArgumentStepKind::Return;
                     break;
-                default:
+                default: {
                     for (size_t argument = 0; argument < argumentsCount; argument++) // the writes of the argument registers
                         if (step.writes & (1u << argumentRegister(argument)))
                             kept.writes |= static_cast<uint8>(1u << argument);
+                    const auto [stackWrites, movesStack] = ArgumentStackWrites(*insn, arch); // the stack slots of Windows x64
+                    kept.writes |= stackWrites;
+                    kept.movesStack = movesStack;
                     break;
+                }
                 }
                 argumentSteps.push_back(kept);
             }
@@ -5620,6 +5672,27 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
         cs_free(insn, 1);
         const size_t count = steps.size();
+        // the locals of the frame ([ebp - 0x4c]) written once in the whole function (a write of more bytes: each slot it covers), whose address
+        // is never taken (lea eax, [ebp - 0x4c]: a callee may write it); ebp set once (mov ebp, esp; not its restores): a copy of an incoming
+        // argument stored there in the code before any branch (mov eax, [ebp + 0x10]; mov [ebp - 0x4c], eax) holds it for every later load
+        std::unordered_map<int32, uint32> frameWrites;
+        uint32 frameSets = 0;
+        for (const auto& step : steps) {
+            for (uint8 index = 0; index < step.x86.op_count; index++) {
+                const auto& op = step.x86.operands[index];
+                if (op.type != X86_OP_MEM || op.mem.base != X86_REG_EBP || op.mem.index != X86_REG_INVALID || op.mem.disp >= 0 || op.mem.disp <= -MAX_SLOT * 4)
+                    continue;
+                const auto disp = static_cast<int32>(op.mem.disp);
+                if (step.id == X86_INS_LEA)
+                    frameWrites[disp] += 2;
+                else if (op.access & CS_AC_WRITE)
+                    for (int32 offset = disp & ~3; offset < disp + std::max<int32>(op.size, 1); offset += 4)
+                        frameWrites[offset]++;
+            }
+            if ((step.writes & (1u << 5)) && step.id != X86_INS_POP && step.id != X86_INS_LEAVE)
+                frameSets++;
+        }
+        const bool followLocals = frameSets <= 1;
         std::unordered_map<size_t, std::vector<size_t>> branchesTo; // step of the target -> the steps of the branches
         bool hasLoop = false;
         for (size_t i = 0; i < count; i++)
@@ -5751,8 +5824,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             state.esp    = 0;
             std::unordered_map<size_t, State> snapshots; // the state at each branch (before it)
             bool reachable = true;                       // the step before falls through
+            std::unordered_map<int32, int8> spilledLocals; // a local of the frame (followLocals) -> the incoming argument it holds
+            bool entryCode = true;                         // no branch, no branch target so far
             for (size_t i = 0; i < count; i++) {
                 const auto& step = steps[i];
+                entryCode        = entryCode && !branchesTo.contains(i) && step.target == NO_TARGET && step.kind != StepKind::Jump &&
+                            step.kind != StepKind::ConditionalJump && step.kind != StepKind::Return && step.kind != StepKind::TailCall;
                 if (const auto branches = branchesTo.find(i); branches != branchesTo.end()) {
                     // a branch target: what every branch to it agrees on; what a loop back to it writes is not known
                     State merged    = state;
@@ -5824,6 +5901,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                         return state.registers[reg];
                     if (op.type == X86_OP_IMM)
                         return CONSTANT_VALUE;
+                    if (op.type == X86_OP_MEM && op.size == 4 && op.mem.base == X86_REG_EBP && op.mem.index == X86_REG_INVALID && state.ebp.has_value())
+                        if (const auto spilled = spilledLocals.find(static_cast<int32>(op.mem.disp)); spilled != spilledLocals.end())
+                            return spilled->second; // the copy of an incoming argument in a local of the frame
                     return op.size == 4 ? read(state, memoryOf(op)) : NO_VALUE;
                 };
                 const bool twoOperands = x86.op_count == 2;
@@ -5898,6 +5978,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                         if (step.id == X86_INS_MOV && twoOperands && reg32(x86.operands[0]) >= 0)
                             copied = valueOf(x86.operands[1]);
                         const int8 stored = step.id == X86_INS_MOV && twoOperands && x86.operands[0].type == X86_OP_MEM ? valueOf(x86.operands[1]) : -1;
+                        if (const auto& to = x86.operands[0]; followLocals && entryCode && stored >= 0 && to.type == X86_OP_MEM && to.size == 4 &&
+                                                              to.mem.base == X86_REG_EBP && to.mem.index == X86_REG_INVALID && state.ebp.has_value() &&
+                                                              to.mem.disp < 0 && frameWrites[static_cast<int32>(to.mem.disp)] == 1)
+                            spilledLocals[static_cast<int32>(to.mem.disp)] = stored;
                         for (uint8 index = 0; index < x86.op_count; index++)
                             if (x86.operands[index].type == X86_OP_MEM && (x86.operands[index].access & CS_AC_WRITE))
                                 write(state, memoryOf(x86.operands[index]), x86.operands[index].size, stored);

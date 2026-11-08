@@ -15090,3 +15090,134 @@ TEST_CASE("InferredSpilledArguments", "[Dissasm]Help")
         REQUIRE(std::string_view(spilled->prototype).find("(HANDLE hObject)") != std::string_view::npos);
     }
 }
+
+TEST_CASE("StackArgumentsThroughAJump", "[Dissasm]Help")
+{
+    // Windows x64: a stack slot of an argument after the fourth written in a block that jumps to the call (mov [rsp + 0x20], 3; jmp loc_X ...
+    // loc_X: call CreateFileW) is named as the registers of 10l are; not a store before a write of rsp (push / pop: another depth)
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x48,                         // 0x00: sub rsp, 0x48
+        0x85, 0xD2,                                     // 0x04: test edx, edx
+        0x74, 0x14,                                     // 0x06: je loc_1C
+        0xC7, 0x44, 0x24, 0x28, 0x80, 0x00, 0x00, 0x00, // 0x08: mov dword ptr [rsp + 0x28], 0x80 (before push / pop: not followed)
+        0x51,                                           // 0x10: push rcx
+        0x59,                                           // 0x11: pop rcx
+        0xC7, 0x44, 0x24, 0x20, 0x03, 0x00, 0x00, 0x00, // 0x12: mov dword ptr [rsp + 0x20], 3 (dwCreationDisposition: through the jmp)
+        0xEB, 0x08,                                     // 0x1a: jmp loc_24
+        0xC7, 0x44, 0x24, 0x20, 0x02, 0x00, 0x00, 0x00, // 0x1c: loc_1C: mov dword ptr [rsp + 0x20], 2 (falls into the call)
+    };
+    const uint32 displacement = 0x200 - static_cast<uint32>(file.size() + 6); // 0x24: loc_24: call qword ptr [CreateFileW]
+    file.insert(file.end(), { 0xFF, 0x15 });
+    for (uint32 i = 0; i < 4; i++)
+        file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x48, 0xC3 }); // 0x2a: add rsp, 0x48; ret
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "CreateFileW", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(dissasmInstance.zone->argumentDefinitions.contains(0x12));
+    REQUIRE(!dissasmInstance.zone->argumentDefinitions.contains(0x08));
+    REQUIRE(!dissasmInstance.zone->argumentDefinitions.contains(0x1C));
+    REQUIRE(FindListingLine(listing, "0x00000012  mov").find("; dwCreationDisposition") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0000001c  mov").find("; dwCreationDisposition") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000008  mov").find("; dwFlagsAndAttributes") == std::string_view::npos);
+}
+
+TEST_CASE("X86InferredArgumentCopies", "[Dissasm]Help")
+{
+    // 32 bit x86: an incoming argument copied to a local of the frame in the code before any branch (mov eax, [ebp + 8]; mov [ebp - 4], eax),
+    // the local written once and its address never taken, holds it for a later push, past a call whose pops are not known; not when the
+    // address of the local goes to a call
+    std::vector<unsigned char> file = {
+        0x6A, 0x01,                   // 0x00: push 1
+        0xE8, 0x39, 0x00, 0x00, 0x00, // 0x02: call 0x40
+        0x6A, 0x02,                   // 0x07: push 2
+        0xE8, 0x72, 0x00, 0x00, 0x00, // 0x09: call 0x80
+        0xC3,                         // 0x0e: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), {
+                                  0x55,                         // 0x40: push ebp
+                                  0x8B, 0xEC,                   // 0x41: mov ebp, esp
+                                  0x51,                         // 0x43: push ecx                (the local)
+                                  0x8B, 0x45, 0x08,             // 0x44: mov eax, [ebp + 8]
+                                  0x89, 0x45, 0xFC,             // 0x47: mov [ebp - 4], eax      (the copy)
+                                  0xFF, 0xD2,                   // 0x4a: call edx                (its pops not known: esp lost)
+                                  0xFF, 0x75, 0xFC,             // 0x4c: push dword ptr [ebp - 4] (hObject)
+                                  0xE8, 0x0C, 0x00, 0x00, 0x00, // 0x4f: call 0x60 (CloseHandle)
+                                  0x8B, 0xE5,                   // 0x54: mov esp, ebp
+                                  0x5D,                         // 0x56: pop ebp
+                                  0xC3,                         // 0x57: ret
+                            });
+    file.resize(0x60, 0xCC);
+    file.insert(file.end(), { 0xFF, 0x25, 0x80, 0x10, 0x40, 0x00 }); // 0x60: jmp dword ptr [0x401080]
+    file.resize(0x80, 0xCC);
+    file.insert(file.end(), {
+                                  0x55,                         // 0x80: push ebp
+                                  0x8B, 0xEC,                   // 0x81: mov ebp, esp
+                                  0x51,                         // 0x83: push ecx
+                                  0x8B, 0x45, 0x08,             // 0x84: mov eax, [ebp + 8]
+                                  0x89, 0x45, 0xFC,             // 0x87: mov [ebp - 4], eax
+                                  0x8D, 0x45, 0xFC,             // 0x8a: lea eax, [ebp - 4]       (its address to the callee)
+                                  0x50,                         // 0x8d: push eax
+                                  0xFF, 0xD2,                   // 0x8e: call edx
+                                  0xFF, 0x75, 0xFC,             // 0x90: push dword ptr [ebp - 4]
+                                  0xE8, 0xC8, 0xFF, 0xFF, 0xFF, // 0x93: call 0x60 (CloseHandle)
+                                  0x8B, 0xE5,                   // 0x98: mov esp, ebp
+                                  0x5D,                         // 0x9a: pop ebp
+                                  0xC3,                         // 0x9b: ret
+                            });
+    file.resize(0xC0, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.imports    = { { 0x401080, { "CloseHandle", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    INFO(dissasmInstance.GetListing());
+    const auto* copied = dissasmInstance.zone->FindInferredPrototype(0x40);
+    REQUIRE(copied != nullptr);
+    REQUIRE(std::string_view(copied->prototype).find("(HANDLE hObject)") != std::string_view::npos);
+    const auto* address = dissasmInstance.zone->FindInferredPrototype(0x80);
+    REQUIRE((address == nullptr || std::string_view(address->prototype).find("hObject") == std::string_view::npos));
+}
+
+TEST_CASE("FarArgumentWrites", "[Dissasm]Help")
+{
+    // a write of an argument register that falls into its call farther than the walk of the display looks back (41 instructions before it):
+    // named by the reaching writes of the deep scan (CollectFunctionArgumentDefinitions); a near one by the display only
+    std::vector<unsigned char> file;
+    const auto call = [&file]() { // call qword ptr [CloseHandle]
+        const uint32 displacement = 0x200 - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x28 }); // 0x00: sub rsp, 0x28
+    file.insert(file.end(), { 0x48, 0x89, 0xD9 });       // 0x04: mov rcx, rbx  (hObject: 41 instructions before the call)
+    for (int i = 0; i < 40; i++)
+        file.insert(file.end(), { 0x48, 0x83, 0xC0, 0x01 }); // 0x07 ..: add rax, 1
+    call();                                                  // 0xa7: call CloseHandle
+    file.insert(file.end(), { 0x48, 0x89, 0xF9 });           // 0xad: mov rcx, rdi  (hObject: the display)
+    call();                                                  // 0xb0: call CloseHandle
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x28, 0xC3 }); // 0xb6: add rsp, 0x28; ret
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "CloseHandle", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(dissasmInstance.zone->argumentDefinitions.contains(0x04));
+    REQUIRE(!dissasmInstance.zone->argumentDefinitions.contains(0xAD));
+    REQUIRE(FindListingLine(listing, "0x00000004  mov    rcx, rbx").ends_with("; hObject"));
+    REQUIRE(FindListingLine(listing, "0x000000ad  mov    rcx, rdi").ends_with("; hObject"));
+}
