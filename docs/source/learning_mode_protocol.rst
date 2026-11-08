@@ -24,7 +24,9 @@ GView then:
 4. lists Weeks > Problems/Resources, delivers task content either into page-locked memory (``memory``) or to a
    file chosen by the student (``file``), verifying SHA-256 in both cases;
 5. submits flags (with an optional explanation) using idempotency keys;
-6. sends privacy-preserving telemetry (event-level + counters) in the background.
+6. sends privacy-preserving telemetry (event-level + counters) in the background;
+7. keeps the student's private notes and shows the teachers' course notes (`17. Course notes`_), when the course
+   server offers them.
 
 **What is guaranteed** (against a student using an unmodified GView build):
 
@@ -116,8 +118,10 @@ All endpoints are ``POST``. Error envelope for every non-2xx answer::
 
 Codes understood (HTTP mapping as in the spec): ``BAD_REQUEST`` 400, ``UNAUTHORIZED`` 401, ``FORBIDDEN`` 403,
 ``NOT_FOUND`` 404, ``RATE_LIMITED`` 429 (+ ``Retry-After`` seconds), ``POLICY_EXPIRED`` 403, ``POLICY_NOT_STARTED`` 403,
-``ALREADY_SOLVED`` 409, ``ITEM_DISABLED`` 404, ``UNSUPPORTED_CLIENT`` 426, ``SERVER_ERROR`` 500. When the body is not an
-envelope the code is derived from the HTTP status. ``TRANSPORT_ERROR`` and ``PROTOCOL_ERROR`` are client-side only.
+``ALREADY_SOLVED`` 409, ``ITEM_DISABLED`` 404, ``UNSUPPORTED_CLIENT`` 426, ``SERVER_ERROR`` 500, ``PAYLOAD_TOO_LARGE`` 413
+and ``CONFLICT`` 409 (note endpoints only). When the body is not an envelope the code is derived from the HTTP status;
+``PAYLOAD_TOO_LARGE`` is always derived from 413, and a 409 of a note endpoint is always ``CONFLICT`` (a 409 of
+``SubmitFlag`` stays ``ALREADY_SOLVED``). ``TRANSPORT_ERROR`` and ``PROTOCOL_ERROR`` are client-side only.
 
 ============================== =========================================================================================
 Endpoint                       Client behaviour
@@ -129,6 +133,12 @@ Endpoint                       Client behaviour
 ``/GView/GetResource/<name>``  Resource download (``file``/``text`` kinds only; ``link`` uses the catalogue URL).
 ``/GView/SubmitFlag``          Submission (`10. Submission`_).
 ``/GView/Telemetry``           Batches (`9. Telemetry`_).
+``/GView/GetNotes``            Course notes (`17. Course notes`_): after Connect when ``policy.notes.enabled``, and
+                               each time the Notes window opens.
+``/GView/SaveNote``            Autosave of a student note (compare-and-set on ``revision``).
+``/GView/DeleteNote``          Deletion of a student note (``404`` = already gone).
+``/GView/SaveTeacherNote``     Course-staff editor only (``canEditTeacherNotes``).
+``/GView/DeleteTeacherNote``   Course-staff editor only.
 ``/GView/Heartbeat``           Not used by the client.
 ============================== =========================================================================================
 
@@ -237,6 +247,15 @@ Fields (unknown top-level fields are ignored; a *present* field with a wrong typ
    * - ``submission.explanationMaxChars``
      - 2000
      - clamped to [0, 100000]
+   * - ``notes``
+     - absent
+     - optional object; absent = server without course notes => no Notes UI
+   * - ``notes.enabled``
+     - false
+     - false => "Course notes are disabled by your teacher", ``GetNotes`` is not called
+   * - ``notes.maxChars``
+     - 20000
+     - clamped to [100, 100000]; ``GetNotes.maxChars`` (request time) replaces it once received
    * - ``contentEncryption``
      - ""
      - "" or ``aes-256-gcm-hkdf-v1``; **required** when ``storageMode=memory``
@@ -395,7 +414,7 @@ Event                     item   fields
 ``comment_edit``          yes    -
 ``comment_remove``        yes    -
 ``label_rename``          yes    -
-``note_add``              yes    -
+``note_add``              yes    - (a note was started in a course window: Ctrl+F11; never its text)
 ``idle``                  yes    ``seconds``
 ``feature_blocked``       yes    ``feature``
 ``submit``                yes    ``clientSubmissionId``
@@ -493,11 +512,22 @@ T6   ``idempotency keys``, ``submission flow and idempotent retries``, E2E ``dup
 T7   ``telemetry known sequence (T7)``, ``telemetry contract table``, E2E de-duplication             passed
 T8   ``telemetry whitelist, bounds and flush outcomes`` (network failure keeps events),            passed
      ``reconnect re-validates``, ``requireScreenProtect unsupported => refusal``
+N    Course notes: ``policy notes object``, ``note text helpers``, ``note request bodies``,         passed
+     ``GetNotes parsing``, ``note error mapping``, ``notes availability follows the policy``,
+     ``notes autosave``, ``notes network errors retry the same request``, ``notes 409 keeps the
+     server copy and the local text``, ``notes 403 hides the Notes UI``, ``notes 404, refusals and
+     deletion``, ``notes are saved at session end``, ``notes conflicts left unresolved, deletions
+     and GetNotes failures``, ``notes of another account are dropped``,
+     ``course notes of the teacher``, ``note text never reaches telemetry or the disk``; E2E
+     ``course notes end-to-end against the stub server`` (student, ``--staff``,
+     ``--notes-forbidden``, ``--notes off``)
 ==== ========================================================================================== ========================
 
-Totals on this machine: 29 learning unit test cases / 646 assertions pass (the two end-to-end cases
-are hidden and need the stub server: 58 + 12 assertions pass, 716 in total); the full ``ctest`` suite (80 cases) passes. Cross-implementation
-vectors (`Test vectors`_) are asserted by ``cross-implementation test vectors``.
+Totals on this machine (course notes, 2026-11-08, RelWithDebInfo): ``libGViewCore.exe "[learning]"`` runs 49 cases (46
+unit cases + the three hidden end-to-end cases, which skip without a stub server), 1109 assertions pass; against
+four stub servers (default, ``--staff``, ``--notes-forbidden``, ``--notes off``) ``"[integration]"`` passes 2 cases / 122
+assertions; the full ``ctest`` suite (321 tests) passes; the WebAssembly build of ``GViewCore`` compiles. Cross-implementation vectors (`Test vectors`_) are asserted by
+``cross-implementation test vectors``.
 
 How to reproduce::
 
@@ -505,6 +535,9 @@ How to reproduce::
    ctest --test-dir build-test -C Debug
    python tools/learning_mode_stub_server.py --quiet --require-explanation      # prints the connection string
    set GVIEW_LEARNING_STUB_CS=<printed connection string>
+   rem optional, course notes variants (each on its own --port):
+   rem   --staff => GVIEW_LEARNING_STUB_STAFF_CS, --notes-forbidden => GVIEW_LEARNING_STUB_FORBIDDEN_CS,
+   rem   --notes off => GVIEW_LEARNING_STUB_NOTES_OFF_CS
    bin\Debug\libGViewCore.exe "[integration]"
 
 Manual check of the UI: ``GView learn <connection string printed by the stub>``.
@@ -573,6 +606,7 @@ All of these are additional strictness or clarifications; ``plans/LEARNING_MODE_
 9. Redirects are never followed; ``caPem`` replaces (does not extend) the system trust store.
 10. Item names must match ``[A-Za-z0-9_-]{1,64}`` (Django ``SlugField`` compatible).
 11. ``/GView/Heartbeat`` is not used by the client.
+12. Course notes: the clarifications listed in `17. Course notes`_ (*Clarifications of spec §10.11*).
 
 15. Open questions for the server implementer
 ---------------------------------------------
@@ -588,6 +622,12 @@ All of these are additional strictness or clarifications; ``plans/LEARNING_MODE_
 5. Confirm that a protocol-2 download of a ``kind=link`` resource is never needed (the client uses the catalogue URL).
 6. Legacy flat ``GetProblems`` items carry no ``deliveryMode``/``sha256``; for v2 clients please always serve
    ``GetWeeks``.
+7. Course notes: ``SaveNote`` re-sends the scope on every save, so a note attached to an item that was hidden later
+   gets ``404`` on every edit. Could the server accept an *unchanged* scope on an update (the note keeps its scope, as
+   §10.11 says), or answer ``ITEM_DISABLED`` so the client can tell it from an unknown note id?
+8. Course notes: ``maxChars`` can be 100000 characters, but ``SaveNote`` bodies are capped at 256 KiB; 100000
+   characters of non-ASCII text (2-4 bytes each in UTF-8) do not fit. The client refuses such a save locally with an
+   explicit message; please raise the body cap to at least ``4 x maxChars + 4 KiB`` (or document the byte limit).
 
 16. Browser clients
 -------------------
@@ -653,3 +693,137 @@ so its network jobs complete only when it becomes visible again.
 under a non-extractable key (*File > Stored files > Forget Learning connection*). Learning task files saved in
 ``file`` mode land in the home folder and are kept like any other file; ``memory`` content is never written to the
 file system and therefore never stored.
+
+17. Course notes
+----------------
+
+Students write private notes in GView while they analyse a task; the course server keeps them and returns them only to
+their owner. Teachers write *course notes* (for every student or one lab group, ``G1``/``G2``) that students read in
+GView. A note is general or attached to one week, problem or resource by name (spec §10.11). Implementation:
+``GViewCore/src/Security/Learning/LearningNotes.{hpp,cpp}`` (wire format, sync model), ``LearningSession`` (requests,
+autosave pump), ``GViewCore/src/App/LearningNotesWindow.cpp`` (UI).
+
+**Availability.** The optional policy object ``"notes": {"enabled": bool, "maxChars": int}`` decides at connect time:
+
+=============================== ========================================================================================
+State                           Client behaviour
+=============================== ========================================================================================
+no ``notes`` object (or no      no Notes UI at all (a server without notes); Ctrl+F11 keeps the local note of the window
+policy, legacy server)
+``enabled: false``              "Course notes are disabled by your teacher"; ``GetNotes`` is never called
+``enabled: true``               ``GetNotes`` right after Connect and each time the Notes window opens
+``403 FORBIDDEN`` on            the Notes UI is hidden ("Course notes are disabled by your teacher") until the next connect;
+``GetNotes``/``SaveNote``/      nothing more is sent; unsaved text stays in memory and is saved after a reconnect that
+``DeleteNote``                  finds notes on again (until *End session* / exit, which erase it)
+=============================== ========================================================================================
+
+**Endpoints as implemented** (same headers and transport rules as every other call; no new request header, so the
+browser build needs no CORS change):
+
+::
+
+   POST /GView/GetNotes        {}
+     <- {"status":"ok","maxChars":20000,"serverTime":..,"canEditTeacherNotes":false,
+         "mine":[{"id":"<uuid>","title","body","scope":{..},"revision":3,"createdAt":..,"updatedAt":..}],
+         "teacher":[{"id":12,"title","body","scope":{..},"audience":"all"|"G1"|"G2","updatedAt":..
+                     [, "enabled","order","revision","createdAt" for course staff]}]}
+   POST /GView/SaveNote        {"id":"<uuid4>","title","body","scope":{"kind":"general"}
+                                | {"kind":"week"|"problem"|"resource","name":".."}[, "revision":<last seen>]}
+     <- {"status":"ok","id","revision","updatedAt","created"}
+   POST /GView/DeleteNote      {"id":"<uuid>"}                                   <- {"status":"ok"}
+   POST /GView/SaveTeacherNote {["id":<int>, "revision":<int>,] "title","body"
+                                [, "scope", "audience", "enabled", "order"]}     <- same as SaveNote, integer id
+   POST /GView/DeleteTeacherNote {"id":<int>}                                    <- {"status":"ok"}
+
+Parsing is defensive: the answer must be a JSON object with ``status`` ``ok``; ``maxChars`` is clamped to
+[100, 100000]; student notes need an id ``[A-Za-z0-9_-]{1,64}`` and a ``revision >= 1``, teacher notes an integer
+``id >= 1`` (others are dropped and counted); duplicates are dropped; a missing, ``null``, unknown or invalid scope is
+*general*; titles are single-line (control characters => spaces, <= 200 characters), bodies keep ``\n`` and ``\t``
+(``\r`` removed, other control characters => spaces, <= 100000 characters); at most 2000 entries per list; the
+answer is capped at 32 MiB (save/delete answers 64 KiB). Scope names sent by the client: item names
+``[A-Za-z0-9_-]{1,64}``, week names 1..256 characters without control characters.
+
+**Sync of the student's notes** (``NotesSync``, memory only):
+
+* A note gets its UUIDv4 when it is created locally (*New note*, or Ctrl+F11 in a task window without a note for that
+  item) and keeps it for its lifetime. A new note nobody typed into is not sent; it is created on the server with its
+  first text.
+* Autosave: about 2 s after the last keystroke (debounce, never one request per keystroke), when the Notes window
+  closes, on *Save now*, and at *End session* / exit (bounded: 2 s per request, 5 s in total). Each note has at most
+  one request at a time; the request carries the last ``revision`` the server returned (omitted for a create) and the
+  answer's ``revision`` is stored. The session tick (run from every frame of the desktop) drives the autosave,
+  the retries and their answers also while the Notes window is closed. Frontends without frame updates (ncurses)
+  save on close, on *Save now* and at session end only.
+* *End session* / exit / switching to another account: a conflict that is still waiting for its ``GetNotes`` turns
+  the local text into a ``"(local copy)"`` note and notes the server refused get one more attempt; then the notes
+  are wiped. Text that still cannot be sent (no network, notes turned off) is lost with the session, and *End
+  session* warns about it beforehand.
+* Before sending: ``\r\n``/``\r`` => ``\n``, NUL removed, title normalised as above. A body longer than ``maxChars``
+  characters, or a request above 256 KiB, is not sent; the editor says so and the text stays.
+* Network errors, ``408``, ``429`` (``Retry-After`` honoured), ``5xx`` and malformed ``2xx`` answers: the *same*
+  request is sent again later (back-off 2, 4, 8 .. 60 s). Creates and updates are idempotent on the server, so a
+  retry after a lost answer is answered ``200``; text typed in the meantime is sent afterwards, with the revision that
+  answer returned.
+* ``409 CONFLICT``: ``GetNotes`` is fetched again; the server copy replaces the note, and the local text - unless it is
+  identical - becomes a new note ``"<title> (local copy)"`` with the same scope (created right away). The student is
+  told. Nothing is overwritten silently.
+* ``404``: the note is unknown (deleted elsewhere) or its week/item is not visible. ``GetNotes`` is fetched again; if
+  the note is gone it is created again right away. Otherwise (or if that create is refused for its scope) the editor
+  shows the error and nothing is retried until the note is edited or its scope changed.
+* A ``GetNotes`` that fails with a retryable error is retried with the same back-off; any other failure is shown in
+  the window and retried only by *Refresh* or the next opening of the window.
+* Other refusals (``400`` validation, ``413``, ``401``, ...): the server's ``details`` are shown; no retry until the
+  next edit.
+* ``403 POLICY_EXPIRED``: the session expires (`12. Session state machine`_); notes are not sent while the session
+  is not *Active*.
+* ``GetNotes`` merge: notes without local changes take the server copy; notes with unsaved changes keep the local text
+  (the next save meets the revision check); notes deleted elsewhere disappear unless they have unsaved text, which is
+  then created again.
+* Deleting a note sends ``DeleteNote`` (``404`` = already gone); a note that never reached the server is just dropped.
+* A connect with another account or server first makes one last bounded attempt to save unsaved text to the account
+  it belongs to, then wipes the notes in memory: text of one account is never sent to another. *End session* and exit
+  wipe them too (strings are zeroed).
+
+**Course-staff editor.** Shown only when ``canEditTeacherNotes`` is true: create, edit, enable/disable, order,
+audience (``all``/``G1``/``G2``), scope and delete course notes. Saves are explicit (*Save course note*): an update
+sends the revision of the listed note; ``409`` reloads the list and keeps the teacher's text in the editor, so saving
+again replaces the server version on purpose. Teacher creates are not retried automatically (the id is
+server-generated, a retry could duplicate the note); after a network error the teacher saves again. A ``403`` on a
+teacher endpoint only removes the teacher editor (the token is not course staff); student notes stay.
+
+**Notes window** (*Notes* button of the Learning window, or Ctrl+F11 in a task window opened from the catalogue):
+"My notes" (the notes of the open item first, highlighted) and "Course notes" grouped by scope (the open item first,
+then general, then each week/item); hidden course notes are listed greyed out for staff only. The editor has a title,
+a scope selector (general, every week, problem and resource of the catalogue; preselected to the open item) and a
+plain-text body (monospace, as everything in GView), with a character counter and the sync state (saved / unsaved /
+saving / retrying / error). Course notes are read-only for students. Ctrl+F11 in a task window opens the newest note
+of that item or starts one; outside Learning mode, and in windows not opened from the catalogue, Ctrl+F11 keeps its
+local note.
+
+**Privacy and restricted mode.** Note text exists in memory only: it is sent to the course server in ``SaveNote``
+(and received in the student's own ``GetNotes``) and nowhere else - never written to disk by GView (no cache, no
+temporary file, no log), never in telemetry (``note_add`` stays a bare count, recorded once when a note started in a
+course window gets its first text). The Notes editor is the student's own text: Copy/Export/SaveAs restrictions
+neither block it nor are bypassed by it - it offers no way to insert task content (no "insert selection"), and its
+plain AppCUI text controls behave like the submission explanation field (see `Limitations`_).
+
+**Limits.** Body <= ``maxChars`` characters (default 20000, request time value from ``GetNotes``), title <= 200
+characters, 500 notes per student and ``60`` note requests per minute per token (server side, ``429`` +
+``Retry-After``), request bodies <= 256 KiB.
+
+**Stub server.** ``tools/learning_mode_stub_server.py`` implements the five endpoints with the compare-and-set and
+idempotency rules, the visibility rule for scopes, the limits and the rate limit; ``--notes on|off|absent``,
+``--notes-forbidden``, ``--staff``, ``--group``, ``--notes-max-chars`` and ``--notes-rate-limit`` select the cases.
+
+**Clarifications of spec §10.11** (written back to ``plans/LEARNING_MODE_PROTOCOL_SPEC.md``):
+
+1. A ``notes`` object without ``enabled`` means off; a present ``notes`` field with a wrong JSON type is
+   ``POLICY_MALFORMED`` like every other policy field (§9.2).
+2. Only ``403 FORBIDDEN`` of ``GetNotes``/``SaveNote``/``DeleteNote`` hides the Notes UI; ``403 POLICY_EXPIRED``
+   expires the session; a ``403`` of ``SaveTeacherNote``/``DeleteTeacherNote`` only removes the teacher editor.
+3. A ``409`` of a note endpoint is ``CONFLICT`` whatever its body says; a ``409`` of ``SubmitFlag`` stays
+   ``ALREADY_SOLVED``.
+4. Unknown or invalid scopes received from the server are shown (and, when the note is saved again, sent) as general.
+5. Teacher notes are saved explicitly and creates are never retried automatically; student notes autosave.
+6. ``404`` on ``SaveNote`` is resolved with a fresh ``GetNotes`` (see open question 7).
+

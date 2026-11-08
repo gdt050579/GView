@@ -107,6 +107,7 @@ struct PolicyOptions {
     std::string serverUrl{ std::string(TEST_SERVER) };
     std::string contentKeyId;
     bool corruptDigest{ false };
+    std::optional<json> notes; // the "notes" object (absent when empty)
 };
 
 // Mirrors the server: digest over the compact, key-sorted document with "digest":"" (PLAN_COURSE_SERVER.md §4)
@@ -133,6 +134,8 @@ std::string BuildPolicy(PolicyOptions o)
     p["telemetry"]  = { { "enabled", o.telemetry }, { "flushIntervalSeconds", o.flushInterval }, { "maxBatchEvents", o.maxBatch },
                         { "idleThresholdSeconds", o.idleThreshold }, { "eventLevel", true } };
     p["submission"] = { { "allowInTool", o.allowInTool }, { "requireExplanation", o.requireExplanation }, { "explanationMaxChars", 2000 } };
+    if (o.notes.has_value())
+        p["notes"] = *o.notes;
     if (o.storage == "memory")
     {
         if (o.contentKeyId.empty())
@@ -1411,6 +1414,959 @@ TEST_CASE("Learning: window bindings, telemetry scope and time accounting", "[le
     REQUIRE(s.GetState() == SessionState::Disconnected);
 }
 
+// ======================================================================== course notes (spec §2.2, §10.11)
+namespace
+{
+json NotesObject(bool enabled = true, int64 maxChars = 1000)
+{
+    return json{ { "enabled", enabled }, { "maxChars", maxChars } };
+}
+
+GView::Utils::GStatus ParsePolicyWith(const PolicyOptions& o, Policy& p)
+{
+    const auto policy = BuildPolicy(o);
+    const auto sig    = ServerKey().Sign(policy);
+    return RestrictedMode::VerifyAndParsePolicy(
+          BufferView(policy),
+          BufferView(sig.data(), sig.size()),
+          BufferView(ServerKey().publicKey.data(), ServerKey().publicKey.size()),
+          SubjectForToken(Token()),
+          TEST_SERVER,
+          NOW,
+          p);
+}
+
+std::string BodyOf(const HttpRequest& r)
+{
+    return std::string(r.body.data(), r.body.size());
+}
+
+HttpResponse ErrorResponse(long status, std::string_view code, std::string_view details = "x")
+{
+    return Response(status, json{ { "status", "error" }, { "code", code }, { "details", details }, { "retryable", status == 429 } }.dump());
+}
+
+// In-process course server for the note endpoints, with the compare-and-set and idempotency rules of spec §10.11
+struct FakeNotesServer {
+    struct Note {
+        std::string title, body, scope; // scope as compact JSON
+        int64 revision{ 1 };
+        std::string lastUpdate; // fingerprint of the last applied update (base revision + content)
+    };
+    std::map<std::string, Note> notes;
+    json teacher = json::array();
+    bool staff{ false };
+    bool forbidden{ false };
+    int failNext{ 0 };       // transport failures before the request reaches the server
+    int loseNextAnswer{ 0 }; // the request is applied, its answer is lost
+    std::vector<std::string> saveBodies, teacherBodies, deleteIds;
+    int64 now{ 1760000000 };
+
+    static std::string Fingerprint(int64 rev, const std::string& t, const std::string& b, const std::string& s)
+    {
+        return std::to_string(rev) + '\x1f' + t + '\x1f' + b + '\x1f' + s;
+    }
+    json NoteJson(const std::string& id, const Note& n) const
+    {
+        return json{ { "id", id },         { "title", n.title }, { "body", n.body },   { "scope", json::parse(n.scope) },
+                     { "revision", n.revision }, { "createdAt", now }, { "updatedAt", now } };
+    }
+    void Install(FakeTransport& t)
+    {
+        t.routes["/GView/GetNotes"] = [this](const HttpRequest&) {
+            if (forbidden)
+                return ErrorResponse(403, "FORBIDDEN", "Course notes are disabled for this week.");
+            json mine = json::array();
+            for (const auto& [id, n] : notes)
+                mine.push_back(NoteJson(id, n));
+            return Response(
+                  200,
+                  json{ { "status", "ok" }, { "maxChars", 1000 }, { "serverTime", now }, { "canEditTeacherNotes", staff }, { "mine", mine }, { "teacher", teacher } }
+                        .dump());
+        };
+        t.routes["/GView/SaveNote"] = [this](const HttpRequest& r) {
+            if (failNext > 0)
+            {
+                failNext--;
+                return TransportFailure();
+            }
+            if (forbidden)
+                return ErrorResponse(403, "FORBIDDEN", "Course notes are disabled for this week.");
+            saveBodies.push_back(BodyOf(r));
+            const auto j          = json::parse(BodyOf(r));
+            const std::string id  = j["id"];
+            const std::string ti  = j["title"];
+            const std::string bo  = j["body"];
+            const std::string sc  = j["scope"].dump();
+            auto it               = notes.find(id);
+            HttpResponse answer;
+            if (!j.contains("revision"))
+            {
+                if (it != notes.end())
+                {
+                    if (it->second.title != ti || it->second.body != bo || it->second.scope != sc)
+                        return ErrorResponse(409, "CONFLICT");
+                    answer = Response(200, json{ { "status", "ok" }, { "id", id }, { "revision", it->second.revision }, { "updatedAt", now }, { "created", false } }.dump());
+                }
+                else
+                {
+                    notes[id] = Note{ ti, bo, sc, 1, "" };
+                    answer    = Response(200, json{ { "status", "ok" }, { "id", id }, { "revision", 1 }, { "updatedAt", now }, { "created", true } }.dump());
+                }
+            }
+            else
+            {
+                const int64 rev = j["revision"];
+                if (it == notes.end())
+                    return ErrorResponse(404, "NOT_FOUND");
+                const auto fp = Fingerprint(rev, ti, bo, sc);
+                if (it->second.revision == rev)
+                {
+                    it->second = Note{ ti, bo, sc, rev + 1, fp };
+                    answer     = Response(200, json{ { "status", "ok" }, { "id", id }, { "revision", rev + 1 }, { "updatedAt", now }, { "created", false } }.dump());
+                }
+                else if (it->second.revision == rev + 1 && it->second.lastUpdate == fp)
+                    answer = Response(200, json{ { "status", "ok" }, { "id", id }, { "revision", rev + 1 }, { "updatedAt", now }, { "created", false } }.dump());
+                else
+                    return ErrorResponse(409, "CONFLICT");
+            }
+            if (loseNextAnswer > 0)
+            {
+                loseNextAnswer--;
+                return TransportFailure();
+            }
+            return answer;
+        };
+        t.routes["/GView/DeleteNote"] = [this](const HttpRequest& r) {
+            if (forbidden)
+                return ErrorResponse(403, "FORBIDDEN");
+            const std::string id = json::parse(BodyOf(r))["id"];
+            deleteIds.push_back(id);
+            if (notes.erase(id) == 0)
+                return ErrorResponse(404, "NOT_FOUND");
+            return Response(200, R"({"status":"ok"})");
+        };
+        t.routes["/GView/SaveTeacherNote"] = [this](const HttpRequest& r) {
+            if (!staff)
+                return ErrorResponse(403, "FORBIDDEN", "Only course staff can edit course notes.");
+            teacherBodies.push_back(BodyOf(r));
+            const auto j = json::parse(BodyOf(r));
+            if (!j.contains("id"))
+                return Response(200, R"({"status":"ok","id":7,"revision":1,"updatedAt":1760000000,"created":true})");
+            for (auto& tn : teacher)
+            {
+                if (tn["id"] == j["id"])
+                {
+                    if (tn["revision"] != j["revision"])
+                        return ErrorResponse(409, "CONFLICT");
+                    tn["revision"] = tn["revision"].get<int64>() + 1;
+                    tn["title"]    = j["title"];
+                    return Response(200, json{ { "status", "ok" }, { "id", tn["id"] }, { "revision", tn["revision"] }, { "updatedAt", now }, { "created", false } }.dump());
+                }
+            }
+            return ErrorResponse(404, "NOT_FOUND");
+        };
+    }
+};
+
+struct NotesFixture : SessionFixture {
+    FakeNotesServer server;
+    explicit NotesFixture(json notesObject = NotesObject(), bool staff = false)
+    {
+        server.staff   = staff;
+        server.teacher = json::array({ { { "id", 12 }, { "title", "Conditional jumps" }, { "body", "jle / jg" }, { "scope", { { "kind", "general" } } }, { "audience", "all" },
+                                         { "updatedAt", 1759900000 }, { "enabled", true }, { "order", 1 }, { "revision", 3 }, { "createdAt", 1759800000 } },
+                                       { { "id", 13 }, { "title", "Stack" }, { "body", "rbp-4" }, { "scope", { { "kind", "problem" }, { "name", "w1_stack_var" } } },
+                                         { "audience", "G1" }, { "updatedAt", 1759900000 } } });
+        server.Install(*transport);
+        PolicyOptions o;
+        o.notes = std::move(notesObject);
+        ServePolicy(BuildPolicy(o));
+    }
+    ~NotesFixture()
+    {
+        // the final note saves of Shutdown() still reach the routes of `server`: end the session while it exists
+        session->Shutdown();
+    }
+    NotesSync& Notes()
+    {
+        return session->Notes();
+    }
+    void Advance(uint64 ms)
+    {
+        mono += ms;
+    }
+};
+
+const NoteScope STACK_SCOPE{ NoteScopeKind::Problem, "w1_stack_var" };
+} // namespace
+
+TEST_CASE("Learning: policy notes object (absent, present, clamping)", "[learning][notes][policy]")
+{
+    Policy p;
+    PolicyOptions o;
+    REQUIRE(ParsePolicyWith(o, p).ok);
+    REQUIRE_FALSE(p.notes.present); // absent = server without notes => no Notes UI
+
+    o.notes = NotesObject(true, 20000);
+    REQUIRE(ParsePolicyWith(o, p).ok);
+    REQUIRE(p.notes.present);
+    REQUIRE(p.notes.enabled);
+    REQUIRE(p.notes.maxChars == 20000);
+
+    o.notes = NotesObject(true, 5);
+    REQUIRE(ParsePolicyWith(o, p).ok);
+    REQUIRE(p.notes.maxChars == 100); // clamped to [100, 100000]
+    o.notes = NotesObject(true, 5000000);
+    REQUIRE(ParsePolicyWith(o, p).ok);
+    REQUIRE(p.notes.maxChars == 100000);
+
+    o.notes = json{ { "enabled", false } };
+    REQUIRE(ParsePolicyWith(o, p).ok);
+    REQUIRE(p.notes.present);
+    REQUIRE_FALSE(p.notes.enabled);
+    REQUIRE(p.notes.maxChars == 20000);
+    o.notes = json::object();
+    REQUIRE(ParsePolicyWith(o, p).ok);
+    REQUIRE_FALSE(p.notes.enabled); // a notes object without "enabled" does not switch the feature on
+    o.notes = json(nullptr);
+    REQUIRE(ParsePolicyWith(o, p).ok);
+    REQUIRE_FALSE(p.notes.present);
+
+    // a present field with a wrong JSON type is POLICY_MALFORMED (spec §9.2)
+    for (const json bad : { json("on"), json{ { "enabled", "yes" } }, json{ { "maxChars", -1 } }, json{ { "maxChars", "20000" } } })
+    {
+        o.notes  = bad;
+        auto st  = ParsePolicyWith(o, p);
+        INFO(bad.dump());
+        REQUIRE_FALSE(st.ok);
+        REQUIRE(st.message.starts_with("POLICY_MALFORMED"));
+    }
+}
+
+TEST_CASE("Learning: note text helpers", "[learning][notes]")
+{
+    const std::string e = "\xC3\xA9"; // U+00E9
+    REQUIRE(Utf8Length("abc" + e) == 4);
+    REQUIRE(TruncateUtf8("ab" + e + "cd", 3) == "ab" + e);
+    REQUIRE(TruncateUtf8("ab" + e, 2) == "ab");
+    REQUIRE(TruncateUtf8("abc", 10) == "abc");
+    REQUIRE(NormalizeNoteBody(std::string("a\r\nb\rc\n\0d", 9)) == "a\nb\nc\nd");
+    REQUIRE(NormalizeNoteTitle("a\tb\x01" "c") == "a b c");
+    REQUIRE(Utf8Length(NormalizeNoteTitle(std::string(300, 'x'))) == NOTE_TITLE_MAX_CHARS);
+    REQUIRE(IsValidNoteScope({}));
+    REQUIRE(IsValidNoteScope({ NoteScopeKind::Week, "Week 1" }));
+    REQUIRE_FALSE(IsValidNoteScope({ NoteScopeKind::Week, "" }));
+    REQUIRE_FALSE(IsValidNoteScope({ NoteScopeKind::Week, "a\nb" }));
+    REQUIRE(IsValidNoteScope(STACK_SCOPE));
+    REQUIRE_FALSE(IsValidNoteScope({ NoteScopeKind::Resource, "../x" }));
+    REQUIRE_FALSE(IsValidNoteScope({ NoteScopeKind::General, "x" }));
+    REQUIRE(IsValidNoteId("0f6a0e5c-1111-4222-8333-444455556666"));
+    REQUIRE_FALSE(IsValidNoteId(""));
+    REQUIRE_FALSE(IsValidNoteId("a b"));
+    REQUIRE_FALSE(IsValidNoteId(std::string(65, 'a')));
+}
+
+TEST_CASE("Learning: note request bodies (JSON round trips)", "[learning][notes]")
+{
+    SaveNoteRequest create;
+    create.id    = "0f6a0e5c-1111-4222-8333-444455556666";
+    create.title = "if / else \"quoted\"";
+    create.body  = "cmp eax, ecx\n\tjle 0x401050 ; \xC3\xA9\\";
+    auto body    = BuildSaveNoteBody(create);
+    auto j       = json::parse(std::string(body.data(), body.size()));
+    REQUIRE(j.size() == 4);
+    REQUIRE_FALSE(j.contains("revision")); // omitted => create
+    REQUIRE(j["id"] == create.id);
+    REQUIRE(j["title"] == create.title);
+    REQUIRE(j["body"] == create.body);
+    REQUIRE(j["scope"] == json{ { "kind", "general" } });
+
+    SaveNoteRequest update = create;
+    update.scope           = STACK_SCOPE;
+    update.revision        = 3;
+    body                   = BuildSaveNoteBody(update);
+    j                      = json::parse(std::string(body.data(), body.size()));
+    REQUIRE(j["revision"] == 3);
+    REQUIRE(j["scope"] == json{ { "kind", "problem" }, { "name", "w1_stack_var" } });
+    update.scope = { NoteScopeKind::Week, "Week 1" };
+    body         = BuildSaveNoteBody(update);
+    REQUIRE(json::parse(std::string(body.data(), body.size()))["scope"] == json{ { "kind", "week" }, { "name", "Week 1" } });
+
+    body = BuildDeleteNoteBody(create.id);
+    REQUIRE(json::parse(std::string(body.data(), body.size())) == json{ { "id", create.id } });
+    body = BuildDeleteTeacherNoteBody(12);
+    REQUIRE(json::parse(std::string(body.data(), body.size())) == json{ { "id", 12 } });
+
+    // teacher notes: omitted fields are not sent (the server keeps them on an update)
+    SaveTeacherNoteRequest tc;
+    tc.title = "T";
+    tc.body  = "B";
+    body     = BuildSaveTeacherNoteBody(tc);
+    j        = json::parse(std::string(body.data(), body.size()));
+    REQUIRE(j == json{ { "title", "T" }, { "body", "B" } });
+    tc.id       = 12;
+    tc.revision = 4;
+    tc.scope    = NoteScope{};
+    tc.audience = NoteAudience::G2;
+    tc.enabled  = false;
+    tc.order    = -2;
+    body        = BuildSaveTeacherNoteBody(tc);
+    j           = json::parse(std::string(body.data(), body.size()));
+    REQUIRE(j["id"] == 12);
+    REQUIRE(j["revision"] == 4);
+    REQUIRE(j["scope"] == json{ { "kind", "general" } }); // detach
+    REQUIRE(j["audience"] == "G2");
+    REQUIRE(j["enabled"] == false);
+    REQUIRE(j["order"] == -2);
+
+    // answers
+    SaveNoteResult r;
+    REQUIRE(ParseSaveNoteResponse(BufferView(std::string_view(R"({"status":"ok","id":"abc-1","revision":2,"updatedAt":1760000000,"created":false})")), false, r).ok);
+    REQUIRE(r.id == "abc-1");
+    REQUIRE(r.revision == 2);
+    REQUIRE_FALSE(r.created);
+    REQUIRE(ParseSaveNoteResponse(BufferView(std::string_view(R"({"status":"ok","id":12,"revision":1,"updatedAt":1,"created":true})")), true, r).ok);
+    REQUIRE(r.teacherId == 12);
+    REQUIRE(r.created);
+    REQUIRE_FALSE(ParseSaveNoteResponse(BufferView(std::string_view(R"({"status":"ok","id":"abc","revision":0})")), false, r).ok);
+    REQUIRE_FALSE(ParseSaveNoteResponse(BufferView(std::string_view(R"({"status":"ok","id":"a b","revision":1})")), false, r).ok);
+    REQUIRE_FALSE(ParseSaveNoteResponse(BufferView(std::string_view(R"({"status":"ok","id":"12","revision":1})")), true, r).ok);
+    REQUIRE_FALSE(ParseSaveNoteResponse(BufferView(std::string_view("<html>")), false, r).ok);
+}
+
+TEST_CASE("Learning: GetNotes parsing (student, staff, hostile)", "[learning][notes]")
+{
+    // the example of spec §10.11 + entries the client must drop or sanitise
+    const std::string body = std::string(R"JSON({"status": "ok", "maxChars": 50, "serverTime": 1760000000, "canEditTeacherNotes": false,
+      "mine": [
+        {"id": "0f6a0e5c-1111-4222-8333-444455556666", "title": "if / else", "body": "cmp; jcc \u2026\r\nline2\u0007", "scope": {"kind": "problem", "name": "w1_stack_var"},
+         "revision": 3, "createdAt": 1759990000, "updatedAt": 1759999000},
+        {"id": "0f6a0e5c-1111-4222-8333-444455556666", "title": "duplicate", "revision": 1},
+        {"id": "no revision", "title": "x"},
+        {"id": "n2", "title": "t\u0001", "body": "b", "revision": 1},
+        {"id": "n3", "title": "unknown scope", "body": "", "scope": {"kind": "video", "name": "x"}, "revision": 1},
+        {"id": "n4", "title": "bad item", "body": "", "scope": {"kind": "problem", "name": "../etc"}, "revision": 1},
+        {"id": "n5", "title": "week", "body": "", "scope": {"kind": "week", "name": "Week 1"}, "revision": 2},
+        {"id": "n6", "title": "nul\u0000", "body": "", "revision": 1},
+        "not an object"
+      ],
+      "teacher": [
+        {"id": 12, "title": "Conditional jumps", "body": "...", "scope": {"kind": "general"}, "audience": "all", "updatedAt": 1759900000},
+        {"id": 13, "title": "G2", "body": "", "audience": "G2", "updatedAt": 1},
+        {"id": "14", "title": "string id"},
+        {"id": 0, "title": "zero id"}
+      ]})JSON");
+    NotesSnapshot s;
+    auto st = ParseNotesResponse(BufferView(body), s);
+    INFO(st.message);
+    REQUIRE(st.ok);
+    REQUIRE(s.maxChars == 100); // clamped
+    REQUIRE_FALSE(s.canEditTeacherNotes);
+    REQUIRE(s.mine.size() == 6);
+    REQUIRE(s.rejected == 3 /*mine: duplicate, invalid id, non-object*/ + 2 /*teacher*/);
+    REQUIRE(s.mine[0].revision == 3);
+    REQUIRE(s.mine[0].scope == STACK_SCOPE);
+    REQUIRE(s.mine[0].body == "cmp; jcc \xE2\x80\xA6\nline2 "); // CR dropped, BEL => space, UTF-8 kept
+    REQUIRE(s.mine[1].title == "t ");
+    REQUIRE(s.mine[1].scope.IsGeneral()); // missing scope = general
+    REQUIRE(s.mine[2].scope.IsGeneral()); // unknown kind
+    REQUIRE(s.mine[3].scope.IsGeneral()); // invalid item name
+    REQUIRE(s.mine[4].scope == NoteScope{ NoteScopeKind::Week, "Week 1" });
+    REQUIRE(s.mine[5].title == "nul "); // NUL => space
+    REQUIRE(s.teacher.size() == 2);
+    REQUIRE(s.teacher[0].id == 12);
+    REQUIRE(s.teacher[0].enabled); // student view: no extra fields => defaults
+    REQUIRE(s.teacher[1].audience == NoteAudience::G2);
+
+    const std::string staff = R"JSON({"status":"ok","maxChars":20000,"canEditTeacherNotes":true,"mine":[],
+      "teacher":[{"id":3,"title":"Draft","body":"","scope":{"kind":"week","name":"Week 2"},"audience":"G1","updatedAt":5,
+                  "enabled":false,"order":7,"revision":4,"createdAt":2}]})JSON";
+    REQUIRE(ParseNotesResponse(BufferView(staff), s).ok);
+    REQUIRE(s.canEditTeacherNotes);
+    REQUIRE(s.maxChars == 20000);
+    REQUIRE(s.teacher.size() == 1);
+    REQUIRE_FALSE(s.teacher[0].enabled);
+    REQUIRE(s.teacher[0].order == 7);
+    REQUIRE(s.teacher[0].revision == 4);
+    REQUIRE(s.teacher[0].createdAt == 2);
+    REQUIRE(s.teacher[0].audience == NoteAudience::G1);
+
+    REQUIRE_FALSE(ParseNotesResponse(BufferView(std::string_view(R"({"status":"error"})")), s).ok);
+    REQUIRE_FALSE(ParseNotesResponse(BufferView(std::string_view(R"({"status":"ok","mine":{}})")), s).ok);
+    REQUIRE_FALSE(ParseNotesResponse(BufferView(std::string_view("[]")), s).ok);
+    // invalid UTF-8 is not JSON: the whole answer is refused (a GetNotes retry follows)
+    REQUIRE_FALSE(ParseNotesResponse(BufferView(std::string_view("{\"status\":\"ok\",\"mine\":[{\"id\":\"a\",\"title\":\"\xFF\",\"revision\":1}]}")), s).ok);
+}
+
+TEST_CASE("Learning: note error mapping (CONFLICT from the status)", "[learning][notes]")
+{
+    auto err = NoteErrorFromResponse(Response(409, R"({"status":"error","code":"CONFLICT","details":"changed","retryable":false})"));
+    REQUIRE(err.code == ErrorCode::Conflict);
+    REQUIRE_FALSE(err.retryable);
+    REQUIRE(ErrorCodeName(err.code) == "CONFLICT");
+    REQUIRE(NoteErrorFromResponse(Response(409, "")).code == ErrorCode::Conflict); // mapped from the status
+    REQUIRE(NoteErrorFromResponse(Response(413, "")).code == ErrorCode::PayloadTooLarge);
+    REQUIRE(ParseErrorEnvelope(413, BufferView(), {}).code == ErrorCode::PayloadTooLarge);
+    REQUIRE(ParseErrorEnvelope(409, BufferView(), {}).code == ErrorCode::AlreadySolved); // SubmitFlag keeps its meaning
+    auto limited = NoteErrorFromResponse(Response(429, "", { { "retry-after", "7" } }));
+    REQUIRE(limited.retryAfterSeconds == 7);
+
+    REQUIRE(ClassifyNoteError(NoteErrorFromResponse(TransportFailure())) == NoteFailure::Retry);
+    REQUIRE(ClassifyNoteError(limited) == NoteFailure::Retry);
+    REQUIRE(ClassifyNoteError(NoteErrorFromResponse(Response(503, ""))) == NoteFailure::Retry);
+    REQUIRE(ClassifyNoteError(NoteErrorFromResponse(Response(408, ""))) == NoteFailure::Retry);
+    REQUIRE(ClassifyNoteError(err) == NoteFailure::Conflict);
+    REQUIRE(ClassifyNoteError(NoteErrorFromResponse(Response(404, ""))) == NoteFailure::NotFound);
+    REQUIRE(ClassifyNoteError(NoteErrorFromResponse(ErrorResponse(403, "FORBIDDEN"))) == NoteFailure::Disabled);
+    REQUIRE(ClassifyNoteError(NoteErrorFromResponse(ErrorResponse(403, "POLICY_EXPIRED"))) == NoteFailure::Expired);
+    REQUIRE(ClassifyNoteError(NoteErrorFromResponse(ErrorResponse(400, "BAD_REQUEST"))) == NoteFailure::Refused);
+    REQUIRE(ClassifyNoteError(NoteErrorFromResponse(Response(413, ""))) == NoteFailure::Refused);
+    REQUIRE(ClassifyNoteError(NoteErrorFromResponse(ErrorResponse(401, "UNAUTHORIZED"))) == NoteFailure::Refused);
+}
+
+TEST_CASE("Learning: notes availability follows the policy", "[learning][notes][session]")
+{
+    SECTION("absent: no Notes UI, GetNotes never called")
+    {
+        NotesFixture fx(json(nullptr));
+        REQUIRE(fx.Connect().ok);
+        REQUIRE(fx.session->GetNotesAvailability() == NotesAvailability::Absent);
+        REQUIRE(fx.transport->Count("/GView/GetNotes") == 0);
+        REQUIRE_FALSE(fx.session->RefreshNotes().ok);
+    }
+    SECTION("enabled=false at connect: disabled, GetNotes never called")
+    {
+        NotesFixture fx(NotesObject(false));
+        REQUIRE(fx.Connect().ok);
+        REQUIRE(fx.session->GetNotesAvailability() == NotesAvailability::DisabledByPolicy);
+        REQUIRE(fx.session->GetStatus().notes == NotesAvailability::DisabledByPolicy);
+        REQUIRE(fx.transport->Count("/GView/GetNotes") == 0);
+        REQUIRE_FALSE(fx.session->RefreshNotes().ok);
+        fx.Notes().Create("t", "local text", {}, fx.mono);
+        fx.Advance(5000);
+        fx.session->PumpNotes(true);
+        REQUIRE(fx.transport->Count("/GView/SaveNote") == 0);
+    }
+    SECTION("enabled: GetNotes after connect")
+    {
+        NotesFixture fx;
+        REQUIRE(fx.Connect().ok);
+        REQUIRE(fx.session->CanUseNotes());
+        REQUIRE(fx.transport->Count("/GView/GetNotes") == 1);
+        REQUIRE(fx.session->NotesLoaded());
+        REQUIRE(fx.session->TeacherNotes().size() == 2);
+        REQUIRE_FALSE(fx.session->CanEditTeacherNotes());
+        REQUIRE(fx.Notes().MaxChars() == 1000);
+        REQUIRE(fx.session->GetStatus().notesMaxChars == 1000);
+    }
+}
+
+TEST_CASE("Learning: notes autosave (debounce, create, update with revisions)", "[learning][notes][session]")
+{
+    NotesFixture fx;
+    REQUIRE(fx.Connect().ok);
+    auto& s       = *fx.session;
+    const auto id = fx.Notes().Create("", "", STACK_SCOPE, fx.mono);
+    REQUIRE(IsUuid4(id));
+    fx.Advance(5000);
+    s.PumpNotes(false);
+    REQUIRE(fx.transport->Count("/GView/SaveNote") == 0); // a new note nobody typed into is not created yet
+
+    REQUIRE(fx.Notes().Edit(id, "if / else", "cmp", STACK_SCOPE, fx.mono));
+    fx.Advance(1000);
+    s.PumpNotes(false);
+    REQUIRE(fx.transport->Count("/GView/SaveNote") == 0); // debounce: ~2 s after the last keystroke
+    fx.Advance(1100);
+    s.PumpNotes(false);
+    REQUIRE(fx.transport->Count("/GView/SaveNote") == 1);
+    auto j = json::parse(fx.server.saveBodies.back());
+    REQUIRE_FALSE(j.contains("revision")); // create
+    REQUIRE(j["id"] == id);
+    REQUIRE(j["scope"]["name"] == "w1_stack_var");
+    REQUIRE(fx.Notes().Find(id)->revision == 1);
+    REQUIRE(fx.Notes().StateOf(*fx.Notes().Find(id)) == NoteSyncState::Saved);
+
+    // typing: never one save per keystroke
+    for (int i = 0; i < 10; i++)
+    {
+        fx.Notes().Edit(id, "if / else", "cmp" + std::string(i + 1, ';'), STACK_SCOPE, fx.mono);
+        fx.Advance(150);
+        s.PumpNotes(false);
+    }
+    REQUIRE(fx.transport->Count("/GView/SaveNote") == 1);
+    REQUIRE(fx.Notes().StateOf(*fx.Notes().Find(id)) == NoteSyncState::Unsaved);
+    fx.Advance(2000);
+    s.PumpNotes(false);
+    REQUIRE(fx.transport->Count("/GView/SaveNote") == 2);
+    j = json::parse(fx.server.saveBodies.back());
+    REQUIRE(j["revision"] == 1); // the last revision the server returned
+    REQUIRE(j["body"] == "cmp;;;;;;;;;;");
+    REQUIRE(fx.Notes().Find(id)->revision == 2);
+
+    // Tick drives the autosave as well (Notes window closed)
+    fx.Notes().Edit(id, "if / else", "final", STACK_SCOPE, fx.mono);
+    fx.Advance(2500);
+    s.Tick();
+    REQUIRE(fx.transport->Count("/GView/SaveNote") == 3);
+    REQUIRE(fx.server.notes[id].body == "final");
+    REQUIRE(fx.server.notes[id].revision == 3);
+    REQUIRE_FALSE(fx.Notes().HasUnsavedChanges());
+    REQUIRE_FALSE(s.GetStatus().busy); // autosave does not mark the session busy
+
+    // flush (editor closed): no debounce; CR LF normalised, NUL removed before sending
+    fx.Notes().Edit(id, "if / else", std::string("a\r\nb\0c", 6), STACK_SCOPE, fx.mono);
+    s.PumpNotes(true);
+    REQUIRE(fx.server.notes[id].body == "a\nbc");
+}
+
+TEST_CASE("Learning: notes network errors retry the same request", "[learning][notes][session]")
+{
+    NotesFixture fx;
+    REQUIRE(fx.Connect().ok);
+    auto& s       = *fx.session;
+    const auto id = fx.Notes().Create("t", "v1", {}, fx.mono);
+
+    SECTION("lost answer of a create")
+    {
+        fx.server.loseNextAnswer = 1;
+        s.PumpNotes(true);
+        REQUIRE(fx.server.notes.count(id) == 1); // applied on the server
+        REQUIRE(fx.Notes().StateOf(*fx.Notes().Find(id)) == NoteSyncState::Retrying);
+        REQUIRE_FALSE(fx.Notes().Find(id)->revision.has_value());
+        fx.Notes().Edit(id, "t", "v2", {}, fx.mono); // typed while the answer was missing
+        fx.Advance(1000);
+        s.PumpNotes(false);
+        REQUIRE(fx.server.saveBodies.size() == 1); // back-off
+        fx.Advance(1500);
+        s.PumpNotes(false);
+        // the very same create first (answered 200 created:false), then the newer text as an update
+        REQUIRE(fx.server.saveBodies.size() >= 2);
+        REQUIRE(fx.server.saveBodies[1] == fx.server.saveBodies[0]);
+        fx.Advance(2500);
+        s.PumpNotes(false);
+        REQUIRE(fx.server.saveBodies.size() == 3);
+        auto j = json::parse(fx.server.saveBodies[2]);
+        REQUIRE(j["revision"] == 1);
+        REQUIRE(j["body"] == "v2");
+        REQUIRE(fx.server.notes[id].body == "v2");
+        REQUIRE(fx.server.notes[id].revision == 2);
+        REQUIRE(fx.Notes().Find(id)->revision == 2);
+    }
+    SECTION("lost answer of an update")
+    {
+        s.PumpNotes(true);
+        REQUIRE(fx.Notes().Find(id)->revision == 1);
+        fx.Notes().Edit(id, "t", "v2", {}, fx.mono);
+        fx.server.loseNextAnswer = 1;
+        s.PumpNotes(true);
+        REQUIRE(fx.server.notes[id].revision == 2); // applied, answer lost
+        REQUIRE(fx.Notes().Find(id)->revision == 1);
+        fx.Advance(3000);
+        s.PumpNotes(false); // the same update retried => 200 with the already-applied revision (no 409)
+        REQUIRE(fx.server.saveBodies.back() == fx.server.saveBodies[fx.server.saveBodies.size() - 2]);
+        REQUIRE(fx.Notes().Find(id)->revision == 2);
+        REQUIRE(fx.Notes().TakeNotices().empty());
+    }
+    SECTION("transport failure before the server")
+    {
+        fx.server.failNext = 3;
+        for (int i = 0; i < 3; i++)
+        {
+            fx.Advance(NOTES_RETRY_MAX_MS);
+            s.PumpNotes(false);
+        }
+        REQUIRE(fx.server.notes.empty());
+        REQUIRE(fx.Notes().Find(id)->body == "v1"); // nothing lost
+        fx.Advance(NOTES_RETRY_MAX_MS);
+        s.PumpNotes(false);
+        REQUIRE(fx.server.notes[id].body == "v1");
+        REQUIRE(fx.server.saveBodies.size() == 1);
+    }
+    SECTION("429 Retry-After")
+    {
+        fx.transport->routes["/GView/SaveNote"] = [](const HttpRequest&) {
+            HttpResponse r = ErrorResponse(429, "RATE_LIMITED");
+            r.headers.push_back({ "retry-after", "30" });
+            return r;
+        };
+        s.PumpNotes(true);
+        fx.server.Install(*fx.transport);
+        fx.Advance(20000);
+        s.PumpNotes(false);
+        REQUIRE(fx.server.notes.empty()); // still waiting for Retry-After
+        fx.Advance(11000);
+        s.PumpNotes(false);
+        REQUIRE(fx.server.notes.count(id) == 1);
+    }
+}
+
+TEST_CASE("Learning: notes 409 keeps the server copy and the local text", "[learning][notes][session]")
+{
+    NotesFixture fx;
+    REQUIRE(fx.Connect().ok);
+    auto& s       = *fx.session;
+    const auto id = fx.Notes().Create("loops", "v1", STACK_SCOPE, fx.mono);
+    s.PumpNotes(true);
+    REQUIRE(fx.Notes().Find(id)->revision == 1);
+
+    // another GView instance of the same student saved revision 2 in the meantime
+    fx.server.notes[id] = FakeNotesServer::Note{ "loops", "edited elsewhere", json{ { "kind", "problem" }, { "name", "w1_stack_var" } }.dump(), 2, "" };
+    fx.Notes().Edit(id, "loops", "typed here", STACK_SCOPE, fx.mono);
+    const size_t fetchesBefore = fx.transport->Count("/GView/GetNotes");
+    s.PumpNotes(true);
+    REQUIRE(fx.transport->Count("/GView/GetNotes") == fetchesBefore + 1); // re-fetched after the 409
+    // the server copy is kept, never overwritten silently
+    REQUIRE(fx.server.notes[id].body == "edited elsewhere");
+    REQUIRE(fx.Notes().Find(id)->body == "edited elsewhere");
+    REQUIRE(fx.Notes().Find(id)->revision == 2);
+    // the local text survives as a new note
+    const LocalNote* copy = nullptr;
+    for (const auto& n : fx.Notes().Notes())
+        if (n.id != id)
+            copy = &n;
+    REQUIRE(copy != nullptr);
+    REQUIRE(copy->title == "loops (local copy)");
+    REQUIRE(copy->body == "typed here");
+    REQUIRE(copy->scope == STACK_SCOPE);
+    const std::string copyId = copy->id;
+    auto notices             = s.TakeNotesNotices();
+    REQUIRE(notices.size() == 1);
+    REQUIRE(notices[0].find("local copy") != std::string::npos);
+    s.PumpNotes(true);
+    REQUIRE(fx.server.notes[copyId].body == "typed here"); // created on the server
+    REQUIRE_FALSE(fx.Notes().HasUnsavedChanges());
+
+    // identical text on both sides: no copy
+    fx.server.notes[id].revision = 5;
+    fx.Notes().Edit(id, "loops", "edited elsewhere ", STACK_SCOPE, fx.mono);
+    fx.server.notes[id].body = "edited elsewhere ";
+    s.PumpNotes(true);
+    REQUIRE(fx.Notes().Notes().size() == 2);
+    REQUIRE(fx.Notes().Find(id)->revision == 5);
+}
+
+TEST_CASE("Learning: notes 403 hides the Notes UI", "[learning][notes][session]")
+{
+    NotesFixture fx;
+    REQUIRE(fx.Connect().ok);
+    auto& s       = *fx.session;
+    const auto id = fx.Notes().Create("t", "kept in memory", {}, fx.mono);
+    fx.server.forbidden = true; // the teacher turned notes off (exam)
+    s.PumpNotes(true);
+    REQUIRE(s.GetNotesAvailability() == NotesAvailability::DisabledByServer);
+    REQUIRE_FALSE(s.CanUseNotes());
+    auto notices = s.TakeNotesNotices();
+    REQUIRE(std::find(notices.begin(), notices.end(), "Course notes are disabled by your teacher.") != notices.end());
+    REQUIRE(fx.Notes().Find(id)->body == "kept in memory");
+    const size_t saves = fx.transport->Count("/GView/SaveNote");
+    fx.Advance(NOTES_RETRY_MAX_MS * 2);
+    s.PumpNotes(true);
+    s.Tick();
+    REQUIRE(fx.transport->Count("/GView/SaveNote") == saves); // nothing is sent while notes are off
+    REQUIRE_FALSE(s.RefreshNotes().ok);
+
+    // a 403 on GetNotes does the same
+    NotesFixture fx2;
+    fx2.server.forbidden = true;
+    REQUIRE(fx2.Connect().ok);
+    REQUIRE(fx2.session->GetNotesAvailability() == NotesAvailability::DisabledByServer);
+
+    // the next connect tries again; the unsaved text is saved once notes are back
+    fx.server.forbidden = false;
+    REQUIRE(fx.Connect().ok);
+    REQUIRE(s.CanUseNotes());
+    s.PumpNotes(true);
+    REQUIRE(fx.server.notes[id].body == "kept in memory");
+}
+
+TEST_CASE("Learning: notes 404, refusals and deletion", "[learning][notes][session]")
+{
+    NotesFixture fx;
+    REQUIRE(fx.Connect().ok);
+    auto& s = *fx.session;
+
+    // too long: never sent, kept, shown
+    const auto longId = fx.Notes().Create("long", std::string(1001, 'x'), {}, fx.mono);
+    s.PumpNotes(true);
+    REQUIRE(fx.server.notes.count(longId) == 0);
+    REQUIRE(fx.Notes().StateOf(*fx.Notes().Find(longId)) == NoteSyncState::Error);
+    fx.Notes().Edit(longId, "long", std::string(1000, 'x'), {}, fx.mono);
+    s.PumpNotes(true);
+    REQUIRE(fx.server.notes.count(longId) == 1);
+
+    // 400: shown, no retry until the next edit
+    fx.transport->routes["/GView/SaveNote"] = [](const HttpRequest&) { return ErrorResponse(400, "BAD_REQUEST", "at most 500 notes per student"); };
+    const auto refused = fx.Notes().Create("t", "b", {}, fx.mono);
+    s.PumpNotes(true);
+    REQUIRE(fx.Notes().StateOf(*fx.Notes().Find(refused)) == NoteSyncState::Error);
+    REQUIRE(fx.Notes().Find(refused)->error.find("500 notes") != std::string::npos);
+    const size_t attempts = fx.transport->Count("/GView/SaveNote");
+    fx.Advance(NOTES_RETRY_MAX_MS * 3);
+    s.PumpNotes(false);
+    REQUIRE(fx.transport->Count("/GView/SaveNote") == attempts);
+    fx.server.Install(*fx.transport);
+    fx.Notes().Edit(refused, "t", "b2", {}, fx.mono);
+    s.PumpNotes(true);
+    REQUIRE(fx.server.notes.count(refused) == 1);
+
+    // 404 on an update (deleted on another machine): the re-fetch shows it is gone => the next save creates it again
+    const std::string gone = longId;
+    fx.server.notes.erase(gone);
+    fx.Notes().Edit(gone, "long", "changed", {}, fx.mono);
+    s.PumpNotes(true);
+    REQUIRE_FALSE(fx.Notes().Find(gone)->revision.has_value());
+    REQUIRE(fx.Notes().StateOf(*fx.Notes().Find(gone)) == NoteSyncState::Unsaved);
+    s.PumpNotes(true);
+    REQUIRE(fx.server.notes[gone].body == "changed");
+    REQUIRE(json::parse(fx.server.saveBodies.back()).contains("revision") == false);
+
+    // 404 because the scope is not visible (the note exists): shown, waits for an edit (no loop)
+    fx.transport->routes["/GView/SaveNote"] = [](const HttpRequest&) { return ErrorResponse(404, "NOT_FOUND", "no such item"); };
+    fx.Notes().Edit(gone, "long", "changed again", STACK_SCOPE, fx.mono);
+    s.PumpNotes(true);
+    REQUIRE(fx.Notes().StateOf(*fx.Notes().Find(gone)) == NoteSyncState::Error);
+    const size_t refused404 = fx.transport->Count("/GView/SaveNote");
+    fx.Advance(NOTES_RETRY_MAX_MS * 3);
+    s.PumpNotes(false);
+    REQUIRE(fx.transport->Count("/GView/SaveNote") == refused404);
+    fx.server.Install(*fx.transport);
+    fx.Notes().Edit(gone, "long", "changed again", {}, fx.mono);
+    s.PumpNotes(true);
+    REQUIRE(fx.server.notes[gone].body == "changed again");
+
+    // delete: a note that never reached the server sends nothing
+    const auto local = fx.Notes().Create("", "", {}, fx.mono);
+    fx.Notes().Delete(local);
+    REQUIRE(fx.Notes().Find(local) == nullptr);
+    s.PumpNotes(true);
+    REQUIRE(fx.server.deleteIds.empty());
+    // a saved note is deleted on the server; 404 (already gone) is fine
+    fx.Notes().Delete(refused);
+    s.PumpNotes(true);
+    REQUIRE(fx.server.deleteIds.back() == refused);
+    REQUIRE(fx.server.notes.count(refused) == 0);
+    REQUIRE(fx.Notes().Find(refused) == nullptr);
+    fx.server.notes.erase(gone);
+    fx.Notes().Delete(gone);
+    s.PumpNotes(true);
+    REQUIRE(fx.Notes().Find(gone) == nullptr);
+    REQUIRE(fx.Notes().TakeNotices().empty());
+}
+
+TEST_CASE("Learning: notes are saved at session end, then wiped", "[learning][notes][session]")
+{
+    NotesFixture fx;
+    REQUIRE(fx.Connect().ok);
+    auto& s       = *fx.session;
+    const auto id = fx.Notes().Create("t", "typed just before ending", {}, fx.mono);
+    REQUIRE(fx.transport->Count("/GView/SaveNote") == 0); // debounce not elapsed
+    REQUIRE(s.EndSession("user").ok);
+    REQUIRE(fx.server.notes[id].body == "typed just before ending");
+    REQUIRE(s.Notes().Notes().empty());
+    REQUIRE(s.TeacherNotes().empty());
+    REQUIRE(s.GetNotesAvailability() == NotesAvailability::Absent);
+}
+
+TEST_CASE("Learning: notes conflicts left unresolved, deletions and GetNotes failures", "[learning][notes][session]")
+{
+    NotesFixture fx;
+    REQUIRE(fx.Connect().ok);
+    auto& s       = *fx.session;
+    const auto a  = fx.Notes().Create("a", "a1", {}, fx.mono);
+    const auto b  = fx.Notes().Create("b", "b1", {}, fx.mono);
+    s.PumpNotes(true);
+    REQUIRE(fx.server.notes.size() == 2);
+    // the re-fetch after a 409 fails: the conflicts stay pending
+    fx.transport->routes["/GView/GetNotes"] = [](const HttpRequest&) { return ErrorResponse(503, "SERVER_ERROR"); };
+    fx.server.notes[a].revision = 9;
+    fx.server.notes[b].revision = 9;
+    fx.Notes().Edit(a, "a", "a typed here", {}, fx.mono);
+    fx.Notes().Edit(b, "b", "b typed here", {}, fx.mono);
+    s.PumpNotes(true);
+    REQUIRE(fx.Notes().Find(a)->conflictPending);
+
+    SECTION("a deleted note is not brought back by its conflict")
+    {
+        fx.Notes().Delete(a);
+        fx.server.Install(*fx.transport);
+        fx.Advance(NOTES_RETRY_MAX_MS);
+        s.PumpNotes(true);
+        REQUIRE(fx.server.notes.count(a) == 0);
+        REQUIRE(fx.Notes().Find(a) == nullptr);
+        for (const auto& n : fx.Notes().Notes())
+            REQUIRE(n.title != "a (local copy)");
+    }
+    SECTION("session end: the local text of an unresolved conflict is saved as a copy")
+    {
+        REQUIRE(s.EndSession("user").ok);
+        bool aCopy = false, bCopy = false;
+        for (const auto& [id, n] : fx.server.notes)
+        {
+            aCopy |= n.title == "a (local copy)" && n.body == "a typed here";
+            bCopy |= n.title == "b (local copy)" && n.body == "b typed here";
+        }
+        REQUIRE(aCopy);
+        REQUIRE(bCopy);
+        REQUIRE(fx.server.notes[a].body == "a1"); // the server copy is untouched
+    }
+    SECTION("a GetNotes failure that is not retryable stops the re-fetching")
+    {
+        fx.transport->routes["/GView/GetNotes"] = [](const HttpRequest&) { return ErrorResponse(401, "UNAUTHORIZED"); };
+        fx.Advance(NOTES_RETRY_MAX_MS);
+        s.PumpNotes(false); // the retry after the 503 gets a 401
+        const size_t fetches = fx.transport->Count("/GView/GetNotes");
+        for (int i = 0; i < 20; i++)
+        {
+            fx.Advance(300);
+            s.PumpNotes(false);
+        }
+        REQUIRE(fx.transport->Count("/GView/GetNotes") == fetches);
+        REQUIRE_FALSE(s.NotesError().empty());
+    }
+}
+
+TEST_CASE("Learning: notes of another account are dropped at connect", "[learning][notes][session]")
+{
+    NotesFixture fx;
+    REQUIRE(fx.Connect().ok);
+    fx.server.failNext = 100; // nothing can be saved for the first account
+    fx.Notes().Create("t", "first account", {}, fx.mono);
+    fx.session->PumpNotes(true);
+    REQUIRE(fx.Notes().HasUnsavedChanges());
+
+    const std::string other = "tok_OTHERSTUDENT_ABCDEFGHIJKLMNOPQRSTUVWXYZ012";
+    PolicyOptions o;
+    o.notes   = NotesObject();
+    o.subject = SubjectForToken(SecureString(other.data(), other.size()));
+    fx.ServePolicy(BuildPolicy(o));
+    const size_t savesBefore     = fx.transport->Count("/GView/SaveNote");
+    GView::Utils::GStatus result = GView::Utils::GStatus::Error("not called");
+    REQUIRE(fx.session->Connect(BuildConnectionString(other, TEST_SERVER, ServerKey().PublicHex(), ""), LearningSettings{}, [&](const GView::Utils::GStatus& r) {
+                    result = r;
+                }).ok);
+    REQUIRE(result.ok);
+    // one last bounded attempt went to the first account's transport (still failing here), then the text was wiped
+    REQUIRE(fx.transport->Count("/GView/SaveNote") > savesBefore);
+    fx.server.failNext = 0;
+    fx.session->PumpNotes(true);
+    REQUIRE(fx.Notes().Notes().empty());
+    REQUIRE(fx.server.notes.empty()); // the first account's text never reaches the second account
+}
+
+TEST_CASE("Learning: course notes of the teacher (staff editor payloads)", "[learning][notes][session]")
+{
+    SECTION("student token")
+    {
+        NotesFixture fx;
+        REQUIRE(fx.Connect().ok);
+        REQUIRE_FALSE(fx.session->CanEditTeacherNotes());
+        SaveTeacherNoteRequest req;
+        req.title = "x";
+        REQUIRE_FALSE(fx.session->SaveTeacherNote(req, nullptr).ok); // refused locally, nothing sent
+        REQUIRE_FALSE(fx.session->DeleteTeacherNote(12, nullptr).ok);
+        REQUIRE(fx.transport->Count("/GView/SaveTeacherNote") == 0);
+    }
+    SECTION("course staff")
+    {
+        NotesFixture fx(NotesObject(), true);
+        REQUIRE(fx.Connect().ok);
+        auto& s = *fx.session;
+        REQUIRE(s.CanEditTeacherNotes());
+        REQUIRE(s.TeacherNotes()[0].revision == 3);
+        REQUIRE(s.TeacherNotes()[0].order == 1);
+
+        SaveTeacherNoteRequest create;
+        create.title    = "New hint";
+        create.body     = "a\r\nb";
+        create.scope    = STACK_SCOPE;
+        create.audience = NoteAudience::G2;
+        NoteOpOutcome out;
+        REQUIRE(s.SaveTeacherNote(create, [&](const NoteOpOutcome& o) { out = o; }).ok);
+        REQUIRE(out.status.ok);
+        REQUIRE(out.result.teacherId == 7);
+        auto j = json::parse(fx.server.teacherBodies.back());
+        REQUIRE_FALSE(j.contains("id"));
+        REQUIRE_FALSE(j.contains("revision"));
+        REQUIRE(j["body"] == "a\nb");
+        REQUIRE(j["audience"] == "G2");
+        REQUIRE(j["scope"] == json{ { "kind", "problem" }, { "name", "w1_stack_var" } });
+        REQUIRE_FALSE(j.contains("enabled")); // not set => server default
+
+        const size_t fetches = fx.transport->Count("/GView/GetNotes");
+        SaveTeacherNoteRequest update;
+        update.id       = 12;
+        update.revision = 3;
+        update.title    = "Conditional jumps (signed)";
+        update.body     = "jl / jg";
+        update.enabled  = false;
+        update.order    = 4;
+        REQUIRE(s.SaveTeacherNote(update, [&](const NoteOpOutcome& o) { out = o; }).ok);
+        REQUIRE(out.status.ok);
+        REQUIRE(out.result.revision == 4);
+        j = json::parse(fx.server.teacherBodies.back());
+        REQUIRE(j["id"] == 12);
+        REQUIRE(j["revision"] == 3);
+        REQUIRE(j["enabled"] == false);
+        REQUIRE(j["order"] == 4);
+        REQUIRE_FALSE(j.contains("scope")); // omitted => kept by the server
+        REQUIRE(fx.transport->Count("/GView/GetNotes") == fetches + 1); // list reloaded
+
+        update.revision = 3; // stale
+        REQUIRE(s.SaveTeacherNote(update, [&](const NoteOpOutcome& o) { out = o; }).ok);
+        REQUIRE_FALSE(out.status.ok);
+        REQUIRE(out.error.code == ErrorCode::Conflict);
+
+        SaveTeacherNoteRequest noRevision;
+        noRevision.id = 12;
+        REQUIRE(s.SaveTeacherNote(noRevision, [&](const NoteOpOutcome& o) { out = o; }).ok);
+        REQUIRE_FALSE(out.status.ok); // an update needs its revision: refused before sending
+        REQUIRE(out.error.code == ErrorCode::BadRequest);
+
+        // 403 on a teacher endpoint: not staff (anymore) => the teacher editor goes away, student notes stay
+        fx.server.staff = false;
+        REQUIRE(s.SaveTeacherNote(create, [&](const NoteOpOutcome& o) { out = o; }).ok);
+        REQUIRE_FALSE(out.status.ok);
+        REQUIRE_FALSE(s.CanEditTeacherNotes());
+        REQUIRE(s.CanUseNotes());
+    }
+}
+
+TEST_CASE("Learning: note text never reaches telemetry or the disk", "[learning][notes][session]")
+{
+    const auto cwd  = std::filesystem::current_path();
+    const auto temp = std::filesystem::temp_directory_path();
+    const auto cwdBefore = ListDir(cwd), tempBefore = ListDir(temp);
+    NotesFixture fx;
+    REQUIRE(fx.Connect().ok);
+    auto& s = *fx.session;
+    int taskObject = 0;
+    ItemBinding b;
+    b.item    = "w1_stack_var";
+    b.problem = true;
+    s.SetPendingBinding(b);
+    s.OnObjectCreated(&taskObject);
+    const auto id = fx.Notes().Create("SECRET-TITLE", "SECRET-NOTE-BODY", STACK_SCOPE, fx.mono);
+    s.RecordNoteAdd(&taskObject);
+    s.PumpNotes(true);
+    fx.Notes().Edit(id, "SECRET-TITLE", "SECRET-NOTE-BODY-2", STACK_SCOPE, fx.mono);
+    s.PumpNotes(true);
+    REQUIRE(fx.server.notes[id].body == "SECRET-NOTE-BODY-2");
+    const auto batch = s.Telemetry().BeginBatch({});
+    REQUIRE(batch.has_value());
+    REQUIRE(batch->find("note_add") != std::string::npos);
+    REQUIRE(batch->find("SECRET") == std::string::npos);
+    REQUIRE(s.Telemetry().CountersJson().find("SECRET") == std::string::npos);
+    s.Telemetry().OnFlushResult(FlushOutcome::Accepted);
+    s.OnObjectClosed(&taskObject);
+    // only the course server got the text
+    for (auto& [path, body] : fx.transport->requests)
+        if (body.find("SECRET") != std::string::npos)
+            REQUIRE(path == "/GView/SaveNote");
+    REQUIRE(ListDir(cwd) == cwdBefore);
+    REQUIRE(ListDir(temp) == tempBefore);
+}
+
 // ======================================================================== published test vectors
 // Produced by tools/learning_mode_stub_server.py (Python `cryptography`) and reproduced in
 // docs/source/learning_mode_protocol.rst §"Test vectors": the server implementation must match them byte for byte.
@@ -1610,6 +2566,195 @@ TEST_CASE("Learning: end-to-end against a hostile stub server (T2/T5)", "[.integ
         REQUIRE_FALSE(dl.status.ok);
         REQUIRE(dl.status.message.find("tampered") != std::string::npos);
         REQUIRE(dl.content.data.Empty());
+        s.Shutdown();
+    }
+}
+
+// Course notes against the stub server (hidden). The default stub (GVIEW_LEARNING_STUB_CS) has notes on; the other
+// variants are optional:
+//   GVIEW_LEARNING_STUB_STAFF_CS      stub started with --staff            (teacher editor)
+//   GVIEW_LEARNING_STUB_FORBIDDEN_CS  stub started with --notes-forbidden  (403 after connect)
+//   GVIEW_LEARNING_STUB_NOTES_OFF_CS  stub started with --notes off        (policy notes.enabled=false)
+TEST_CASE("Learning: course notes end-to-end against the stub server", "[.integration][learning][notes]")
+{
+    auto connect = [](LearningSession& s, const char* cs) {
+        GView::Utils::GStatus result = GView::Utils::GStatus::Error("not called");
+        REQUIRE(s.Connect(cs, LearningSettings{}, [&](const GView::Utils::GStatus& r) { result = r; }).ok);
+        INFO(result.message);
+        REQUIRE(result.ok);
+    };
+    auto makeSession = []() {
+        LearningSession::Dependencies d;
+        d.synchronous     = true;
+        d.telemetryThread = false;
+        return std::make_unique<LearningSession>(std::move(d));
+    };
+    auto directTransport = [](const char* cs, const Policy& policy) {
+        ConnectionInfo ci;
+        REQUIRE(ParseConnectionString(cs, false, ci).ok);
+        auto t = CreateCurlTransport(TransportConfig{ ci.serverUrl, ci.token, ci.caPem, false, ClientVersion() });
+        t->SetPolicyId(policy.id);
+        return t;
+    };
+
+    if (const char* cs = std::getenv("GVIEW_LEARNING_STUB_CS"); cs != nullptr && cs[0] != 0)
+    {
+        auto session = makeSession();
+        auto& s      = *session;
+        connect(s, cs);
+        REQUIRE(s.GetPolicy()->notes.present);
+        REQUIRE(s.CanUseNotes());
+        REQUIRE(s.NotesLoaded()); // GetNotes right after Connect
+        REQUIRE_FALSE(s.CanEditTeacherNotes());
+        std::set<int64> teacherIds;
+        for (const auto& t : s.TeacherNotes())
+            teacherIds.insert(t.id);
+        // hidden (3), another lab group (4) and an item that is not visible (6) are never sent to a student
+        REQUIRE(teacherIds == std::set<int64>{ 1, 2, 5 });
+        const auto policy = *s.GetPolicy();
+        auto t            = directTransport(cs, policy);
+
+        // create + update through the session (autosave flush), with the revisions of the server
+        const auto id = s.Notes().Create("stack frame", "rbp-4 = first local", STACK_SCOPE, NowUnix() * 1000);
+        s.PumpNotes(true);
+        REQUIRE(s.Notes().Find(id)->revision == 1);
+        s.Notes().Edit(id, "stack frame", "rbp-4 = first local\nrbp-8 = second", STACK_SCOPE, 0);
+        s.PumpNotes(true);
+        REQUIRE(s.Notes().Find(id)->revision == 2);
+
+        // idempotency: a retried create with identical content, a retried update after a lost answer
+        SaveNoteRequest create{ id, "stack frame", "rbp-4 = first local", STACK_SCOPE, std::nullopt };
+        SaveNoteRequest update{ id, "stack frame", "rbp-4 = first local\nrbp-8 = second", STACK_SCOPE, 1 };
+        auto o = LearningSession::PerformSaveNote(*t, update);
+        INFO(o.status.message);
+        REQUIRE(o.status.ok);
+        REQUIRE(o.result.revision == 2);
+        o = LearningSession::PerformSaveNote(*t, create);
+        REQUIRE_FALSE(o.status.ok); // the content differs now: a create with this id conflicts
+        REQUIRE(o.error.code == ErrorCode::Conflict);
+        // compare-and-set: a stale revision with other content => 409, nothing written
+        update.body = "stale";
+        o           = LearningSession::PerformSaveNote(*t, update);
+        REQUIRE(o.error.code == ErrorCode::Conflict);
+        REQUIRE(ClassifyNoteError(o.error) == NoteFailure::Conflict);
+        // students can attach notes only to visible items (a hidden one is 404, like a download)
+        SaveNoteRequest hidden{ *NewUuid4(), "x", "y", { NoteScopeKind::Problem, "w1_hidden" }, std::nullopt };
+        REQUIRE(LearningSession::PerformSaveNote(*t, hidden).error.code == ErrorCode::NotFound);
+        // the server refuses NUL / too long bodies (the client strips NUL and checks maxChars before sending)
+        SaveNoteRequest nul{ *NewUuid4(), "x", std::string("a\0b", 3), {}, std::nullopt };
+        REQUIRE(LearningSession::PerformSaveNote(*t, nul).error.code == ErrorCode::BadRequest);
+
+        // a conflict through the session: another device saved revision 3 in the meantime
+        SaveNoteRequest elsewhere{ id, "stack frame", "edited on another machine", STACK_SCOPE, 2 };
+        REQUIRE(LearningSession::PerformSaveNote(*t, elsewhere).status.ok);
+        s.Notes().Edit(id, "stack frame", "typed in this GView", STACK_SCOPE, 0);
+        s.PumpNotes(true);
+        REQUIRE(s.Notes().Find(id)->body == "edited on another machine"); // server copy kept
+        REQUIRE(s.Notes().Find(id)->revision == 3);
+        auto notices = s.TakeNotesNotices();
+        REQUIRE(notices.size() == 1);
+        s.PumpNotes(true); // the local copy is created
+        auto fetched = LearningSession::PerformGetNotes(*t);
+        REQUIRE(fetched.status.ok);
+        REQUIRE(fetched.snapshot.mine.size() == 2);
+        std::string copyId;
+        for (const auto& n : fetched.snapshot.mine)
+        {
+            if (n.id == id)
+                REQUIRE(n.body == "edited on another machine");
+            else
+            {
+                copyId = n.id;
+                REQUIRE(n.title == "stack frame (local copy)");
+                REQUIRE(n.body == "typed in this GView");
+                REQUIRE(n.scope == STACK_SCOPE);
+            }
+        }
+
+        // delete (unknown => 404), teacher endpoints refused for a student token
+        s.Notes().Delete(copyId);
+        s.PumpNotes(true);
+        REQUIRE(LearningSession::PerformDeleteNote(*t, copyId).error.code == ErrorCode::NotFound);
+        REQUIRE(LearningSession::PerformGetNotes(*t).snapshot.mine.size() == 1);
+        SaveTeacherNoteRequest tn;
+        tn.title = "x";
+        REQUIRE(LearningSession::PerformSaveTeacherNote(*t, tn).error.code == ErrorCode::Forbidden);
+
+        // privacy: the note text is in no telemetry batch
+        auto batch = s.Telemetry().BeginBatch({ s.GetSessionId(), policy.id, policy.digest, ClientVersion(), std::string(CurrentPlatform()), NowUnix() });
+        if (batch.has_value())
+            REQUIRE(batch->find("rbp-4") == std::string::npos);
+        s.Notes().Delete(id);
+        s.PumpNotes(true);
+        s.Shutdown();
+        REQUIRE_FALSE(RestrictedMode::IsActive());
+    }
+    else
+        WARN("GVIEW_LEARNING_STUB_CS is not set: student notes part skipped");
+
+    if (const char* cs = std::getenv("GVIEW_LEARNING_STUB_STAFF_CS"); cs != nullptr && cs[0] != 0)
+    {
+        auto session = makeSession();
+        auto& s      = *session;
+        connect(s, cs);
+        REQUIRE(s.CanEditTeacherNotes());
+        REQUIRE(s.TeacherNotes().size() == 6); // every teacher note, hidden ones too, with the staff fields
+        const auto draft = std::find_if(s.TeacherNotes().begin(), s.TeacherNotes().end(), [](const TeacherNote& t) { return t.id == 3; });
+        REQUIRE(draft != s.TeacherNotes().end());
+        REQUIRE_FALSE(draft->enabled);
+        REQUIRE(draft->revision == 1);
+
+        SaveTeacherNoteRequest create;
+        create.title    = "Exam rules";
+        create.body     = "No internet.";
+        create.audience = NoteAudience::G1;
+        NoteOpOutcome out;
+        REQUIRE(s.SaveTeacherNote(create, [&](const NoteOpOutcome& o) { out = o; }).ok);
+        INFO(out.status.message);
+        REQUIRE(out.status.ok);
+        REQUIRE(out.result.created);
+        const int64 newId = out.result.teacherId;
+        REQUIRE(s.TeacherNotes().size() == 7);
+
+        SaveTeacherNoteRequest update;
+        update.id       = newId;
+        update.revision = 1;
+        update.title    = "Exam rules";
+        update.body     = "No internet. No phones.";
+        update.enabled  = false;
+        REQUIRE(s.SaveTeacherNote(update, [&](const NoteOpOutcome& o) { out = o; }).ok);
+        REQUIRE(out.status.ok);
+        REQUIRE(out.result.revision == 2);
+        const auto saved = std::find_if(s.TeacherNotes().begin(), s.TeacherNotes().end(), [&](const TeacherNote& t) { return t.id == newId; });
+        REQUIRE(saved != s.TeacherNotes().end());
+        REQUIRE_FALSE(saved->enabled);
+        REQUIRE(saved->audience == NoteAudience::G1); // omitted on the update => kept
+        REQUIRE(s.SaveTeacherNote(update, [&](const NoteOpOutcome& o) { out = o; }).ok); // revision 1 is stale now
+        REQUIRE(out.error.code == ErrorCode::Conflict);
+        REQUIRE(s.DeleteTeacherNote(newId, [&](const NoteOpOutcome& o) { out = o; }).ok);
+        REQUIRE(out.status.ok);
+        REQUIRE(s.TeacherNotes().size() == 6);
+        s.Shutdown();
+    }
+    if (const char* cs = std::getenv("GVIEW_LEARNING_STUB_FORBIDDEN_CS"); cs != nullptr && cs[0] != 0)
+    {
+        auto session = makeSession();
+        auto& s      = *session;
+        connect(s, cs);
+        REQUIRE(s.GetPolicy()->notes.enabled);
+        REQUIRE(s.GetNotesAvailability() == NotesAvailability::DisabledByServer); // GetNotes answered 403
+        s.Notes().Create("t", "never sent", {}, 0);
+        s.PumpNotes(true);
+        REQUIRE_FALSE(s.RefreshNotes().ok);
+        s.Shutdown();
+    }
+    if (const char* cs = std::getenv("GVIEW_LEARNING_STUB_NOTES_OFF_CS"); cs != nullptr && cs[0] != 0)
+    {
+        auto session = makeSession();
+        auto& s      = *session;
+        connect(s, cs);
+        REQUIRE(s.GetNotesAvailability() == NotesAvailability::DisabledByPolicy);
+        REQUIRE_FALSE(s.NotesLoaded()); // GetNotes is not called
         s.Shutdown();
     }
 }

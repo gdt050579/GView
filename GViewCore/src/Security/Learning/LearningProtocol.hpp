@@ -90,6 +90,8 @@ enum class ErrorCode : uint8 {
     ItemDisabled,
     UnsupportedClient,
     ServerError,
+    Conflict,        // 409 of the note endpoints (compare-and-set failed, spec §10.11); SubmitFlag's 409 is AlreadySolved
+    PayloadTooLarge, // 413 (spec §10.9), mapped from the HTTP status
     Transport, // client side: no HTTP response at all
     Protocol,  // client side: response does not follow the contract
 };

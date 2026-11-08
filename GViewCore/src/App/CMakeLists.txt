@@ -14,6 +14,7 @@ target_sources(GViewCore PRIVATE
     OptionsWindow.cpp
     LearningModeWindow.cpp
     LearningSubmitDialog.cpp
+    LearningNotesWindow.cpp
     UpdateDialog.cpp
     GViewDesktop.cpp
     TemporaryFolder.cpp

@@ -13,7 +13,8 @@ namespace
     constexpr uint64 TICK_INTERVAL_MS                  = 200;
     [[maybe_unused]] constexpr uint64 FOCUS_VALIDITY_MS = 1000;
     constexpr uint64 MAX_ACCOUNT_STEP_MS = 2000; // the UI loop may stall (modal dialogs); never credit more per tick
-    constexpr long FINAL_FLUSH_TIMEOUT_S = 2;
+    constexpr long FINAL_FLUSH_TIMEOUT_S   = 2;
+    constexpr uint64 FINAL_NOTES_TIMEOUT_MS = 5000; // all final note saves together (session end / exit)
 
     std::string_view ModeName(DeliveryMode m) noexcept
     {
@@ -235,6 +236,121 @@ SubmitOutcome LearningSession::PerformSubmit(IHttpTransport& t, const SubmitRequ
     return o;
 }
 
+// ---------------------------------------------------------------------------- course notes (spec §10.11)
+namespace
+{
+    NoteOpOutcome PostNoteOperation(
+          IHttpTransport& t, std::string path, SecureString body, bool teacher, bool expectsResult, const std::atomic<bool>* cancel, long timeoutSeconds)
+    {
+        NoteOpOutcome o;
+        HttpRequest req;
+        req.path                = std::move(path);
+        req.body                = std::move(body);
+        req.maxResponseBytes    = MAX_NOTE_REPLY_BYTES;
+        req.totalTimeoutSeconds = timeoutSeconds;
+        req.cancel              = cancel;
+        if (req.body.size() > MAX_NOTE_REQUEST_BYTES)
+        {
+            o.error.code    = ErrorCode::PayloadTooLarge;
+            o.error.details = "the note exceeds the 256 KiB request limit";
+            o.status        = Utils::GStatus::Error(DescribeError(o.error));
+            return o;
+        }
+        auto resp = t.Post(req);
+        if (!resp.IsSuccess())
+        {
+            o.error  = NoteErrorFromResponse(resp);
+            o.status = Utils::GStatus::Error(DescribeError(o.error));
+            return o;
+        }
+        if (!expectsResult)
+        {
+            o.status = Utils::GStatus::Ok();
+            return o;
+        }
+        o.status = ParseSaveNoteResponse(ToView(resp.body), teacher, o.result);
+        if (!o.status.ok)
+        {
+            // a 2xx that does not follow the contract: the save may have been applied => resend the same request
+            o.error.code       = ErrorCode::Protocol;
+            o.error.httpStatus = resp.status;
+            o.error.details    = o.status.message;
+        }
+        return o;
+    }
+} // namespace
+
+NotesFetchResult LearningSession::PerformGetNotes(IHttpTransport& t, const std::atomic<bool>* cancel)
+{
+    NotesFetchResult r;
+    HttpRequest req;
+    req.path             = "/GView/GetNotes";
+    req.maxResponseBytes = MAX_NOTES_RESPONSE_BYTES;
+    req.cancel           = cancel;
+    auto resp            = t.Post(req);
+    if (!resp.IsSuccess())
+    {
+        r.error  = NoteErrorFromResponse(resp);
+        r.status = Utils::GStatus::Error(DescribeError(r.error));
+        return r;
+    }
+    r.status = ParseNotesResponse(ToView(resp.body), r.snapshot);
+    if (!r.status.ok)
+    {
+        r.error.code       = ErrorCode::Protocol;
+        r.error.httpStatus = resp.status;
+    }
+    return r;
+}
+
+NoteOpOutcome LearningSession::PerformSaveNote(IHttpTransport& t, const SaveNoteRequest& sr, const std::atomic<bool>* cancel, long timeoutSeconds)
+{
+    if (!IsValidNoteId(sr.id) || !IsValidNoteScope(sr.scope))
+    {
+        NoteOpOutcome o;
+        o.error.code = ErrorCode::BadRequest;
+        o.status     = Utils::GStatus::Error("invalid note id or scope");
+        return o;
+    }
+    return PostNoteOperation(t, "/GView/SaveNote", BuildSaveNoteBody(sr), false, true, cancel, timeoutSeconds);
+}
+
+NoteOpOutcome LearningSession::PerformDeleteNote(IHttpTransport& t, std::string_view id, const std::atomic<bool>* cancel, long timeoutSeconds)
+{
+    if (!IsValidNoteId(id))
+    {
+        NoteOpOutcome o;
+        o.error.code = ErrorCode::BadRequest;
+        o.status     = Utils::GStatus::Error("invalid note id");
+        return o;
+    }
+    return PostNoteOperation(t, "/GView/DeleteNote", BuildDeleteNoteBody(id), false, false, cancel, timeoutSeconds);
+}
+
+NoteOpOutcome LearningSession::PerformSaveTeacherNote(IHttpTransport& t, const SaveTeacherNoteRequest& sr, const std::atomic<bool>* cancel)
+{
+    if ((sr.scope.has_value() && !IsValidNoteScope(*sr.scope)) || (sr.id.has_value() && (*sr.id < 1 || !sr.revision.has_value())))
+    {
+        NoteOpOutcome o;
+        o.error.code = ErrorCode::BadRequest;
+        o.status     = Utils::GStatus::Error("invalid course note request (an update needs its id and revision)");
+        return o;
+    }
+    return PostNoteOperation(t, "/GView/SaveTeacherNote", BuildSaveTeacherNoteBody(sr), true, true, cancel, REQUEST_TIMEOUT_SECONDS);
+}
+
+NoteOpOutcome LearningSession::PerformDeleteTeacherNote(IHttpTransport& t, int64 id, const std::atomic<bool>* cancel)
+{
+    if (id < 1)
+    {
+        NoteOpOutcome o;
+        o.error.code = ErrorCode::BadRequest;
+        o.status     = Utils::GStatus::Error("invalid course note id");
+        return o;
+    }
+    return PostNoteOperation(t, "/GView/DeleteTeacherNote", BuildDeleteTeacherNoteBody(id), true, false, cancel, REQUEST_TIMEOUT_SECONDS);
+}
+
 // ============================================================================ lifecycle
 LearningSession::LearningSession() : LearningSession(Dependencies{})
 {
@@ -279,10 +395,11 @@ uint64 LearningSession::NowMs() const
     return deps.monoClock();
 }
 
-void LearningSession::RunJob(BackgroundWorker::Job job)
+void LearningSession::RunJob(BackgroundWorker::Job job, bool countsAsBusy)
 {
-    pendingJobs++;
-    BackgroundWorker::Job wrapped = [this, job = std::move(job)]() -> BackgroundWorker::Completion {
+    if (countsAsBusy)
+        pendingJobs++;
+    BackgroundWorker::Job wrapped = [this, countsAsBusy, job = std::move(job)]() -> BackgroundWorker::Completion {
         // the completion must always be produced: it is the only place pendingJobs is released, so a throwing job
         // (e.g. bad_alloc) must not leave the session permanently busy
         BackgroundWorker::Completion c;
@@ -300,8 +417,8 @@ void LearningSession::RunJob(BackgroundWorker::Job job)
         {
             c = nullptr;
         }
-        return [this, c = std::move(c)]() {
-            if (pendingJobs > 0)
+        return [this, countsAsBusy, c = std::move(c)]() {
+            if (countsAsBusy && pendingJobs > 0)
                 pendingJobs--;
             if (c)
                 c();
@@ -459,6 +576,9 @@ Utils::GStatus LearningSession::Connect(std::string_view connectionString, const
             auto st = ApplyConnectResult(std::move(*sharedInfo), newTransport, std::move(*result));
             if (done)
                 done(st);
+            // spec §10.11: GetNotes after Connect, skipped when policy.notes.enabled is false (or absent)
+            if (st.ok && CanUseNotes())
+                RefreshNotes();
         };
     });
     return Utils::GStatus::Ok();
@@ -499,6 +619,7 @@ Utils::GStatus LearningSession::ApplyConnectResult(ConnectionInfo&& newInfo, std
             statusMessage = "The server did not provide a policy; the current policy stays in force.";
             return Utils::GStatus::Error(statusMessage);
         }
+        ResetNotes(); // a legacy server has no notes; never keep notes of another account in memory
         info        = std::move(newInfo);
         transport   = std::move(newTransport);
         lastConnect = std::move(result.response);
@@ -522,6 +643,22 @@ Utils::GStatus LearningSession::ApplyConnectResult(ConnectionInfo&& newInfo, std
         return st;
     }
     restrictionsActive = true;
+    {
+        // notes belong to one account on one server: unsaved text is never sent to another one
+        const bool sameAccount = info.serverUrl == newInfo.serverUrl && info.token.size() == newInfo.token.size() &&
+                                 Crypto::Internal::ConstantTimeEquals(info.token.data(), newInfo.token.data(), info.token.size());
+        if (!sameAccount)
+        {
+            FinalNoteSaves(); // to the account (and server) the text belongs to, bounded
+            ResetNotes();
+        }
+        // the policy reflects the notes switch at connect time; a new connect tries again (spec §2.2)
+        notesDisabledByServer = false;
+        notesLoaded           = false;
+        notesError.clear();
+        if (result.policy->notes.present)
+            notes.SetMaxChars(result.policy->notes.maxChars);
+    }
     const bool newPolicyId = !policy.has_value() || policy->id != result.policy->id;
     policy                 = std::move(result.policy);
     activation             = std::move(report);
@@ -710,6 +847,8 @@ Utils::GStatus LearningSession::EndSession(std::string_view reason)
     RecordSessionEnd(reason);
     flusher.StopAndFlush(FINAL_FLUSH_TIMEOUT_S);
     StopJobs();
+    FinalNoteSaves(); // unsaved note text is sent (bounded) before the transport goes away
+    ResetNotes();
     telemetry.Disable();
     if (restrictionsActive)
         deps.deactivate();
@@ -736,6 +875,8 @@ void LearningSession::Shutdown() noexcept
     {
         generation++;
         StopJobs();
+        FinalNoteSaves();
+        ResetNotes();
         RecordSessionEnd("exit");
         flusher.StopAndFlush(FINAL_FLUSH_TIMEOUT_S);
         telemetry.Disable();
@@ -769,6 +910,7 @@ void LearningSession::Tick(bool drainCompletions)
     if (policy.has_value() && (state == SessionState::Active || state == SessionState::Error) &&
         Now() > policy->endsAt + RestrictedMode::POLICY_CLOCK_SKEW_SECONDS)
         ExpireLocally("policy_ended");
+    PumpNotes(false); // debounced autosave and retries, also while the Notes window is closed
     AccountTime(nowMs);
     lastTickMs = nowMs;
 }
@@ -843,11 +985,13 @@ LearningSession::Status LearningSession::GetStatus() const
         s.screenNote             = activation.platformNote;
         s.requireExplanation     = policy->submission.requireExplanation;
         s.explanationMaxChars    = policy->submission.explanationMaxChars;
+        s.notesMaxChars          = notes.MaxChars();
     }
     else
     {
         s.explanationMaxChars = 100000;
     }
+    s.notes             = GetNotesAvailability();
     s.submissionAllowed = CanSubmit();
     return s;
 }
@@ -976,6 +1120,348 @@ void LearningSession::RecordItemOpened(const CatalogueItem& item, DeliveryMode m
           item.IsProblem() ? EventType::TaskOpen : EventType::ResourceOpen,
           item.name,
           { FieldValue{ Field::ItemVersion, static_cast<int64>(version) }, FieldValue{ Field::Mode, std::string(ModeName(mode)) } });
+}
+
+// ============================================================================ course notes (spec §10.11)
+NotesAvailability LearningSession::GetNotesAvailability() const noexcept
+{
+    if (!policy.has_value() || !policy->notes.present)
+        return NotesAvailability::Absent;
+    if (!policy->notes.enabled)
+        return NotesAvailability::DisabledByPolicy;
+    if (notesDisabledByServer)
+        return NotesAvailability::DisabledByServer;
+    if (state != SessionState::Active || !transport)
+        return NotesAvailability::Unavailable;
+    return NotesAvailability::Available;
+}
+
+std::vector<std::string> LearningSession::TakeNotesNotices()
+{
+    auto r = std::move(notesNotices);
+    notesNotices.clear();
+    for (auto& n : notes.TakeNotices())
+        r.push_back(std::move(n));
+    return r;
+}
+
+void LearningSession::HandleNoteFailure(NoteFailure failure, bool teacherEndpoint)
+{
+    switch (failure)
+    {
+    case NoteFailure::Disabled:
+        if (teacherEndpoint)
+        {
+            // 403 on a teacher endpoint: this token is not course staff (staff tokens are never gated)
+            if (canEditTeacherNotes)
+            {
+                canEditTeacherNotes = false;
+                teacherNotesVersion++;
+            }
+            notesNotices.push_back("Only course staff can edit course notes.");
+        }
+        else if (!notesDisabledByServer)
+        {
+            notesDisabledByServer = true; // hides the Notes UI until the next connect
+            teacherNotesVersion++;
+            notesNotices.push_back("Course notes are disabled by your teacher.");
+        }
+        break;
+    case NoteFailure::Expired:
+        ExpireLocally("policy_expired");
+        break;
+    case NoteFailure::Conflict:
+    case NoteFailure::NotFound:
+        RefreshNotes();
+        break;
+    default:
+        break;
+    }
+}
+
+Utils::GStatus LearningSession::RefreshNotes()
+{
+    if (!CanUseNotes())
+    {
+        switch (GetNotesAvailability())
+        {
+        case NotesAvailability::DisabledByPolicy:
+        case NotesAvailability::DisabledByServer:
+            return Utils::GStatus::Error("Course notes are disabled by your teacher.");
+        case NotesAvailability::Absent:
+            return Utils::GStatus::Error("This course server does not provide course notes.");
+        default:
+            return Utils::GStatus::Error("Course notes are not available in the current session state.");
+        }
+    }
+    if (notesFetchInFlight)
+    {
+        notesFetchQueued = true;
+        return Utils::GStatus::Ok();
+    }
+    notesFetchInFlight = true;
+    notesFetchQueued   = false;
+    notes.OnRefetchStarted();
+    auto t            = transport;
+    const uint64 epoch = notesEpoch;
+    RunJob(
+          [this, t, epoch]() -> BackgroundWorker::Completion {
+              auto result = std::make_shared<NotesFetchResult>();
+              try
+              {
+                  *result = PerformGetNotes(*t, &cancelJobs);
+              }
+#ifdef BUILD_FOR_WASM
+              catch (const JobReplay::NetworkPending&)
+              {
+                  throw;
+              }
+#endif
+              catch (...)
+              {
+                  result->error.code = ErrorCode::Transport;
+                  result->status     = Utils::GStatus::Error("GetNotes failed");
+              }
+              return [this, epoch, result]() {
+                  if (epoch != notesEpoch)
+                      return;
+                  notesFetchInFlight = false;
+                  if (result->status.ok)
+                  {
+                      notes.ApplySnapshot(result->snapshot, NowMs());
+                      teacherNotes        = std::move(result->snapshot.teacher);
+                      canEditTeacherNotes = result->snapshot.canEditTeacherNotes;
+                      notesLoaded         = true;
+                      notesRefetchWanted  = false;
+                      notesFetchRetries   = 0;
+                      notesError.clear();
+                      teacherNotesVersion++;
+                  }
+                  else
+                  {
+                      const auto failure = ClassifyNoteError(result->error);
+                      notesError         = result->status.message;
+                      teacherNotesVersion++;
+                      if (failure == NoteFailure::Retry)
+                      {
+                          notesRefetchWanted = true;
+                          notesFetchRetries++;
+                          const uint64 delay = result->error.retryAfterSeconds > 0
+                                                     ? static_cast<uint64>(result->error.retryAfterSeconds) * 1000
+                                                     : std::min<uint64>(2000ull << std::min<uint32>(notesFetchRetries - 1, 5), NOTES_RETRY_MAX_MS);
+                          notesRefetchAtMs = NowMs() + delay;
+                      }
+                      else
+                      {
+                          // not retried automatically (401, 400, ...): the window's Refresh or the next open tries again
+                          notesRefetchWanted = false;
+                          notesFetchRetries  = 0;
+                          HandleNoteFailure(failure == NoteFailure::NotFound || failure == NoteFailure::Conflict ? NoteFailure::Refused : failure, false);
+                      }
+                  }
+                  if (notesFetchQueued && CanUseNotes())
+                      RefreshNotes();
+              };
+          },
+          false);
+    return Utils::GStatus::Ok();
+}
+
+void LearningSession::StartNoteAction(NotesSync::Action action)
+{
+    auto t             = transport;
+    const uint64 epoch = notesEpoch;
+    auto shared        = std::make_shared<NotesSync::Action>(std::move(action));
+    RunJob(
+          [this, t, epoch, shared]() -> BackgroundWorker::Completion {
+              auto outcome = std::make_shared<NoteOpOutcome>();
+              try
+              {
+                  *outcome = shared->kind == NotesSync::Action::Kind::Save ? PerformSaveNote(*t, shared->request, &cancelJobs)
+                                                                           : PerformDeleteNote(*t, shared->id, &cancelJobs);
+              }
+#ifdef BUILD_FOR_WASM
+              catch (const JobReplay::NetworkPending&)
+              {
+                  throw;
+              }
+#endif
+              catch (...)
+              {
+                  outcome->error.code = ErrorCode::Transport; // never leave the note "in flight"
+                  outcome->status     = Utils::GStatus::Error("note request failed");
+              }
+              return [this, epoch, shared, outcome]() {
+                  if (epoch != notesEpoch)
+                      return;
+                  const auto failure = shared->kind == NotesSync::Action::Kind::Save ? notes.OnSaveResult(*shared, *outcome, NowMs())
+                                                                                     : notes.OnDeleteResult(*shared, *outcome, NowMs());
+                  HandleNoteFailure(failure, false);
+              };
+          },
+          false);
+}
+
+void LearningSession::PumpNotes(bool flushAll)
+{
+    if (!CanUseNotes())
+        return;
+    const uint64 nowMs = NowMs();
+    if (!notesFetchInFlight && (notes.RefetchNeeded() || (notesRefetchWanted && nowMs >= notesRefetchAtMs)))
+        RefreshNotes();
+    for (auto& action : notes.NextActions(nowMs, flushAll))
+        StartNoteAction(std::move(action));
+}
+
+Utils::GStatus LearningSession::SaveTeacherNote(SaveTeacherNoteRequest req, NoteOpCallback done)
+{
+    if (!CanEditTeacherNotes())
+        return Utils::GStatus::Error("Only course staff can edit course notes.");
+    req.title = NormalizeNoteTitle(req.title);
+    req.body  = NormalizeNoteBody(req.body);
+    if (Utf8Length(req.body) > notes.MaxChars())
+        return Utils::GStatus::Error("The note is longer than " + std::to_string(notes.MaxChars()) + " characters.");
+    auto t             = transport;
+    const uint64 epoch = notesEpoch;
+    auto shared        = std::make_shared<SaveTeacherNoteRequest>(std::move(req));
+    RunJob([this, t, epoch, shared, done]() -> BackgroundWorker::Completion {
+        auto outcome = std::make_shared<NoteOpOutcome>();
+        try
+        {
+            *outcome = PerformSaveTeacherNote(*t, *shared, &cancelJobs);
+        }
+#ifdef BUILD_FOR_WASM
+        catch (const JobReplay::NetworkPending&)
+        {
+            throw;
+        }
+#endif
+        catch (...)
+        {
+            outcome->error.code = ErrorCode::Transport; // the editor always gets an answer
+            outcome->status     = Utils::GStatus::Error("course note request failed");
+        }
+        return [this, epoch, outcome, done]() {
+            if (epoch != notesEpoch)
+                return;
+            if (outcome->status.ok)
+                RefreshNotes(); // the list shows the new revision / order
+            else
+                HandleNoteFailure(ClassifyNoteError(outcome->error), true);
+            if (done)
+                done(*outcome);
+        };
+    });
+    return Utils::GStatus::Ok();
+}
+
+Utils::GStatus LearningSession::DeleteTeacherNote(int64 id, NoteOpCallback done)
+{
+    if (!CanEditTeacherNotes())
+        return Utils::GStatus::Error("Only course staff can edit course notes.");
+    auto t             = transport;
+    const uint64 epoch = notesEpoch;
+    RunJob([this, t, epoch, id, done]() -> BackgroundWorker::Completion {
+        auto outcome = std::make_shared<NoteOpOutcome>();
+        try
+        {
+            *outcome = PerformDeleteTeacherNote(*t, id, &cancelJobs);
+        }
+#ifdef BUILD_FOR_WASM
+        catch (const JobReplay::NetworkPending&)
+        {
+            throw;
+        }
+#endif
+        catch (...)
+        {
+            outcome->error.code = ErrorCode::Transport;
+            outcome->status     = Utils::GStatus::Error("course note request failed");
+        }
+        return [this, epoch, outcome, done]() {
+            if (epoch != notesEpoch)
+                return;
+            const auto failure = ClassifyNoteError(outcome->error);
+            if (outcome->status.ok || failure == NoteFailure::NotFound)
+                RefreshNotes();
+            else
+                HandleNoteFailure(failure, true);
+            if (done)
+                done(*outcome);
+        };
+    });
+    return Utils::GStatus::Ok();
+}
+
+void LearningSession::RecordNoteAdd(const void* obj)
+{
+    Record(obj, EventType::NoteAdd); // a bare count: never the note text (spec §5 privacy)
+}
+
+void LearningSession::FinalNoteSaves() noexcept
+{
+    try
+    {
+        // End session / exit: StopJobs() dropped the queued requests and the completion of the running one. Account
+        // switch: a request may still run on the worker; resending it is harmless (creates and updates are idempotent).
+        notes.AbortAllInFlight();
+        // conflicts not resolved yet / notes the server refused: one last chance, nothing typed is dropped unsent
+        notes.PrepareFinalFlush();
+        if (!transport || !policy.has_value() || !policy->notes.present || !policy->notes.enabled || notesDisabledByServer)
+            return;
+        if (state != SessionState::Active)
+            return; // an expired policy is refused by the server (403 POLICY_EXPIRED)
+#ifdef BUILD_FOR_WASM
+        constexpr int ROUNDS = 1; // outside a job the page sends the request without waiting for its answer
+#else
+        constexpr int ROUNDS = 3; // an unanswered request first, then the newer text with the revision it returned
+#endif
+        const uint64 deadline = NowMs() + FINAL_NOTES_TIMEOUT_MS;
+        for (int round = 0; round < ROUNDS; round++)
+        {
+            auto actions = notes.NextActions(NowMs(), true);
+            if (actions.empty())
+                break;
+            for (auto& a : actions)
+            {
+                if (NowMs() >= deadline)
+                {
+                    notes.AbortAllInFlight();
+                    return;
+                }
+                if (a.kind == NotesSync::Action::Kind::Save)
+                    notes.OnSaveResult(a, PerformSaveNote(*transport, a.request, nullptr, FINAL_FLUSH_TIMEOUT_S), NowMs());
+                else
+                    notes.OnDeleteResult(a, PerformDeleteNote(*transport, a.id, nullptr, FINAL_FLUSH_TIMEOUT_S), NowMs());
+            }
+        }
+    }
+    catch (...)
+    {
+    }
+}
+
+void LearningSession::ResetNotes() noexcept
+{
+    notesEpoch++; // completions of requests still running belong to the old notes
+    notes.Clear();
+    for (auto& n : teacherNotes)
+    {
+        WipeString(n.title);
+        WipeString(n.body);
+    }
+    teacherNotes.clear();
+    canEditTeacherNotes   = false;
+    notesLoaded           = false;
+    notesDisabledByServer = false;
+    notesFetchInFlight    = false;
+    notesFetchQueued      = false;
+    notesRefetchWanted    = false;
+    notesRefetchAtMs      = 0;
+    notesFetchRetries     = 0;
+    notesError.clear();
+    notesNotices.clear();
+    teacherNotesVersion++;
 }
 
 LearningSession& GetSession()

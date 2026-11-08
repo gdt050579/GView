@@ -564,6 +564,19 @@ namespace
             p.submission.explanationMaxChars = ClampToRange(v, 0, 100000);
         }
 
+        // course notes (optional object; absent = server without notes => no Notes UI)
+        p.notes = NotesSettings{};
+        if (auto it = j.find("notes"); it != j.end() && !it->is_null())
+        {
+            if (!it->is_object())
+                return Fail("POLICY_MALFORMED", "notes must be an object");
+            p.notes.present = true;
+            POLICY_TRY(ReadBool(*it, "enabled", p.notes.enabled));
+            uint64_t v = p.notes.maxChars;
+            POLICY_TRY(ReadUInt(*it, "maxChars", v, false));
+            p.notes.maxChars = ClampToRange(v, 100, 100000);
+        }
+
         std::string keyIdHex;
         POLICY_TRY(ReadString(j, "contentKeyId", keyIdHex, false, 16));
         POLICY_TRY(ReadString(j, "contentEncryption", p.contentEncryption, false, 32));

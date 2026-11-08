@@ -1087,6 +1087,13 @@ namespace Security
             uint32 explanationMaxChars{ 2000 };
         };
 
+        // Course notes (spec §2.2 / §10.11). Absent object = a server without notes: the client shows no Notes UI.
+        struct NotesSettings {
+            bool present{ false }; // the policy carries a "notes" object
+            bool enabled{ false };
+            uint32 maxChars{ 20000 }; // longest note body the server accepts, clamped to [100, 100000]
+        };
+
         struct Policy {
             uint32 schema{ 1 };
             std::string id;
@@ -1111,6 +1118,7 @@ namespace Security
 
             TelemetrySettings telemetry;
             SubmissionSettings submission;
+            NotesSettings notes;
 
             std::vector<uint8_t> contentKeyId; // 8 bytes when present
             std::string contentEncryption;     // "" or "aes-256-gcm-hkdf-v1"

@@ -15,6 +15,7 @@
 
 #include "BackgroundWorker.hpp"
 #include "ContentDelivery.hpp"
+#include "LearningNotes.hpp"
 #include "Telemetry.hpp"
 
 #include <array>
@@ -60,6 +61,15 @@ struct SubmitOutcome {
     bool definitive{ false }; // the server graded (or refused) the answer: the idempotency key is consumed
 };
 
+// Course notes (spec §10.11) as seen by the UI
+enum class NotesAvailability : uint8 {
+    Absent,           // no policy, or a policy without a "notes" object (server without notes): no Notes UI
+    DisabledByPolicy, // policy.notes.enabled = false at connect: "disabled by your teacher", GetNotes is not called
+    DisabledByServer, // a note endpoint answered 403 FORBIDDEN (notes turned off after connect): same message
+    Unavailable,      // the session is not Active (connecting, expired, error)
+    Available,
+};
+
 struct ItemBinding {
     std::string item;
     bool problem{ false };
@@ -99,6 +109,7 @@ class LearningSession
     using StatusCallback   = std::function<void(const Utils::GStatus&)>;
     using DownloadCallback = std::function<void(DownloadResult&)>;
     using SubmitCallback   = std::function<void(const SubmitOutcome&)>;
+    using NoteOpCallback   = std::function<void(const NoteOpOutcome&)>;
 
     struct Dependencies {
         TransportFactory transportFactory;
@@ -131,6 +142,8 @@ class LearningSession
         bool submissionAllowed{ false };
         bool requireExplanation{ false };
         uint32 explanationMaxChars{ 0 };
+        NotesAvailability notes{ NotesAvailability::Absent };
+        uint32 notesMaxChars{ 0 };
         bool busy{ false };
     };
 
@@ -168,6 +181,22 @@ class LearningSession
     std::set<const void*> memoryDerived;
     SubmissionTracker submissions;
 
+    // course notes (memory only; see LearningNotes.hpp)
+    NotesSync notes;
+    std::vector<TeacherNote> teacherNotes;
+    bool canEditTeacherNotes{ false };
+    bool notesLoaded{ false };           // a GetNotes answer was applied since connect
+    bool notesDisabledByServer{ false }; // 403 FORBIDDEN from a student note endpoint
+    bool notesFetchInFlight{ false };
+    bool notesFetchQueued{ false };
+    bool notesRefetchWanted{ false };    // the last GetNotes failed with a retryable error
+    uint64 notesRefetchAtMs{ 0 };
+    uint32 notesFetchRetries{ 0 };
+    uint64 notesEpoch{ 0 };              // completions of note requests from before EndSession are dropped
+    uint64 teacherNotesVersion{ 0 };
+    std::string notesError;              // last GetNotes failure, shown by the Notes window
+    std::vector<std::string> notesNotices;
+
     // activity / time accounting (monotonic ms)
     std::atomic<uint64> lastActivityMs{ 0 };
     bool idle{ false };
@@ -179,8 +208,13 @@ class LearningSession
     std::string focusedViewer;
     std::string lastFocusedItem;
 
-    void RunJob(BackgroundWorker::Job job);
+    // countsAsBusy=false: background work (note autosave) that must not disable the window's buttons
+    void RunJob(BackgroundWorker::Job job, bool countsAsBusy = true);
     void StopJobs() noexcept;
+    void StartNoteAction(NotesSync::Action action);
+    void HandleNoteFailure(NoteFailure failure, bool teacherEndpoint);
+    void FinalNoteSaves() noexcept;
+    void ResetNotes() noexcept;
     void SetState(SessionState s, std::string message);
     void ConfigureTelemetry();
     void RecordSessionEnd(std::string_view reason);
@@ -210,6 +244,14 @@ class LearningSession
           const SecureString& token,
           const std::atomic<bool>* cancel = nullptr);
     static SubmitOutcome PerformSubmit(IHttpTransport& t, const SubmitRequest& req, const std::atomic<bool>* cancel = nullptr);
+    // course notes (spec §10.11)
+    static NotesFetchResult PerformGetNotes(IHttpTransport& t, const std::atomic<bool>* cancel = nullptr);
+    static NoteOpOutcome PerformSaveNote(
+          IHttpTransport& t, const SaveNoteRequest& req, const std::atomic<bool>* cancel = nullptr, long timeoutSeconds = REQUEST_TIMEOUT_SECONDS);
+    static NoteOpOutcome PerformDeleteNote(
+          IHttpTransport& t, std::string_view id, const std::atomic<bool>* cancel = nullptr, long timeoutSeconds = REQUEST_TIMEOUT_SECONDS);
+    static NoteOpOutcome PerformSaveTeacherNote(IHttpTransport& t, const SaveTeacherNoteRequest& req, const std::atomic<bool>* cancel = nullptr);
+    static NoteOpOutcome PerformDeleteTeacherNote(IHttpTransport& t, int64 id, const std::atomic<bool>* cancel = nullptr);
 
     // ---------------- UI thread state machine ----------------
     // Parses the connection string and starts the connect job. done() runs on the UI thread.
@@ -219,6 +261,54 @@ class LearningSession
     Utils::GStatus RefreshCatalogue(StatusCallback done);
     Utils::GStatus Download(const CatalogueItem& item, DownloadCallback done);
     Utils::GStatus Submit(std::string_view problem, SecureString flag, SecureString explanation, SubmitCallback done);
+
+    // ---------------- course notes (UI thread) ----------------
+    NotesAvailability GetNotesAvailability() const noexcept;
+    bool CanUseNotes() const noexcept
+    {
+        return GetNotesAvailability() == NotesAvailability::Available;
+    }
+    // GetNotes; a call while one is running queues one more. Results are applied to Notes()/TeacherNotes().
+    Utils::GStatus RefreshNotes();
+    NotesSync& Notes() noexcept
+    {
+        return notes;
+    }
+    const NotesSync& Notes() const noexcept
+    {
+        return notes;
+    }
+    const std::vector<TeacherNote>& TeacherNotes() const noexcept
+    {
+        return teacherNotes;
+    }
+    bool CanEditTeacherNotes() const noexcept
+    {
+        return canEditTeacherNotes && CanUseNotes();
+    }
+    bool NotesLoaded() const noexcept
+    {
+        return notesLoaded;
+    }
+    const std::string& NotesError() const noexcept
+    {
+        return notesError;
+    }
+    // changes whenever something shown by the Notes window changed (poll it per frame)
+    uint64 NotesVersion() const noexcept
+    {
+        return notes.Version() + teacherNotesVersion;
+    }
+    std::vector<std::string> TakeNotesNotices();
+    // Starts the due note requests (autosave after the debounce, retries). flushAll: everything now (editor closed).
+    // Also called by Tick().
+    void PumpNotes(bool flushAll);
+    // teacher editor (course-staff tokens): explicit saves; done() runs on the UI thread
+    Utils::GStatus SaveTeacherNote(SaveTeacherNoteRequest req, NoteOpCallback done);
+    Utils::GStatus DeleteTeacherNote(int64 id, NoteOpCallback done);
+    // note_add telemetry (a bare count) for a note created from a task window opened from the catalogue
+    void RecordNoteAdd(const void* obj);
+
     // Ends the session: refuses while learning windows are open (their content would lose its protection).
     Utils::GStatus EndSession(std::string_view reason);
     void Shutdown() noexcept; // application exit: session_end, bounded flush, deactivate, wipe secrets

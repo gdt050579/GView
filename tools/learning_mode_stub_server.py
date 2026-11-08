@@ -12,6 +12,11 @@ Implements the server side of docs/source/learning_mode_protocol.rst for end-to-
   POST /GView/GetResource/<name>      resource content
   POST /GView/SubmitFlag              grading with idempotency keys (a resent clientSubmissionId answers duplicate:true)
   POST /GView/Telemetry               batches, de-duplicated on (sessionId, seq): {"accepted": n, "duplicates": m}
+  POST /GView/GetNotes                course notes (spec §10.11): the student's own notes + the teacher notes for them
+  POST /GView/SaveNote                compare-and-set on "revision"; a retried create / update is answered 200
+  POST /GView/DeleteNote              unknown id => 404
+  POST /GView/SaveTeacherNote         course staff only (--staff), else 403
+  POST /GView/DeleteTeacherNote       course staff only
   OPTIONS *                           CORS preflight for browser clients (--cors-origin)
 
 Transport: HTTPS by default, with a self-signed certificate generated at start-up; the printed connection string
@@ -30,11 +35,17 @@ prevent screenshots), or a 426 UNSUPPORTED_CLIENT with --refuse-platform web-was
 Fault injection: --tamper-policy (signature does not verify), --corrupt-blob (GCM tag fails), --delay-ms (slow
 server: responsiveness and cancellation). The signing key is derived from a public seed: FOR TESTS ONLY.
 
+Course notes: --notes on|off|absent (the policy's "notes" object; off = the student note endpoints answer 403, absent =
+a server without notes), --notes-forbidden (the policy says on, the endpoints answer 403: notes turned off after
+connect), --staff (the token is course staff: every teacher note, SaveTeacherNote / DeleteTeacherNote allowed),
+--group G1|G2 (the student's lab group), --notes-max-chars, --notes-rate-limit (requests per minute).
+
 Requires: Python 3.9+, cryptography.
 """
 
 import argparse
 import base64
+import collections
 import datetime
 import hashlib
 import ipaddress
@@ -61,6 +72,8 @@ SIGNING_SEED = hashlib.sha256(b"GView learning mode stub server - test key").dig
 
 ALLOWED_REQUEST_HEADERS = ("XAppUserID, X-GView-Client, X-GView-Protocol, X-GView-Policy, X-GView-Platform, Content-Type, "
                            "Accept")
+NOTE_ENDPOINTS = ("/GView/GetNotes", "/GView/SaveNote", "/GView/DeleteNote", "/GView/SaveTeacherNote",
+                  "/GView/DeleteTeacherNote")
 EXPOSED_RESPONSE_HEADERS = ("X-GView-Delivery, X-GView-SHA256, X-GView-Encrypted, X-GView-Filename, X-GView-Item-Version, "
                             "Retry-After, Content-Length")
 
@@ -128,6 +141,30 @@ class StubState:
                          "title": "Lab notes"},
         }
         self.disabled = {"w1_hidden", "w2_problem"}
+        self.visible_weeks = {"Week 1"}
+        self.all_weeks = {"Week 1", "Week 2"}
+        # course notes (spec §10.11)
+        self.student_notes = {}       # id -> note
+        self.last_update = {}         # id -> (base revision, title, body, scope) of the last applied update
+        self.teacher_notes = [
+            {"id": 1, "title": "Conditional jumps", "body": "jle / jg compare signed values; jbe / ja unsigned ones.",
+             "scope": {"kind": "general"}, "audience": "all", "enabled": True, "order": 1},
+            {"id": 2, "title": "Stack frames", "body": "Locals live below rbp: [rbp-4], [rbp-8], ...",
+             "scope": {"kind": "problem", "name": "w1_stack_var"}, "audience": "all", "enabled": True, "order": 2},
+            {"id": 3, "title": "Draft (hidden)", "body": "not published yet", "scope": {"kind": "general"},
+             "audience": "all", "enabled": False, "order": 3},
+            {"id": 4, "title": "Lab group G2", "body": "Room 204 for G2.", "scope": {"kind": "general"},
+             "audience": "G2", "enabled": True, "order": 4},
+            {"id": 5, "title": "Reading for week 1", "body": "PE format chapter.", "scope": {"kind": "week", "name": "Week 1"},
+             "audience": "all", "enabled": True, "order": 5},
+            {"id": 6, "title": "Week 2 preview", "body": "not visible yet", "scope": {"kind": "problem", "name": "w2_problem"},
+             "audience": "all", "enabled": True, "order": 6},
+        ]
+        now = int(time.time())
+        for t in self.teacher_notes:
+            t.update({"revision": 1, "createdAt": now, "updatedAt": now})
+        self.next_teacher_id = 7
+        self.notes_requests = collections.deque()  # timestamps of note requests (rate limit)
 
     # ------------------------------------------------------------------ policy
     def content_key(self) -> bytes:
@@ -159,6 +196,8 @@ class StubState:
             "contentEncryption": "aes-256-gcm-hkdf-v1",
             "contentKeyId": hashlib.sha256(self.content_key()).hexdigest()[:16],
         }
+        if self.args.notes != "absent":
+            policy["notes"] = {"enabled": self.args.notes == "on", "maxChars": self.args.notes_max_chars}
         canonical = json.dumps(policy, sort_keys=True, separators=(",", ":")).encode()
         policy["digest"] = hashlib.sha256(canonical).hexdigest()
         return json.dumps(policy, sort_keys=True, separators=(",", ":")).encode()
@@ -286,6 +325,12 @@ class Handler(BaseHTTPRequestHandler):
         if length > 2 * 1024 * 1024:
             self.error(413, "BAD_REQUEST", "body too large")
             return
+        if self.path in NOTE_ENDPOINTS:
+            cap = 256 * 1024 if self.path in ("/GView/SaveNote", "/GView/SaveTeacherNote") else 64 * 1024
+            if length > cap:
+                self.rfile.read(length)
+                self.error(413, "PAYLOAD_TOO_LARGE", f"request body above {cap} bytes")
+                return
         raw = self.rfile.read(length) if length else b""
         if st.args.delay_ms > 0:
             time.sleep(st.args.delay_ms / 1000.0)
@@ -320,8 +365,237 @@ class Handler(BaseHTTPRequestHandler):
                 self.submit(body)
             elif path == "/GView/Telemetry":
                 self.telemetry(body)
+            elif path in NOTE_ENDPOINTS and st.args.notes != "absent":
+                self.notes_endpoint(path, body)
             else:
                 self.error(404, "NOT_FOUND", "unknown endpoint")
+
+    # ------------------------------------------------------------------ course notes (spec §10.11)
+    def notes_endpoint(self, path, body):
+        st = self.state
+        args = st.args
+        now = time.time()
+        while st.notes_requests and now - st.notes_requests[0] >= 60:
+            st.notes_requests.popleft()
+        if len(st.notes_requests) >= args.notes_rate_limit:
+            retry = max(1, int(60 - (now - st.notes_requests[0])) + 1)
+            self.reply_json(429, {"status": "error", "code": "RATE_LIMITED", "details": "too many note requests",
+                                  "retryable": True}, extra={"Retry-After": str(retry)})
+            return
+        st.notes_requests.append(now)
+        if not isinstance(body, dict):
+            self.error(400, "BAD_REQUEST", "body must be a JSON object")
+            return
+        teacher_endpoint = path in ("/GView/SaveTeacherNote", "/GView/DeleteTeacherNote")
+        if teacher_endpoint and not args.staff:
+            self.error(403, "FORBIDDEN", "Only course staff can edit course notes.")
+            return
+        if not teacher_endpoint and not args.staff and (args.notes == "off" or args.notes_forbidden):
+            self.error(403, "FORBIDDEN", "Course notes are disabled for this week.")
+            return
+        handler = {"/GView/GetNotes": self.get_notes, "/GView/SaveNote": self.save_note,
+                   "/GView/DeleteNote": self.delete_note, "/GView/SaveTeacherNote": self.save_teacher_note,
+                   "/GView/DeleteTeacherNote": self.delete_teacher_note}[path]
+        handler(body)
+
+    def item_visible(self, scope):
+        st = self.state
+        kind = scope["kind"]
+        if kind == "general":
+            return True
+        if kind == "week":
+            return scope["name"] in st.visible_weeks
+        it = st.items.get(scope["name"])
+        return it is not None and scope["name"] not in st.disabled and it["problem"] == (kind == "problem")
+
+    def item_exists(self, scope):
+        st = self.state
+        kind = scope["kind"]
+        if kind == "general":
+            return True
+        if kind == "week":
+            return scope["name"] in st.all_weeks
+        return scope["name"] in st.items or scope["name"] in st.disabled
+
+    def parse_scope(self, value):
+        """None/missing => general; returns (scope, error)"""
+        if value is None:
+            return {"kind": "general"}, None
+        if not isinstance(value, dict) or value.get("kind") not in ("general", "week", "problem", "resource"):
+            return None, "invalid scope"
+        if value["kind"] == "general":
+            return {"kind": "general"}, None
+        name = value.get("name")
+        if not isinstance(name, str) or not name:
+            return None, "scope.name is required"
+        return {"kind": value["kind"], "name": name}, None
+
+    def normalize_text(self, body):
+        """returns (title, text, error) following the server limits"""
+        title, text = body.get("title", ""), body.get("body", "")
+        if not isinstance(title, str) or not isinstance(text, str):
+            return None, None, "title and body must be strings"
+        if "\x00" in title or "\x00" in text:
+            return None, None, "NUL characters are not allowed"
+        title = "".join(" " if ord(c) < 32 or ord(c) == 127 else c for c in title)
+        if len(title) > 200:
+            return None, None, "title is longer than 200 characters"
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        if len(text) > self.state.args.notes_max_chars:
+            return None, None, f"body is longer than {self.state.args.notes_max_chars} characters"
+        return title, text, None
+
+    def teacher_view(self, t, staff):
+        r = {"id": t["id"], "title": t["title"], "body": t["body"], "scope": t["scope"], "audience": t["audience"],
+             "updatedAt": t["updatedAt"]}
+        if staff:
+            r.update({"enabled": t["enabled"], "order": t["order"], "revision": t["revision"], "createdAt": t["createdAt"]})
+        return r
+
+    def get_notes(self, body):
+        st = self.state
+        staff = st.args.staff
+        mine = sorted(st.student_notes.values(), key=lambda n: (n["updatedAt"], n["revision"]), reverse=True)
+        teacher = []
+        for t in sorted(st.teacher_notes, key=lambda t: (t["order"], t["id"])):
+            if not staff and (not t["enabled"] or t["audience"] not in ("all", st.args.group) or not self.item_visible(t["scope"])):
+                continue
+            teacher.append(self.teacher_view(t, staff))
+        self.reply_json(200, {"status": "ok", "maxChars": st.args.notes_max_chars, "serverTime": int(time.time()),
+                              "canEditTeacherNotes": staff, "mine": [dict(n) for n in mine], "teacher": teacher})
+
+    def save_note(self, body):
+        st = self.state
+        note_id = body.get("id")
+        if not isinstance(note_id, str) or not note_id or len(note_id) > 64:
+            self.error(400, "BAD_REQUEST", "id must be a non-empty string")
+            return
+        revision = body.get("revision")
+        if revision is not None and (not isinstance(revision, int) or isinstance(revision, bool)):
+            self.error(400, "BAD_REQUEST", "revision must be an integer")
+            return
+        title, text, err = self.normalize_text(body)
+        if err:
+            self.error(400, "BAD_REQUEST", err)
+            return
+        scope, err = self.parse_scope(body.get("scope"))
+        if err:
+            self.error(400, "BAD_REQUEST", err)
+            return
+        if not st.args.staff and not self.item_visible(scope):
+            self.error(404, "NOT_FOUND", "no such item")  # hidden items can not be probed
+            return
+        existing = st.student_notes.get(note_id)
+        now = int(time.time())
+        if revision is None:
+            if existing is not None:
+                if (existing["title"], existing["body"], existing["scope"]) == (title, text, scope):
+                    self.reply_json(200, {"status": "ok", "id": note_id, "revision": existing["revision"],
+                                          "updatedAt": existing["updatedAt"], "created": False})
+                else:
+                    self.error(409, "CONFLICT", "a different note with this id exists")
+                return
+            if len(st.student_notes) >= 500:
+                self.error(400, "BAD_REQUEST", "at most 500 notes per student")
+                return
+            st.student_notes[note_id] = {"id": note_id, "title": title, "body": text, "scope": scope, "revision": 1,
+                                         "createdAt": now, "updatedAt": now}
+            self.note(f"note {note_id[:8]} created")
+            self.reply_json(200, {"status": "ok", "id": note_id, "revision": 1, "updatedAt": now, "created": True})
+            return
+        if existing is None:
+            self.error(404, "NOT_FOUND", "no such note")
+            return
+        if existing["revision"] == revision:
+            existing.update({"title": title, "body": text, "scope": scope, "revision": revision + 1, "updatedAt": now})
+            st.last_update[note_id] = (revision, title, text, scope)
+            self.note(f"note {note_id[:8]} revision {revision + 1}")
+            self.reply_json(200, {"status": "ok", "id": note_id, "revision": revision + 1, "updatedAt": now, "created": False})
+            return
+        if existing["revision"] == revision + 1 and st.last_update.get(note_id) == (revision, title, text, scope):
+            # the same update retried after a lost answer
+            self.reply_json(200, {"status": "ok", "id": note_id, "revision": revision + 1,
+                                  "updatedAt": existing["updatedAt"], "created": False})
+            return
+        self.error(409, "CONFLICT", "the note was changed in the meantime")
+
+    def delete_note(self, body):
+        st = self.state
+        note_id = body.get("id")
+        if not isinstance(note_id, str) or note_id not in st.student_notes:
+            self.error(404, "NOT_FOUND", "no such note")
+            return
+        del st.student_notes[note_id]
+        st.last_update.pop(note_id, None)
+        self.reply_json(200, {"status": "ok"})
+
+    def save_teacher_note(self, body):
+        st = self.state
+        title, text, err = self.normalize_text(body)
+        if err:
+            self.error(400, "BAD_REQUEST", err)
+            return
+        scope = None
+        if "scope" in body:
+            scope, err = self.parse_scope(body.get("scope"))
+            if err:
+                self.error(400, "BAD_REQUEST", err)
+                return
+            if not self.item_exists(scope):
+                self.error(404, "NOT_FOUND", "no such item")
+                return
+        audience = body.get("audience")
+        if audience is not None and audience not in ("all", "G1", "G2"):
+            self.error(400, "BAD_REQUEST", "audience must be all, G1 or G2")
+            return
+        enabled, order = body.get("enabled"), body.get("order")
+        if enabled is not None and not isinstance(enabled, bool):
+            self.error(400, "BAD_REQUEST", "enabled must be a boolean")
+            return
+        if order is not None and (not isinstance(order, int) or isinstance(order, bool)):
+            self.error(400, "BAD_REQUEST", "order must be an integer")
+            return
+        now = int(time.time())
+        note_id = body.get("id")
+        if note_id is None:
+            t = {"id": st.next_teacher_id, "title": title, "body": text, "scope": scope or {"kind": "general"},
+                 "audience": audience or "all", "enabled": True if enabled is None else enabled,
+                 "order": order or 0, "revision": 1, "createdAt": now, "updatedAt": now}
+            st.next_teacher_id += 1
+            st.teacher_notes.append(t)
+            self.reply_json(200, {"status": "ok", "id": t["id"], "revision": 1, "updatedAt": now, "created": True})
+            return
+        revision = body.get("revision")
+        if not isinstance(note_id, int) or isinstance(note_id, bool) or not isinstance(revision, int) or isinstance(revision, bool):
+            self.error(400, "BAD_REQUEST", "id and revision must be integers")
+            return
+        t = next((t for t in st.teacher_notes if t["id"] == note_id), None)
+        if t is None:
+            self.error(404, "NOT_FOUND", "no such course note")
+            return
+        if t["revision"] != revision:
+            self.error(409, "CONFLICT", "the course note was changed in the meantime")
+            return
+        t.update({"title": title, "body": text, "revision": revision + 1, "updatedAt": now})
+        if "scope" in body:
+            t["scope"] = scope
+        if audience is not None:
+            t["audience"] = audience
+        if enabled is not None:
+            t["enabled"] = enabled
+        if order is not None:
+            t["order"] = order
+        self.reply_json(200, {"status": "ok", "id": note_id, "revision": revision + 1, "updatedAt": now, "created": False})
+
+    def delete_teacher_note(self, body):
+        st = self.state
+        note_id = body.get("id")
+        t = next((t for t in st.teacher_notes if t["id"] == note_id), None) if isinstance(note_id, int) else None
+        if t is None:
+            self.error(404, "NOT_FOUND", "no such course note")
+            return
+        st.teacher_notes.remove(t)
+        self.reply_json(200, {"status": "ok"})
 
     def submit(self, body):
         st = self.state
@@ -393,6 +667,14 @@ def main():
     ap.add_argument("--tamper-policy", action="store_true", help="send a policy whose signature does not verify")
     ap.add_argument("--corrupt-blob", action="store_true", help="flip a bit in encrypted deliveries")
     ap.add_argument("--delay-ms", type=int, default=0, help="wait this long before answering every POST")
+    ap.add_argument("--notes", choices=["on", "off", "absent"], default="on",
+                    help="course notes in the policy: on, off (student note endpoints answer 403) or absent (no notes)")
+    ap.add_argument("--notes-forbidden", action="store_true",
+                    help="the policy says notes are on, but the student note endpoints answer 403 (turned off later)")
+    ap.add_argument("--staff", action="store_true", help="the token is course staff (may edit teacher notes)")
+    ap.add_argument("--group", choices=["G1", "G2"], default="G1", help="lab group of the student")
+    ap.add_argument("--notes-max-chars", type=int, default=20000)
+    ap.add_argument("--notes-rate-limit", type=int, default=60, help="note requests per minute (429 above)")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
 

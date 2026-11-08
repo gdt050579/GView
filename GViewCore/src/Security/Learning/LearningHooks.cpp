@@ -180,6 +180,24 @@ void ReportClientError(std::string_view constantMessage, bool fatal) noexcept
     }
 }
 
+bool OnDesktopFrame() noexcept
+{
+    try
+    {
+        auto& s = GetSession();
+        if (!s.HasSession())
+            return false;
+        s.NotifyFrameUpdatesAvailable(); // the desktop only gets frames on frontends that deliver them
+        const bool applied = s.DrainCompletions() > 0;
+        s.Tick(false);
+        return applied;
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
 void Shutdown() noexcept
 {
     GetSession().Shutdown();

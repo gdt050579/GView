@@ -766,6 +766,10 @@ std::string_view ErrorCodeName(ErrorCode code) noexcept
         return "UNSUPPORTED_CLIENT";
     case ErrorCode::ServerError:
         return "SERVER_ERROR";
+    case ErrorCode::Conflict:
+        return "CONFLICT";
+    case ErrorCode::PayloadTooLarge:
+        return "PAYLOAD_TOO_LARGE";
     case ErrorCode::Transport:
         return "TRANSPORT_ERROR";
     case ErrorCode::Protocol:
@@ -794,7 +798,10 @@ ServerError ParseErrorEnvelope(long httpStatus, BufferView body, std::string_vie
         e.code = ErrorCode::NotFound;
         break;
     case 409:
-        e.code = ErrorCode::AlreadySolved;
+        e.code = ErrorCode::AlreadySolved; // SubmitFlag; the note endpoints map 409 to Conflict (LearningNotes.cpp)
+        break;
+    case 413:
+        e.code = ErrorCode::PayloadTooLarge;
         break;
     case 426:
         e.code = ErrorCode::UnsupportedClient;
@@ -827,6 +834,8 @@ ServerError ParseErrorEnvelope(long httpStatus, BufferView body, std::string_vie
                     { "ITEM_DISABLED", ErrorCode::ItemDisabled },
                     { "UNSUPPORTED_CLIENT", ErrorCode::UnsupportedClient },
                     { "SERVER_ERROR", ErrorCode::ServerError },
+                    { "CONFLICT", ErrorCode::Conflict },
+                    { "PAYLOAD_TOO_LARGE", ErrorCode::PayloadTooLarge },
                 };
                 const auto& code = c->get_ref<const std::string&>();
                 for (const auto& [name, value] : CODES)
@@ -896,6 +905,18 @@ std::string DescribeError(const ServerError& err)
         break;
     case ErrorCode::ServerError:
         msg = "The server encountered an error.";
+        break;
+    case ErrorCode::Conflict:
+        msg = "The item was changed elsewhere in the meantime.";
+        break;
+    case ErrorCode::PayloadTooLarge:
+        msg = "The request is too large for the server.";
+        break;
+    case ErrorCode::Forbidden:
+        msg = "The server refused the request.";
+        break;
+    case ErrorCode::BadRequest:
+        msg = "The server rejected the request.";
         break;
     case ErrorCode::Transport:
         msg = "Could not reach the server.";

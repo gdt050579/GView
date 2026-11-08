@@ -60,6 +60,32 @@ In an example scenario, the requirement might be to identify the value of the th
 variable from the stack. Upon inspection, the student can determine that the
 correct value is 3.
 
+**Taking notes (when the course offers course notes).**
+
+While analysing, the student can keep notes: *Notes* in the Learning window, or Ctrl+F11
+(*AddNote*) in a task window opened from the catalogue, which opens the note of that task (or
+starts one). The Notes window has two lists:
+
+* **My notes** - the student's private notes, kept by the course server and shown only to
+  their author. Each note has a title, a plain-text body (handy for assembly snippets) and a
+  scope: general, or one week, problem or resource (preselected to the open task; the notes of
+  the open task are listed first). Notes are saved automatically about two seconds after the
+  last keystroke, when the window closes and when the session ends; the status line shows
+  *Saved*, *Unsaved changes*, *Saving...* or, after a network problem, *retrying* - the text is
+  kept and sent again. If the same note was changed elsewhere in the meantime (another computer),
+  the server version is kept and the student's text is saved as a new note "... (local copy)".
+  *End session* warns if some note text could not be sent yet.
+* **Course notes** - notes written by the teachers for everyone or for one lab group, grouped by
+  week and task (the open task first). Students read them; course staff see *New course note*,
+  *Save course note* and *Delete course note* and can set the audience, the order and whether a
+  note is shown.
+
+When the teacher turns notes off (for example during an exam), the Notes window is not
+available and GView says "Course notes are disabled by your teacher". Note text is only ever
+sent to the course server: GView never writes it to disk and never puts it in telemetry (which
+only counts that a note was started). Outside Learning mode, Ctrl+F11 keeps adding the usual
+local note to the window.
+
 **Step 5: Submit the solution.**
 
 The student submits the solution directly from GView (*Submit flag* in the catalogue, or

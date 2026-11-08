@@ -1030,6 +1030,10 @@ namespace App
     // Learning and Evaluation Mode UI (LearningModeWindow.cpp / LearningSubmitDialog.cpp)
     void ShowLearningModeWindow(std::string_view prefilledConnectionString, bool autoConnect);
     void ShowLearningSubmitDialog(std::string_view problemName);
+    // Course notes (LearningNotesWindow.cpp). focusItem: the open catalogue item (its notes first, preselected scope),
+    // "" for none; taskObject: the task window it was opened from (note_add telemetry) or nullptr; openNoteForItem:
+    // open the newest note of focusItem, or start a new one.
+    void ShowLearningNotesWindow(std::string_view focusItem, bool focusIsProblem, const void* taskObject, bool openNoteForItem);
     void RefreshAllFileWindowTitles();
     bool TakeStartupLearningConnection(std::string& out);
     // Next Init uses this frontend instead of a terminal (remote server); the desktop stays open without windows.
@@ -1144,6 +1148,13 @@ namespace Security
         bool IsLearningProblem(const GView::Object* obj) noexcept;
         void ReportClientError(std::string_view constantMessage, bool fatal) noexcept;
         void ShowSubmitDialogForObject(const GView::Object* obj);
+        // every frame of the desktop (GViewDesktop::OnFrameUpdate, called before AppCUI walks the windows): runs the
+        // session's completions and timers; returns true when something was applied (repaint)
+        bool OnDesktopFrame() noexcept;
+        // AddNote (Ctrl+F11) in a window opened from the course catalogue: opens the server-backed course note of that
+        // item and returns true; false when the window is not a course window (or the server has no notes): the caller
+        // then shows the local note as outside Learning mode
+        bool OpenNoteForObject(const GView::Object* obj);
         void Shutdown() noexcept;
 #ifdef BUILD_FOR_WASM
         // every frame of the desktop (BrowserHost.cpp); pageHidden: the page has just been hidden

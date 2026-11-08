@@ -26,6 +26,7 @@ constexpr int BTN_DETAILS = 4;
 constexpr int BTN_SUBMIT  = 5;
 constexpr int BTN_REFRESH = 6;
 constexpr int BTN_CLOSE   = 7;
+constexpr int BTN_NOTES   = 8;
 
 constexpr uint64 ROW_NONE = 0xFFFFFFFFFFFFFFFFull;
 
@@ -240,7 +241,7 @@ class LearningModeWindow : public Window, public Handlers::OnTreeViewItemPressed
     };
 
     Reference<TextField> connectionField;
-    Reference<Button> connectButton, endButton, openButton, detailsButton, submitButton, refreshButton;
+    Reference<Button> connectButton, endButton, openButton, detailsButton, submitButton, refreshButton, notesButton;
     Reference<Label> lbState, lbUser, lbPolicy, lbProtection, lbBlocked, lbMessage;
     Reference<TreeView> tree;
     std::vector<RowRef> rows;
@@ -287,6 +288,7 @@ class LearningModeWindow : public Window, public Handlers::OnTreeViewItemPressed
         detailsButton = Factory::Button::Create(this, "&Details", "l:14,b:0,w:12", BTN_DETAILS, ButtonFlags::Flat);
         submitButton  = Factory::Button::Create(this, "&Submit flag", "l:27,b:0,w:15", BTN_SUBMIT, ButtonFlags::Flat);
         refreshButton = Factory::Button::Create(this, "&Refresh", "l:43,b:0,w:12", BTN_REFRESH, ButtonFlags::Flat);
+        notesButton   = Factory::Button::Create(this, "&Notes", "l:56,b:0,w:11", BTN_NOTES, ButtonFlags::Flat);
         Factory::Button::Create(this, "C&lose", "r:1,b:0,w:12", BTN_CLOSE, ButtonFlags::Flat);
 
         UpdateStatus();
@@ -361,6 +363,9 @@ class LearningModeWindow : public Window, public Handlers::OnTreeViewItemPressed
                 return true;
             case BTN_REFRESH:
                 StartRefresh();
+                return true;
+            case BTN_NOTES:
+                ShowNotes();
                 return true;
             case BTN_CLOSE:
                 Exit(opened ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
@@ -439,6 +444,8 @@ class LearningModeWindow : public Window, public Handlers::OnTreeViewItemPressed
             tmp.SetFormat("Blocked features: %s", FeatureList(st.disabledFeatures).c_str());
         else
             tmp.Set("Blocked features: none");
+        if (st.notes == Learning::NotesAvailability::DisabledByPolicy || st.notes == Learning::NotesAvailability::DisabledByServer)
+            tmp.Add("   Course notes are disabled by your teacher");
         lbBlocked->SetText(tmp);
         lbMessage->SetText(st.message);
 
@@ -450,6 +457,15 @@ class LearningModeWindow : public Window, public Handlers::OnTreeViewItemPressed
         openButton->SetEnabled(Session().CanOpenItems() && !st.busy);
         submitButton->SetEnabled(Session().CanSubmit() && !st.busy);
         detailsButton->SetEnabled(Session().IsCatalogueLoaded());
+        // the Notes UI exists only while notes are on (absent object or 403 => hidden, spec §10.11)
+        notesButton->SetVisible(st.notes == Learning::NotesAvailability::Available);
+    }
+
+    void ShowNotes()
+    {
+        const auto* item = tree->GetItemsCount() > 0 ? SelectedItem() : nullptr; // GetData throws on an empty tree
+        GView::App::ShowLearningNotesWindow(item != nullptr ? std::string_view(item->name) : std::string_view(), item != nullptr && item->IsProblem(), nullptr, false);
+        RefreshNow();
     }
 
     void PopulateTree()
@@ -591,8 +607,11 @@ class LearningModeWindow : public Window, public Handlers::OnTreeViewItemPressed
 
     void EndSession()
     {
-        if (Dialogs::MessageBox::ShowOkCancel("End session", "End the learning session? Restrictions will be removed and secrets erased.") !=
-            Dialogs::Result::Ok)
+        std::string question = "End the learning session? Restrictions will be removed and secrets erased.";
+        if (Session().Notes().HasUnsavedChanges())
+            question += "\n\nSome note changes are not on the course server yet. GView tries to send them once more; what cannot be "
+                        "sent now is erased with the session.";
+        if (Dialogs::MessageBox::ShowOkCancel("End session", question) != Dialogs::Result::Ok)
             return;
         auto st = Session().EndSession("user");
         if (!st.ok)

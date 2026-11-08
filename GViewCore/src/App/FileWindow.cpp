@@ -338,7 +338,9 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
             ShowKeyboardShortcutsWindow(this->gviewApp, this);
             return true;
         case CMD_OPEN_ADD_NOTE:
-            GView::App::ShowAddNoteDialog();
+            // Learning mode: the course note of this task (kept by the course server); otherwise the local note
+            if (!GView::Security::Learning::Hooks::OpenNoteForObject(this->obj.get()))
+                GView::App::ShowAddNoteDialog();
             return true;
         case CMD_LEARNING_SUBMIT_FLAG:
             GView::Security::Learning::Hooks::ShowSubmitDialogForObject(this->obj.get());
