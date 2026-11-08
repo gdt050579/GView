@@ -487,8 +487,10 @@ namespace View
         bool IsCxxConstructorOrDestructor(std::string_view functionName);
         // its prototype once the code of the function tells the highest argument register it reads (0: rdi .. 5: r9): one more than its
         // parameters (this for a const method, the address of what a function returns, else one of them: this when the entry reads memory
-        // through it first, `readsFirstArgument`: a result is written first), two more (that address, then this); null otherwise
-        std::shared_ptr<const DissasmUserPrototype> MakeGccMethodPrototype(std::string_view name, int32 highestRead, bool readsFirstArgument = false);
+        // through it first, `readsFirstArgument`: a result is written first), two more (that address, then this); null otherwise. A static
+        // method (`staticMethod`: its callers tell it) takes its parameters alone: the highest register read is the last of them
+        std::shared_ptr<const DissasmUserPrototype> MakeGccMethodPrototype(
+              std::string_view name, int32 highestRead, bool readsFirstArgument = false, bool staticMethod = false);
         // a type of parameter that takes 8 bytes of the stack in 32 bit code (__int64, double, LARGE_INTEGER, ...): two pushes
         bool IsWideX86Type(std::string_view type);
         // 32 bit: the pushes a known API takes from the stack when it returns (stdcall: its parameters, 8 byte ones twice); none for the C

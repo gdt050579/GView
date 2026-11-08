@@ -13751,7 +13751,7 @@ TEST_CASE("GccMethodsByTheirCode", "[Dissasm]Help")
         0xBF, 0x07, 0x00, 0x00, 0x00, // 0x1f: mov edi, 7                (static or not: not known)
         0xE8, 0x57, 0x00, 0x00, 0x00, // 0x24: call 0x80                 Foo::make(int)
         0xBE, 0x09, 0x00, 0x00, 0x00, // 0x29: mov esi, 9                (int)
-        0x48, 0x89, 0xDF,             // 0x2e: mov rdi, rbx              (this or a result)
+        0x48, 0x89, 0xDF,             // 0x2e: mov rdi, rbx              (this: Foo::set returns no address, 11b)
         0xE8, 0x6A, 0x00, 0x00, 0x00, // 0x31: call 0xa0                 Foo::set(int)
         0x48, 0x83, 0xC4, 0x20,       // 0x36: add rsp, 0x20
         0x5B,                         // 0x3a: pop rbx
@@ -13784,7 +13784,7 @@ TEST_CASE("GccMethodsByTheirCode", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x00000015  lea    rdi, ").ends_with("; result"));
     REQUIRE(FindListingLine(listing, "0x0000001f  mov    edi, 7").find(';') == std::string_view::npos);
     REQUIRE(FindListingLine(listing, "0x00000029  mov    esi, 9").ends_with("; int"));
-    REQUIRE(FindListingLine(listing, "0x0000002e  mov    rdi, rbx").find(';') == std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0000002e  mov    rdi, rbx").ends_with("; this")); // rax never written: no address of a result
 }
 
 TEST_CASE("GccParametersByValue", "[Dissasm]Help")
@@ -13809,7 +13809,7 @@ TEST_CASE("GccParametersByValue", "[Dissasm]Help")
     std::vector<unsigned char> file = {
         0x53,                         // 0x00: push rbx
         0xBE, 0x04, 0x00, 0x00, 0x00, // 0x01: mov esi, 4                (std::_Ios_Iostate)
-        0x48, 0x89, 0xDF,             // 0x06: mov rdi, rbx              (this or a result)
+        0x48, 0x89, 0xDF,             // 0x06: mov rdi, rbx              (this: clear returns no address, 11b)
         0xE8, 0x32, 0x00, 0x00, 0x00, // 0x09: call 0x40                 basic_ios::clear(std::_Ios_Iostate)
         0xBE, 0x03, 0x00, 0x00, 0x00, // 0x0e: mov esi, 3                (int: the double in xmm0)
         0x48, 0x89, 0xDF,             // 0x13: mov rdi, rbx              (this)
@@ -13841,7 +13841,7 @@ TEST_CASE("GccParametersByValue", "[Dissasm]Help")
     const std::string listing = dissasmInstance.GetListing();
     INFO(listing);
     REQUIRE(FindListingLine(listing, "0x00000001  mov    esi, 4").ends_with("; std::_Ios_Iostate"));
-    REQUIRE(FindListingLine(listing, "0x00000006  mov    rdi, rbx").find(';') == std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000006  mov    rdi, rbx").ends_with("; this")); // rax never written: no address of a result
     REQUIRE(FindListingLine(listing, "0x0000000e  mov    esi, 3").ends_with("; int"));
     REQUIRE(FindListingLine(listing, "0x00000013  mov    rdi, rbx").ends_with("; this"));
     REQUIRE(FindListingLine(listing, "0x0000001b  mov    ecx, 7").ends_with("; int"));
@@ -15377,4 +15377,146 @@ TEST_CASE("TypedArgumentsThroughAJump", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x00000008  mov    edx, 5").ends_with("; int"));
     REQUIRE(FindListingLine(listing, "0x0000000f  mov    edx, 7").ends_with("; int"));
     REQUIRE(FindListingLine(listing, "0x00000014  mov    rcx, rbx").ends_with("; this"));
+}
+
+TEST_CASE("GccStaticMethodsByTheirCallers", "[Dissasm]Help")
+{
+    // a GCC method whose callers write as many argument registers as its parameters: a static method (no this) when the blocks that start
+    // right after another call write that many (the registers of the call before are dead there): Foo::make(int) takes edi; Foo::put(int)
+    // has its blocks after a jcc only (esi set before it: the int, rdi this): nothing decided
+    std::vector<unsigned char> file = {
+        0xE8, 0x9B, 0x00, 0x00, 0x00, // 0x00: call 0xA0                 (sub_A0)
+        0xBF, 0x05, 0x00, 0x00, 0x00, // 0x05: mov edi, 5                (int)
+        0xE8, 0x31, 0x00, 0x00, 0x00, // 0x0a: call 0x40                 Foo::make(int)
+        0xBF, 0x07, 0x00, 0x00, 0x00, // 0x0f: mov edi, 7                (int)
+        0xE8, 0x27, 0x00, 0x00, 0x00, // 0x14: call 0x40                 Foo::make(int)
+        0xBE, 0x09, 0x00, 0x00, 0x00, // 0x19: mov esi, 9                (the int of put, before the jcc)
+        0x85, 0xC0,                   // 0x1e: test eax, eax
+        0x74, 0x19,                   // 0x20: je 0x3b
+        0x48, 0x89, 0xDF,             // 0x22: mov rdi, rbx              (this)
+        0xE8, 0x36, 0x00, 0x00, 0x00, // 0x25: call 0x60                 Foo::put(int)
+        0xBE, 0x0B, 0x00, 0x00, 0x00, // 0x2a: mov esi, 11
+        0x85, 0xC0,                   // 0x2f: test eax, eax
+        0x74, 0x08,                   // 0x31: je 0x3b
+        0x4C, 0x89, 0xE7,             // 0x33: mov rdi, r12              (this)
+        0xE8, 0x25, 0x00, 0x00, 0x00, // 0x36: call 0x60                 Foo::put(int)
+        0xC3,                         // 0x3b: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x89, 0xF8, 0xC3 }); // 0x40: mov eax, edi; ret
+    file.resize(0x60, 0xCC);
+    file.insert(file.end(), { 0x8B, 0x07, 0xC3 }); // 0x60: mov eax, dword ptr [rdi]; ret (the int not read)
+    file.resize(0xA0, 0xCC);
+    file.insert(file.end(), { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 }); // 0xA0: mov eax, 1; ret
+    file.resize(0xC0, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.systemV         = true;
+    layout.functionEntries = { { 0x40, { "Foo::make(int)", 3 } }, { 0x60, { "Foo::put(int)", 3 } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000005  mov    edi, 5").ends_with("; int"));
+    REQUIRE(FindListingLine(listing, "0x0000000f  mov    edi, 7").ends_with("; int"));
+    REQUIRE(FindListingLine(listing, "0x00000022  mov    rdi, rbx").find(';') == std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000033  mov    rdi, r12").find(';') == std::string_view::npos);
+
+    const auto make = MakeGccMethodPrototype("Foo::make(int)", 0, false, true);
+    REQUIRE(make != nullptr);
+    REQUIRE(make->details.params.size() == 1);
+    REQUIRE(std::string_view(make->details.params[0].type) == "int");
+    REQUIRE(MakeGccMethodPrototype("Foo::make(int)", 1, false, true) == nullptr); // a static method takes no this
+    REQUIRE(MakeGccMethodPrototype("Foo::size(long) const", 0, false, true) == nullptr); // a const method is no static one
+}
+
+TEST_CASE("GccMethodsReturningAnotherValue", "[Dissasm]Help")
+{
+    // a GCC method whose entry writes through rdi first (this, or the address of a class it returns: not told by the first use) and returns
+    // something else than rdi (xor eax, eax): no address of a result (a function returning a class in memory returns that address), this;
+    // one returning rdi (mov rax, rdi) or a copy of it (mov rbx, rdi ... mov rax, rbx) stays undecided
+    std::vector<unsigned char> file = {
+        0x48, 0x89, 0xDF,             // 0x00: mov rdi, rbx              (this)
+        0xBE, 0x05, 0x00, 0x00, 0x00, // 0x03: mov esi, 5                (int)
+        0xE8, 0x33, 0x00, 0x00, 0x00, // 0x08: call 0x40                 Foo::set(int)
+        0x48, 0x89, 0xDF,             // 0x0d: mov rdi, rbx              (this or a result)
+        0xBE, 0x07, 0x00, 0x00, 0x00, // 0x10: mov esi, 7                (int)
+        0xE8, 0x46, 0x00, 0x00, 0x00, // 0x15: call 0x60                 Foo::make(int)
+        0x48, 0x89, 0xDF,             // 0x1a: mov rdi, rbx              (this or a result)
+        0xBE, 0x09, 0x00, 0x00, 0x00, // 0x1d: mov esi, 9                (int)
+        0xE8, 0x59, 0x00, 0x00, 0x00, // 0x22: call 0x80                 Foo::copy(int)
+        0xC3,                         // 0x27: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x89, 0x37, 0x31, 0xC0, 0xC3 }); // 0x40: mov dword ptr [rdi], esi; xor eax, eax; ret
+    file.resize(0x60, 0xCC);
+    file.insert(file.end(), { 0x89, 0x37, 0x48, 0x89, 0xF8, 0xC3 }); // 0x60: mov dword ptr [rdi], esi; mov rax, rdi; ret
+    file.resize(0x80, 0xCC);
+    // 0x80: push rbx; mov rbx, rdi; mov dword ptr [rbx], esi; mov rax, rbx; pop rbx; ret
+    file.insert(file.end(), { 0x53, 0x48, 0x89, 0xFB, 0x89, 0x33, 0x48, 0x89, 0xD8, 0x5B, 0xC3 });
+    file.resize(0xA0, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.systemV         = true;
+    layout.functionEntries = { { 0x40, { "Foo::set(int)", 5 } }, { 0x60, { "Foo::make(int)", 6 } }, { 0x80, { "Foo::copy(int)", 11 } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000000  mov    rdi, rbx").ends_with("; this"));
+    REQUIRE(FindListingLine(listing, "0x00000003  mov    esi, 5").ends_with("; int"));
+    REQUIRE(FindListingLine(listing, "0x0000000d  mov    rdi, rbx").find(';') == std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000010  mov    esi, 7").ends_with("; int"));
+    REQUIRE(FindListingLine(listing, "0x0000001a  mov    rdi, rbx").find(';') == std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0000001d  mov    esi, 9").ends_with("; int"));
+}
+
+TEST_CASE("GccMethodsReturningAnotherValueOnABranch", "[Dissasm]Help")
+{
+    // every path of the entry of a GCC method: Foo::open(int) returns rdi on the path that falls through its jcc, 0 on the one it jumps to
+    // (basic_filebuf::open returns this or nullptr): no address of a result there, this; Foo::fill(int) loops (a jcc back) and returns rdi on
+    // every path: undecided
+    std::vector<unsigned char> file = {
+        0x48, 0x89, 0xDF,             // 0x00: mov rdi, rbx              (this)
+        0xBE, 0x05, 0x00, 0x00, 0x00, // 0x03: mov esi, 5                (int)
+        0xE8, 0x33, 0x00, 0x00, 0x00, // 0x08: call 0x40                 Foo::open(int)
+        0x48, 0x89, 0xDF,             // 0x0d: mov rdi, rbx              (this or a result)
+        0xBE, 0x07, 0x00, 0x00, 0x00, // 0x10: mov esi, 7                (int)
+        0xE8, 0x46, 0x00, 0x00, 0x00, // 0x15: call 0x60                 Foo::fill(int)
+        0xC3,                         // 0x1a: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), {
+                                  0x85, 0xF6,       // 0x40: test esi, esi
+                                  0x74, 0x06,       // 0x42: je 0x4a
+                                  0x89, 0x37,       // 0x44: mov dword ptr [rdi], esi
+                                  0x48, 0x89, 0xF8, // 0x46: mov rax, rdi
+                                  0xC3,             // 0x49: ret
+                                  0x31, 0xC0,       // 0x4a: xor eax, eax
+                                  0xC3,             // 0x4c: ret
+                            });
+    file.resize(0x60, 0xCC);
+    file.insert(file.end(), {
+                                  0x89, 0x37,       // 0x60: mov dword ptr [rdi], esi
+                                  0xFF, 0xCE,       // 0x62: dec esi
+                                  0x75, 0xFC,       // 0x64: jne 0x62
+                                  0x48, 0x89, 0xF8, // 0x66: mov rax, rdi
+                                  0xC3,             // 0x69: ret
+                            });
+    file.resize(0x80, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.systemV         = true;
+    layout.functionEntries = { { 0x40, { "Foo::open(int)", 13 } }, { 0x60, { "Foo::fill(int)", 10 } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000000  mov    rdi, rbx").ends_with("; this"));
+    REQUIRE(FindListingLine(listing, "0x00000003  mov    esi, 5").ends_with("; int"));
+    REQUIRE(FindListingLine(listing, "0x0000000d  mov    rdi, rbx").find(';') == std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000010  mov    esi, 7").ends_with("; int"));
 }

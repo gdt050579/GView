@@ -3157,7 +3157,7 @@ std::optional<uint32> GView::View::DissasmViewer::GetGccMethodParameters(std::st
 }
 
 std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::MakeGccMethodPrototype(
-      std::string_view name, int32 highestRead, bool readsFirstArgument)
+      std::string_view name, int32 highestRead, bool readsFirstArgument, bool staticMethod)
 {
     const auto parsed = ParseGccMethodName(name);
     if (!parsed.has_value())
@@ -3172,11 +3172,13 @@ std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::MakeGccM
     // a function of a namespace (std::filesystem::status, std::_Hash_bytes): no this; none or the address of what it returns before its
     // parameters (std::filesystem::space returns a space_info)
     const bool inNamespace = IsGccNamespace(scope);
-    if ((scope.empty() || inNamespace) && isConst)
+    if ((scope.empty() || inNamespace || staticMethod) && isConst)
         return nullptr;
-    int32 hidden = -1;
+    // a static method (std::locale::facet::_S_destroy_c_locale(__locale_struct*&)): no this, nothing before its parameters
+    const bool noThis = inNamespace || (staticMethod && !scope.empty());
+    int32 hidden      = -1;
     SystemVSlots slots;
-    for (int32 candidate = inNamespace ? 0 : 1; candidate <= 2; candidate++) {
+    for (int32 candidate = noThis ? 0 : 1; candidate <= (staticMethod ? 0 : 2); candidate++) {
         if ((candidate == 2 && (scope.empty() || inNamespace || returnInRegisters)) || (candidate == 1 && (scope.empty() || inNamespace) && returnInRegisters))
             continue;
         auto assigned    = AssignSystemVSlots(parsed->parameters, static_cast<uint32>(candidate));
@@ -3203,7 +3205,7 @@ std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::MakeGccM
         details.params.push_back({ "result", unnamed.c_str() });
         text += hidden == 2 ? "void* result, " : "void* result";
     }
-    if (inNamespace) {
+    if (noThis) {
         // no this
     } else if (hidden == 2 || isConst || (!scope.empty() && (returnInRegisters || readsFirstArgument))) { // the object read: no result written first
         details.params.push_back({ "this", thisType.c_str() });

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <numeric>
 #include <unordered_set>
 #include <set>
 #include <map>
@@ -3818,8 +3819,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (prototype && !prototype->details.params.empty() && !prototype->details.params[0].name[0] && !prototype->details.params[0].type[0]) {
                 uint64 passedTo = NO_TARGET;
                 const auto use  = FirstUseOfFirstArgument(start, functionEnds[index], passedTo);
-                if (use == FirstArgumentUse::Read)
-                    prototype = MakeGccMethodPrototype(name, highest, true); // this or a result: the object it reads
+                // this or a result: the object it reads; no address of a result returned
+                if (use == FirstArgumentUse::Read || ReturnsOtherThanFirstArgument(start, functionEnds[index]))
+                    prototype = MakeGccMethodPrototype(name, highest, true);
                 else if (use == FirstArgumentUse::PassedToCall)
                     undecided.push_back({ index, highest, passedTo });
             }
@@ -3849,7 +3851,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // the GCC methods the reads of their entry do not decide (an unused last parameter: std::string::_Rep::_M_destroy(std::allocator<char>
     // const&) reads rdi only): the highest argument register their callers write in the block of the call (through their j_ stubs too), as
     // the highest one read, when at least 4 in 5 of two or more calls agree and it is not below the one the entry reads; this or a result
-    // then as the reads of the entry decide (FirstUseOfFirstArgument)
+    // then as the reads of the entry decide (FirstUseOfFirstArgument). As many registers as the parameters: a static method, when the
+    // blocks that start right after another call (no label in them: every argument register written there) all write that many
     void DecideGccMethodsByCallers(const std::vector<UndecidedMethod>& unknown, std::vector<UndecidedMethod>& undecided)
     {
         constexpr uint64 MAX_BLOCK = 0x100; // the bytes decoded before a call
@@ -3859,6 +3862,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         for (size_t entry = 0; entry < unknown.size(); entry++)
             byName.emplace(TargetName(functionStarts[unknown[entry].index]), entry);
         std::vector<std::array<uint32, 7>> written(unknown.size(), std::array<uint32, 7>{}); // the calls by the highest register (-1 .. 5)
+        // the same of the calls whose block starts right after another call: the argument registers of the call before are dead there
+        std::vector<std::array<uint32, 7>> afterCall(unknown.size(), std::array<uint32, 7>{});
         std::unordered_map<uint64, size_t> entryOfTarget;                                    // a target -> its entry, SIZE_MAX: none
         cs_insn* insn = cs_malloc(detailHandle);
         if (!insn)
@@ -3884,8 +3889,17 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 from = std::max(from, flowRecords[position - 1].address + flowRecords[position - 1].size);
             if (from > record.address || record.address - from > MAX_BLOCK)
                 continue;
-            if (const auto highest = HighestArgumentWritten(insn, from, record.address); highest.has_value())
-                written[known->second][static_cast<size_t>(highest.value() + 1)]++;
+            const auto highest = HighestArgumentWritten(insn, from, record.address);
+            if (!highest.has_value())
+                continue;
+            written[known->second][static_cast<size_t>(highest.value() + 1)]++;
+            const auto& previous = flowRecords[position > 0 ? position - 1 : 0];
+            if (position > 0 && previous.kind == FlowKind::Call && from == previous.address + previous.size) {
+                const auto label = std::lower_bound(
+                      callsFound.begin(), callsFound.end(), codeStart + from, [](const auto& item, uint64 value) { return item.first < value; });
+                if (label == callsFound.end() || label->first > codeStart + record.address) // no jump reaches the block
+                    afterCall[known->second][static_cast<size_t>(highest.value() + 1)]++;
+            }
         }
         cs_free(insn, 1);
         for (size_t entry = 0; entry < unknown.size(); entry++) {
@@ -3905,12 +3919,15 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const uint64 start     = functionStarts[unknown[entry].index];
             const std::string name = TargetName(start);
             auto prototype         = MakeGccMethodPrototype(name, highest);
+            if (const auto& clean = afterCall[entry];
+                !prototype && highest >= 0 && clean[bestIndex] > 0 && clean[bestIndex] == std::accumulate(clean.begin(), clean.end(), 0u))
+                prototype = MakeGccMethodPrototype(name, highest, false, true); // a static method
             if (!prototype)
                 continue;
             if (!prototype->details.params.empty() && !prototype->details.params[0].name[0] && !prototype->details.params[0].type[0]) {
                 uint64 passedTo = NO_TARGET;
                 const auto use  = FirstUseOfFirstArgument(start, functionEnds[unknown[entry].index], passedTo);
-                if (use == FirstArgumentUse::Read)
+                if (use == FirstArgumentUse::Read || ReturnsOtherThanFirstArgument(start, functionEnds[unknown[entry].index]))
                     prototype = MakeGccMethodPrototype(name, highest, true);
                 else if (use == FirstArgumentUse::PassedToCall)
                     undecided.push_back({ unknown[entry].index, highest, passedTo });
@@ -4019,6 +4036,125 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
         cs_free(insn, 1);
         return reads.has_value() ? (reads.value() ? FirstArgumentUse::Read : FirstArgumentUse::Write) : use;
+    }
+
+    // System V x64: a ret of the entry of a function returns something else than its first argument (rdi): a function that returns a class
+    // in memory returns the address it got at every ret (this for a method whose first use of rdi decides nothing: a setter writes through it
+    // first; basic_filebuf::open returns this or nullptr). The paths of the entry: both sides of its conditional jumps, its direct jumps
+    // inside the function, its calls (not the ones that do not return); a state (address, registers holding rdi, rax) walked once, 256
+    // instructions at most over all the paths. rax never written or written from no register holding rdi (xor eax, eax; sete al; mov eax,
+    // dword ptr [rbx + 0x10]) decides; a copy of rdi (mov rax, rbx after mov rbx, rdi), anything computed from it, a load from the stack
+    // (-O0 keeps rdi in a slot of the frame), the result of a call do not
+    bool ReturnsOtherThanFirstArgument(uint64 start, uint64 end)
+    {
+        enum class Returned : uint8 { Nothing, First, Other, NotKnown };
+        struct PathState {
+            uint64 address;
+            uint32 holders; // the families of the registers that hold it
+            Returned rax;
+        };
+        constexpr uint32 MAX_INSTRUCTIONS = 256;
+        constexpr uint64 MAX_BYTES        = 0x1000;
+        // the families of GetX64RegisterFamily: rax, rdi; rbx, rbp, r12 .. r15
+        constexpr int RAX = 0, FIRST = 7;
+        constexpr uint32 CALLEE_SAVED = (1u << 3) | (1u << 5) | (1u << 12) | (1u << 13) | (1u << 14) | (1u << 15);
+        const auto data =
+              start < end ? obj->GetData().Get(codeStart + start, static_cast<uint32>(std::min<uint64>(end - start, MAX_BYTES)), false) : BufferView{};
+        cs_insn* insn = data.IsValid() && data.GetLength() > 0 ? cs_malloc(detailHandle) : nullptr;
+        if (!insn)
+            return false;
+        const uint64 limit = start + data.GetLength();
+        std::vector<PathState> pending{ { start, 1u << FIRST, Returned::Nothing } };
+        std::set<std::tuple<uint64, uint32, Returned>> seen;
+        bool returned = false;
+        uint32 count  = 0;
+        while (!pending.empty() && !returned && count < MAX_INSTRUCTIONS) {
+            const PathState state = pending.back();
+            pending.pop_back();
+            uint64 address     = state.address;
+            uint32 holders     = state.holders;
+            Returned rax       = state.rax;
+            const uint8* bytes = data.GetData() + (address - start);
+            size_t size        = static_cast<size_t>(limit - address);
+            const auto held    = [&holders](unsigned int reg) {
+                const int family = GetX64RegisterFamily(reg);
+                return family >= 0 && family < 32 && (holders & (1u << family)) != 0;
+            };
+            const auto jumpTo = [&](uint64 target) { // a direct branch inside the function
+                bytes   = data.GetData() + (target - start);
+                size    = static_cast<size_t>(limit - target);
+                address = target;
+            };
+            while (count < MAX_INSTRUCTIONS && address < limit && seen.insert({ address, holders, rax }).second &&
+                   cs_disasm_iter(detailHandle, &bytes, &size, &address, insn)) {
+                count++;
+                const auto flow = GetInstructionFlow(*insn, DissasmArch::X64);
+                if (flow == X86Flow::Return) {
+                    returned = rax == Returned::Nothing || rax == Returned::Other;
+                    break;
+                }
+                if (flow == X86Flow::Interrupt || insn->id == X86_INS_UD2 || insn->id == X86_INS_HLT || !insn->detail)
+                    break;
+                if (flow == X86Flow::Jump || flow == X86Flow::ConditionalJump) {
+                    const auto operands = GetInstructionOperands(*insn, DissasmArch::X64, labelBase);
+                    const uint64 target = operands.directTarget.has_value() ? operands.directTarget.value() & addressMask : NO_TARGET;
+                    const bool inside   = target >= start && target < limit;
+                    if (flow == X86Flow::ConditionalJump) {
+                        if (inside)
+                            pending.push_back({ target, holders, rax });
+                        continue;
+                    }
+                    if (!inside)
+                        break; // a tail call, a jump through a table
+                    jumpTo(target);
+                    continue;
+                }
+                if (flow == X86Flow::Call) {
+                    if (noReturnCalls.contains(insn->address))
+                        break;
+                    holders &= CALLEE_SAVED;
+                    rax = Returned::NotKnown;
+                    continue;
+                }
+                const auto& x86 = insn->detail->x86;
+                if (insn->id == X86_INS_MOV && x86.op_count == 2 && x86.operands[0].type == X86_OP_REG && x86.operands[0].size == 8 &&
+                    x86.operands[1].type == X86_OP_REG && held(x86.operands[1].reg)) { // a copy: mov rbx, rdi
+                    const int family = GetX64RegisterFamily(x86.operands[0].reg);
+                    if (family >= 0 && family < 32) {
+                        holders |= 1u << family;
+                        if (family == RAX)
+                            rax = Returned::First;
+                        continue;
+                    }
+                }
+                bool fromIt    = false; // computed from a register holding it (lea rax, [rdi + 8]; add rax, rdi; cmovne rax, rbx)
+                bool fromStack = insn->id == X86_INS_POP;
+                for (uint8 index = 0; index < x86.op_count; index++) {
+                    const auto& op = x86.operands[index];
+                    if (op.type == X86_OP_REG && (op.access & CS_AC_READ) && held(op.reg))
+                        fromIt = true;
+                    if (op.type == X86_OP_MEM && insn->id == X86_INS_LEA &&
+                        ((op.mem.base != X86_REG_INVALID && held(op.mem.base)) || (op.mem.index != X86_REG_INVALID && held(op.mem.index))))
+                        fromIt = true;
+                    if (op.type == X86_OP_MEM && (op.access & CS_AC_READ) && (op.mem.base == X86_REG_RSP || op.mem.base == X86_REG_RBP))
+                        fromStack = true;
+                }
+                cs_regs read, write;
+                uint8 readCount = 0, writeCount = 0;
+                if (cs_regs_access(detailHandle, insn, read, &readCount, write, &writeCount) != CS_ERR_OK)
+                    break;
+                for (uint8 index = 0; index < writeCount; index++) {
+                    const int family = GetX64RegisterFamily(write[index]);
+                    if (family < 0 || family >= 32)
+                        continue;
+                    if (family == RAX)
+                        rax = fromIt || fromStack ? Returned::NotKnown : Returned::Other;
+                    holders &= ~(1u << family);
+                }
+            }
+        }
+        cs_free(insn, 1);
+        return returned;
     }
 
     // System V x64: the highest argument register (0: rdi, rsi, rdx, rcx, r8, 5: r9) the entry of a function reads before writing it, on the
