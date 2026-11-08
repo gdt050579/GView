@@ -89,6 +89,15 @@ std::string SubjectForToken(const SecureString& token);
 bool IsValidItemName(std::string_view name) noexcept;
 // basename only, no separators / reserved names / control characters; never empty
 std::string SanitizeFileName(std::string_view name);
+// A single file-system-safe path component (folder or file name) built from untrusted UTF-8 text, valid on Windows,
+// Linux and macOS: path separators, characters Windows rejects (< > : " | ? *), control characters and invalid UTF-8
+// become '_'; leading/trailing dots and spaces are removed (so "." / ".." / hidden names cannot come out of it); Windows
+// device names (CON, PRN, AUX, NUL, COM0-9, LPT0-9, with or without an extension) get a '_' prefix; a longer result is
+// cut to maxBytes (keeping a short extension) without splitting a UTF-8 sequence. Returns fallback when nothing usable
+// remains. Idempotent: sanitizing its own output returns it unchanged.
+std::string SanitizePathComponent(std::string_view text, std::string_view fallback, size_t maxBytes = 128);
+// Folder name of a course server: "https://user@Course.Example.edu:8443/api" -> "course.example.edu_8443"
+std::string ServerFolderName(std::string_view serverUrl);
 // replaces control characters (except \n and \t when multiline) and truncates
 std::string SanitizeDisplayText(std::string_view text, size_t maxLen, bool multiline);
 

@@ -768,38 +768,143 @@ bool IsValidItemName(std::string_view name) noexcept
     return true;
 }
 
+namespace
+{
+    // length of the valid UTF-8 sequence starting at text[pos], 0 when it is invalid (overlong, surrogate, > U+10FFFF)
+    size_t Utf8SequenceLength(std::string_view text, size_t pos) noexcept
+    {
+        const auto at = [&](size_t i) { return static_cast<unsigned char>(text[i]); };
+        const unsigned char c = at(pos);
+        if (c < 0x80)
+            return 1;
+        size_t len;
+        uint32 cp;
+        if ((c & 0xE0) == 0xC0)
+            len = 2, cp = c & 0x1F;
+        else if ((c & 0xF0) == 0xE0)
+            len = 3, cp = c & 0x0F;
+        else if ((c & 0xF8) == 0xF0)
+            len = 4, cp = c & 0x07;
+        else
+            return 0;
+        if (pos + len > text.size())
+            return 0;
+        for (size_t i = 1; i < len; i++)
+        {
+            if ((at(pos + i) & 0xC0) != 0x80)
+                return 0;
+            cp = (cp << 6) | (at(pos + i) & 0x3F);
+        }
+        static constexpr uint32 MIN_FOR_LENGTH[] = { 0, 0, 0x80, 0x800, 0x10000 };
+        if (cp < MIN_FOR_LENGTH[len] || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF))
+            return 0;
+        return len;
+    }
+
+    // longest prefix of s that is at most maxBytes long and does not end inside a UTF-8 sequence
+    std::string_view Utf8Prefix(std::string_view s, size_t maxBytes) noexcept
+    {
+        if (s.size() <= maxBytes)
+            return s;
+        size_t end = maxBytes;
+        while (end > 0 && (static_cast<unsigned char>(s[end]) & 0xC0) == 0x80)
+            end--;
+        return s.substr(0, end);
+    }
+
+    void TrimDotsAndSpaces(std::string& r)
+    {
+        size_t start = 0;
+        while (start < r.size() && (r[start] == '.' || r[start] == ' '))
+            start++;
+        r.erase(0, start);
+        while (!r.empty() && (r.back() == '.' || r.back() == ' '))
+            r.pop_back();
+    }
+
+    // Windows device names, checked on the part before the first dot ("nul.txt" is the device too)
+    bool IsWindowsDeviceName(std::string_view name)
+    {
+        std::string base(name.substr(0, name.find('.')));
+        while (!base.empty() && base.back() == ' ')
+            base.pop_back();
+        std::transform(base.begin(), base.end(), base.begin(), [](char c) { return ToLowerAscii(c); });
+        static constexpr std::string_view RESERVED[] = { "con", "prn", "aux", "nul", "conin$", "conout$" };
+        if (std::find(std::begin(RESERVED), std::end(RESERVED), base) != std::end(RESERVED))
+            return true;
+        return base.size() == 4 && (base.starts_with("com") || base.starts_with("lpt")) && base[3] >= '0' && base[3] <= '9';
+    }
+} // namespace
+
+std::string SanitizePathComponent(std::string_view text, std::string_view fallback, size_t maxBytes)
+{
+    if (maxBytes < 8)
+        maxBytes = 8;
+    text = text.substr(0, std::min<size_t>(text.size(), 4096)); // hostile input: bound the work
+    std::string r;
+    r.reserve(std::min(text.size(), maxBytes + 8));
+    for (size_t i = 0; i < text.size();)
+    {
+        const unsigned char c = static_cast<unsigned char>(text[i]);
+        const size_t len      = Utf8SequenceLength(text, i);
+        if (len == 0)
+        {
+            r.push_back('_'); // invalid UTF-8 (Windows cannot convert it to a wide path)
+            i++;
+            continue;
+        }
+        if (len == 1 && (c < 0x20 || c == 0x7F || c == '/' || c == '\\' || c == '<' || c == '>' || c == ':' || c == '"' || c == '|' ||
+                         c == '?' || c == '*'))
+            r.push_back('_');
+        else
+            r.append(text.substr(i, len));
+        i += len;
+    }
+    TrimDotsAndSpaces(r);
+    if (r.size() > maxBytes)
+    {
+        // keep a short extension ("very long name....exe"): it decides how the file is opened
+        const size_t dot = r.rfind('.');
+        const bool keepExt = dot != std::string::npos && dot > 0 && r.size() - dot <= 16 && r.size() - dot <= maxBytes / 2;
+        std::string ext    = keepExt ? r.substr(dot) : std::string();
+        std::string stem(Utf8Prefix(std::string_view(r).substr(0, r.size() - ext.size()), maxBytes - ext.size()));
+        TrimDotsAndSpaces(stem);
+        r = stem.empty() ? std::string(Utf8Prefix(r, maxBytes)) : stem + ext;
+        TrimDotsAndSpaces(r);
+    }
+    if (!r.empty() && IsWindowsDeviceName(r))
+    {
+        r.insert(r.begin(), '_');
+        if (r.size() > maxBytes)
+        {
+            r = std::string(Utf8Prefix(r, maxBytes));
+            TrimDotsAndSpaces(r);
+        }
+    }
+    if (r.empty())
+        return std::string(fallback);
+    return r;
+}
+
 std::string SanitizeFileName(std::string_view name)
 {
     const size_t sep = name.find_last_of("/\\");
     if (sep != std::string_view::npos)
         name = name.substr(sep + 1);
-    std::string r;
-    r.reserve(std::min<size_t>(name.size(), 128));
-    for (unsigned char c : name)
-    {
-        if (r.size() >= 128)
-            break;
-        if (c < 0x20 || c == 0x7F || c == '<' || c == '>' || c == ':' || c == '"' || c == '|' || c == '?' || c == '*')
-            r.push_back('_');
-        else
-            r.push_back(static_cast<char>(c));
-    }
-    while (!r.empty() && (r.front() == '.' || r.front() == ' '))
-        r.erase(r.begin());
-    while (!r.empty() && (r.back() == '.' || r.back() == ' '))
-        r.pop_back();
-    if (r.empty())
-        return "task.bin";
-    // Windows reserved device names (checked on the part before the first dot)
-    std::string base = r.substr(0, r.find('.'));
-    std::transform(base.begin(), base.end(), base.begin(), [](char c) { return ToLowerAscii(c); });
-    static constexpr std::string_view RESERVED[] = { "con", "prn", "aux", "nul" };
-    bool reserved = std::find(std::begin(RESERVED), std::end(RESERVED), base) != std::end(RESERVED);
-    if (!reserved && base.size() == 4 && (base.starts_with("com") || base.starts_with("lpt")) && base[3] >= '0' && base[3] <= '9')
-        reserved = true;
-    if (reserved)
-        r.insert(r.begin(), '_');
-    return r;
+    return SanitizePathComponent(name, "task.bin", 128);
+}
+
+std::string ServerFolderName(std::string_view serverUrl)
+{
+    std::string_view host = serverUrl;
+    if (const size_t scheme = host.find("://"); scheme != std::string_view::npos)
+        host = host.substr(scheme + 3);
+    host = host.substr(0, host.find_first_of("/?#"));
+    if (const size_t at = host.rfind('@'); at != std::string_view::npos)
+        host = host.substr(at + 1); // never put user info in a folder name
+    std::string h(host);
+    std::transform(h.begin(), h.end(), h.begin(), [](char c) { return ToLowerAscii(c); });
+    return SanitizePathComponent(h, "server", 64); // the ':' before a port becomes '_'
 }
 
 std::string SanitizeDisplayText(std::string_view text, size_t maxLen, bool multiline)

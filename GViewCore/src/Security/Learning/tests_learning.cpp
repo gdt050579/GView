@@ -2,6 +2,7 @@
 // No network: an in-process FakeTransport plays the course server; policies are signed with a fresh Ed25519 key.
 
 #include "Learning/LearningSession.hpp"
+#include "Learning/TaskFiles.hpp"
 
 #include <catch.hpp>
 
@@ -969,6 +970,164 @@ TEST_CASE("Learning: file mode atomic write", "[learning][content]")
     REQUIRE(SanitizeFileName("CON.txt") == "_CON.txt");
     REQUIRE(SanitizeFileName("..") == "task.bin");
     REQUIRE(SanitizeFileName("a<b>:c|d?.exe") == "a_b__c_d_.exe");
+    std::filesystem::remove_all(dir, ec);
+}
+
+TEST_CASE("Learning: path component sanitizing", "[learning][content]")
+{
+    const auto S = [](std::string_view s) { return SanitizePathComponent(s, "fallback", 32); };
+    REQUIRE(S("Lab 3") == "Lab 3");
+    REQUIRE(S("Lab 3/4") == "Lab 3_4"); // separators never survive (a folder name keeps both parts)
+    REQUIRE(S("..\\..\\x") == "_.._x");
+    REQUIRE(S("..") == "fallback");
+    REQUIRE(S(" .hidden. ") == "hidden");
+    REQUIRE(S("") == "fallback");
+    REQUIRE(S("nul") == "_nul");
+    REQUIRE(S("COM7.txt") == "_COM7.txt");
+    REQUIRE(S("conin$") == "_conin$");
+    REQUIRE(S("console") == "console");
+    REQUIRE(S("a\tb\x7F" "c") == "a_b_c");
+    REQUIRE(S("Săptămâna 3") == "Săptămâna 3");           // valid UTF-8 is kept
+    REQUIRE(S("bad\xC3(\xFF") == "bad_(_");                 // invalid UTF-8 becomes '_'
+    REQUIRE(S("\xED\xA0\x80" "x") == "___x");               // UTF-16 surrogate encoded in UTF-8
+    REQUIRE(S("\xC0\xAF") == "__");                          // overlong '/'
+    // long names: cut on a UTF-8 boundary, the extension is kept
+    const std::string longName = std::string(40, 'a') + ".exe";
+    REQUIRE(S(longName) == std::string(28, 'a') + ".exe");
+    std::string accents;
+    for (int i = 0; i < 20; i++)
+        accents += "\xC4\x83"; // U+0103, two bytes each
+    const std::string cut = S(accents);
+    REQUIRE(cut.size() == 32);
+    REQUIRE(cut == accents.substr(0, 32));
+    REQUIRE(SanitizePathComponent(accents + "b", "x", 31).size() == 30); // never half a character
+    // idempotent: the store relies on it to compare names
+    for (const std::string_view s : { "a<b>:c", "CON.txt", "  x  ", "Săptămâna/3", "bad\xC3(" })
+        REQUIRE(S(S(s)) == S(s));
+
+    REQUIRE(ServerFolderName("https://rzaharia.dev") == "rzaharia.dev");
+    REQUIRE(ServerFolderName("https://User:pw@Course.Example.EDU:8443/api/v2?x=1") == "course.example.edu_8443");
+    REQUIRE(ServerFolderName("http://127.0.0.1:8770") == "127.0.0.1_8770");
+    REQUIRE(ServerFolderName("http://[::1]:8770/") == "[__1]_8770");
+    REQUIRE(ServerFolderName("") == "server");
+    REQUIRE(ServerFolderName("https://../") == "server");
+
+    const auto folder = TaskFolder("/base", "https://rzaharia.dev", "Lab 5: Heap/Stack");
+    REQUIRE(folder.filename() == "Lab 5_ Heap_Stack");
+    REQUIRE(folder.parent_path().filename() == "rzaharia.dev");
+    REQUIRE(TaskFolder("/base", "https://rzaharia.dev", "..").filename() == "Course");
+}
+
+TEST_CASE("Learning: task file store", "[learning][content]")
+{
+    const auto dir = std::filesystem::temp_directory_path() / "gview_learning_test_store";
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    const auto readAll = [](const std::filesystem::path& p) {
+        std::ifstream f(p, std::ios::binary);
+        return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    };
+    const auto overwrite = [](const std::filesystem::path& p, std::string_view text) {
+        std::ofstream f(p, std::ios::binary | std::ios::trunc);
+        f.write(text.data(), static_cast<std::streamsize>(text.size()));
+    };
+    using State             = TaskFileStore::LocalState;
+    const std::string v1    = "version one";
+    const std::string v2    = "version two";
+    const std::string other = "another task";
+
+    std::filesystem::path p1;
+    {
+        TaskFileStore store(dir);
+        REQUIRE_FALSE(store.FindUpToDate("p1", Sha256Hex(v1)).has_value());
+        auto plan = store.PlanFor("p1", "task.exe", Sha256Hex(v1));
+        REQUIRE(plan.state == State::Missing);
+        REQUIRE(plan.file == "task.exe");
+        REQUIRE(store.Store(plan, "p1", BufferView(v1), Sha256Hex(v1), 1, p1).ok);
+        REQUIRE(readAll(p1) == v1);
+
+        // another item delivering the same file name (any case) gets its own file
+        auto planOther = store.PlanFor("p2", "TASK.EXE", Sha256Hex(other));
+        REQUIRE(planOther.state == State::Missing);
+        REQUIRE(planOther.file == "p2-TASK.EXE");
+        std::filesystem::path p2;
+        REQUIRE(store.Store(planOther, "p2", BufferView(other), Sha256Hex(other), 1, p2).ok);
+        REQUIRE(readAll(p1) == v1);
+        REQUIRE(readAll(p2) == other);
+    }
+    {
+        // a new store reads the manifest back
+        TaskFileStore store(dir);
+        REQUIRE(store.FindUpToDate("p1", Sha256Hex(v1)) == p1);
+        REQUIRE(store.RecordedVersion("p1") == 1);
+        REQUIRE(store.KnownFile("p2").has_value());
+        REQUIRE_FALSE(store.FindUpToDate("p1", Sha256Hex(v2)).has_value());
+        // same content on disk and on the server
+        REQUIRE(store.PlanFor("p1", "renamed.exe", Sha256Hex(v1)).state == State::SameAsServer);
+        // unchanged on disk, new version on the server: replace without asking (the item keeps its file name)
+        auto plan = store.PlanFor("p1", "renamed.exe", Sha256Hex(v2));
+        REQUIRE(plan.state == State::Outdated);
+        REQUIRE(plan.path == p1);
+        std::filesystem::path out;
+        REQUIRE(store.Store(plan, "p1", BufferView(v2), Sha256Hex(v2), 2, out).ok);
+        REQUIRE(readAll(p1) == v2);
+        REQUIRE(store.RecordedVersion("p1") == 2);
+    }
+    {
+        // the student changed the file: Modified, even when the server version changes again
+        overwrite(p1, "patched by the student");
+        TaskFileStore store(dir);
+        REQUIRE_FALSE(store.FindUpToDate("p1", Sha256Hex(v2)).has_value());
+        auto plan = store.PlanFor("p1", "task.exe", Sha256Hex(v2));
+        REQUIRE(plan.state == State::Modified);
+        store.Keep(plan, "p1", Sha256Hex(v2), 2); // "No": keep the student's file
+        REQUIRE(store.PlanFor("p1", "task.exe", Sha256Hex(v2)).state == State::Modified);
+        REQUIRE(store.PlanFor("p1", "task.exe", Sha256Hex("v3")).state == State::Modified);
+        REQUIRE(readAll(p1) == "patched by the student");
+    }
+    {
+        // a file GView did not record (no manifest entry) is never taken for the server version
+        overwrite(dir / "foreign.bin", "unrelated");
+        TaskFileStore store(dir);
+        auto plan = store.PlanFor("p3", "foreign.bin", Sha256Hex(v1));
+        REQUIRE(plan.state == State::Modified);
+        store.Keep(plan, "p3", Sha256Hex(v1), 7); // "No": the bytes kept are not the server's version 7
+        REQUIRE(store.RecordedVersion("p3") == 0);
+        REQUIRE(store.PlanFor("p3", "foreign.bin", Sha256Hex(v1)).state == State::Modified);
+        // "x" and "x.part" (the temporary file of a write) never belong to two items
+        std::filesystem::path part;
+        auto planPart = store.PlanFor("p6", "notes.part", Sha256Hex(v1));
+        REQUIRE(store.Store(planPart, "p6", BufferView(v1), Sha256Hex(v1), 1, part).ok);
+        REQUIRE(store.PlanFor("p7", "notes", Sha256Hex(v2)).file == "p7-notes");
+        REQUIRE(store.PlanFor("p8", "NOTES.PART.part", Sha256Hex(v2)).file == "p8-NOTES.PART.part");
+        overwrite(dir / "same.bin", v1);
+        auto same = store.PlanFor("p4", "same.bin", Sha256Hex(v1));
+        REQUIRE(same.state == State::SameAsServer);
+        store.Keep(same, "p4", Sha256Hex(v1), 1);
+        REQUIRE(store.FindUpToDate("p4", Sha256Hex(v1)).has_value());
+        // the manifest itself can never be a task file
+        REQUIRE(store.PlanFor("p5", ".gview-items.json", Sha256Hex(v1)).file != TASK_MANIFEST_FILE_NAME);
+    }
+    {
+        // a tampered manifest: bad names and paths are ignored (it is hidden on Windows: delete it before rewriting it)
+        std::filesystem::remove(dir / TASK_MANIFEST_FILE_NAME, ec);
+        overwrite(
+              dir / TASK_MANIFEST_FILE_NAME,
+              R"({"items":{"p1":{"file":"../../evil","sha256":"00"},"bad name":{"file":"x"},"p9":{"file":"ok.bin","itemVersion":-1},)"
+              R"("p3":{"file":"dup.bin","itemVersion":3},"p4":{"file":"DUP.BIN","itemVersion":4}}})");
+        TaskFileStore store(dir);
+        REQUIRE_FALSE(store.KnownFile("p1").has_value());
+        REQUIRE(store.RecordedVersion("p9") == 0);
+        REQUIRE(store.RecordedVersion("p3") == 3);
+        REQUIRE(store.RecordedVersion("p4") == 0); // a second item claiming the same file is dropped
+        REQUIRE(store.PlanFor("p4", "DUP.BIN", Sha256Hex(v1)).file == "p4-DUP.BIN");
+        auto plan = store.PlanFor("p1", "task.exe", Sha256Hex(v1));
+        REQUIRE(plan.path.parent_path() == dir);
+        std::filesystem::remove(dir / TASK_MANIFEST_FILE_NAME, ec);
+        overwrite(dir / TASK_MANIFEST_FILE_NAME, "not json");
+        TaskFileStore damaged(dir);
+        REQUIRE_FALSE(damaged.KnownFile("p2").has_value());
+    }
     std::filesystem::remove_all(dir, ec);
 }
 

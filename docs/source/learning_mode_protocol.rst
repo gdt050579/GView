@@ -76,7 +76,7 @@ Key                                 Meaning
 ``ServerConnectionString``          Saved only after a *successful, verified* connect; used to reconnect on open.
 ``PolicyPublicKey``                 64 hex chars; used when the connection string has no key (v1).
 ``LearningAllowPlainHttpLocalhost`` ``true``/``false`` (default ``false``), see above.
-``LearningDownloadFolder``          Default folder for ``file`` deliveries (empty = ``<Documents>/GView/<week>``).
+``LearningDownloadFolder``          Base folder for ``file`` deliveries (empty = ``<Documents>/GView``), see `File mode`_.
 ``LearningTrustedLaunchOrigins``    Web build only: course servers approved for the one-click launch (space separated
                                     origins, written after the first *Connect* of the trust prompt; see section 17).
 ``Key.LearningSubmitFlag``          Shortcut of "Submit flag for this task" in a task window (default Ctrl+Alt+F).
@@ -296,9 +296,28 @@ default, ordinary heap), parser/viewer-derived structures (strings, disassembly 
 Pinning can fail silently (Windows working-set quota, Linux ``RLIMIT_MEMLOCK``); content is then still wiped but may
 have been paged.
 
-File mode: the student picks the destination in a Save dialog (default ``LearningDownloadFolder`` or
-``<Documents>/GView/<week>``); the content is written to ``<name>.part``, re-hashed from disk, then atomically moved
-into place (``MoveFileExW(REPLACE_EXISTING|WRITE_THROUGH)`` / ``rename``). Any failure removes the ``.part`` file.
+File mode
+^^^^^^^^^
+
+There is no Save dialog. A delivered file goes to ``<base>/<server>/<week>/<file>``: ``<base>`` is
+``LearningDownloadFolder`` or ``<Documents>/GView``, ``<server>`` the host of the server URL (``course.example.edu``,
+a port becomes ``_8443``), ``<week>`` the week name and ``<file>`` the delivered file name. Every component comes from
+the server and is made safe for Windows, Linux and macOS (``SanitizePathComponent``: separators, ``<>:"|?*``, control
+characters and invalid UTF-8 become ``_``; leading/trailing dots and spaces are dropped; device names such as ``CON``
+get a ``_`` prefix; long names are cut on a UTF-8 boundary, keeping the extension).
+
+Each week folder holds a manifest, ``.gview-items.json`` (hidden on Windows), mapping every item to its file and to the
+SHA-256 of the version GView wrote (``TaskFiles.hpp``):
+
+* a file name already owned by another item (compared case-insensitively) is prefixed with the item name
+  (``p2-task.exe``); item names are unique on a server, so weeks whose names sanitize alike cannot collide either;
+* opening an item whose local copy still hashes to the catalogue ``sha256`` opens that copy without a download;
+* otherwise the item is downloaded and compared: same content - the local copy is opened; local copy unchanged since
+  GView wrote it but the server has a new version - it is replaced; local copy changed (or a file GView did not write
+  is in the way) - the student is asked whether to replace it with the server version or open it as it is.
+
+Writes go to ``<name>.part``, are re-hashed from disk, then atomically moved into place
+(``MoveFileExW(REPLACE_EXISTING|WRITE_THROUGH)`` / ``rename``). Any failure removes the ``.part`` file.
 
 Secrets: the access token is held in a ``SecureString`` (wiped allocator) and the content key in a ``LockedBuffer``;
 both are erased by *End session* and at exit. libcurl's own copy of the header list is freed without wiping, the

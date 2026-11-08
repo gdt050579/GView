@@ -557,7 +557,7 @@ Utils::GStatus LearningSession::ApplyConnectResult(ConnectionInfo&& newInfo, std
                     "). Tasks cannot be opened. Use the Windows SDL frontend or contact your teacher.");
         return Utils::GStatus::Error(statusMessage);
     }
-    SetState(SessionState::Active, "Connected. Course policy verified and applied.");
+    SetState(SessionState::Active, std::string(ACTIVE_STATUS_MESSAGE));
     return Utils::GStatus::Ok();
 }
 

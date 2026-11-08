@@ -106,7 +106,7 @@ Persistent storage
 
 Everything under the home folder (``/home/web_user``) is kept: the files given to the page, the files GView writes
 next to them (Dropper output, disassembly caches, exports), the Learning task files saved in ``file`` mode
-(``Documents/GView/<week>``). ``/tmp`` and the rest of the in-memory file system are not.
+(``Documents/GView/<server>/<week>``). ``/tmp`` and the rest of the in-memory file system are not.
 
 * **Where.** In the storage of the site: the Origin Private File System for the content, IndexedDB for the list of
   files. Every file is encrypted with AES-256-GCM in 1 MiB chunks under a key that the page cannot export: live

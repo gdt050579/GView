@@ -185,7 +185,7 @@ std::string PathToUtf8(const std::filesystem::path& p)
     return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
 }
 
-std::filesystem::path DefaultDownloadFolder(std::string_view configuredFolder, std::string_view weekName)
+std::filesystem::path DownloadBaseFolder(std::string_view configuredFolder)
 {
     std::filesystem::path base;
     if (!configuredFolder.empty())
@@ -206,8 +206,7 @@ std::filesystem::path DefaultDownloadFolder(std::string_view configuredFolder, s
         if (base.empty())
             base = std::filesystem::current_path() / "GView";
     }
-    const std::string week = SanitizeFileName(weekName.empty() ? std::string_view("Course") : weekName);
-    return base / PathFromUtf8(week);
+    return base;
 }
 
 Utils::GStatus WriteFileAtomic(
