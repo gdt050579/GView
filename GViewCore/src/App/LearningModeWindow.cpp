@@ -230,6 +230,68 @@ class LinkDialog : public Window
     }
 };
 
+#ifdef BUILD_FOR_WASM
+// ---------------------------------------------------------------- launch link of the web build
+// [GView] LearningTrustedLaunchOrigins: the course servers this browser connected to through a launch link (not secret)
+constexpr std::string_view TRUSTED_LAUNCH_ORIGINS_KEY = "LearningTrustedLaunchOrigins";
+
+std::string TrustedLaunchOrigins()
+{
+    auto ini = AppCUI::Application::GetAppSettings();
+    if (!ini)
+        return {};
+    auto sect = ini->GetSection("GView");
+    if (!sect.Exists())
+        return {};
+    auto v = sect.GetValue(TRUSTED_LAUNCH_ORIGINS_KEY).AsStringView();
+    return v.has_value() ? std::string(*v) : std::string();
+}
+
+void TrustLaunchOrigin(std::string_view origin)
+{
+    auto ini = AppCUI::Application::GetAppSettings();
+    if (!ini)
+        return;
+    (*ini)["GView"][TRUSTED_LAUNCH_ORIGINS_KEY] = Learning::OriginListAdd(TrustedLaunchOrigins(), origin);
+    AppCUI::Application::SaveAppSettings(); // mirrored into the localStorage of the page by BrowserHost.cpp
+}
+
+void ForgetSavedConnectionString()
+{
+    GView::App::Browser::Secrets::Remove(GView::App::Browser::Secrets::LEARNING_CONNECTION);
+}
+
+// "Connect to the course server <host>?" - asked once per server origin and browser: a crafted link
+// (#launch=x&server=https://attacker) must not silently point GView at another server
+class LaunchTrustDialog : public Window
+{
+  public:
+    explicit LaunchTrustDialog(std::string_view host) : Window("Course server", "d:c,w:76,h:9", WindowFlags::None)
+    {
+        const std::string question = "Connect to the course server " + std::string(host) + "?";
+        Factory::Label::Create(this, question, "l:2,t:1,r:2,h:1");
+        Factory::Label::Create(this, "Only continue if you opened GView from your course page.", "l:2,t:3,r:2,h:1");
+        auto connect = Factory::Button::Create(this, "&Connect", "l:22,b:0,w:14", 1);
+        Factory::Button::Create(this, "C&ancel", "l:39,b:0,w:14", 2);
+        connect->SetFocus();
+    }
+    bool OnEvent(Reference<Control> c, Event eventType, int id) override
+    {
+        if (eventType == Event::ButtonClicked)
+        {
+            Exit(id == 1 ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
+            return true;
+        }
+        if (eventType == Event::WindowClose)
+        {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return Window::OnEvent(c, eventType, id);
+    }
+};
+#endif
+
 // ---------------------------------------------------------------- main window
 class LearningModeWindow : public Window, public Handlers::OnTreeViewItemPressedInterface
 {
@@ -245,7 +307,7 @@ class LearningModeWindow : public Window, public Handlers::OnTreeViewItemPressed
     Reference<TreeView> tree;
     std::vector<RowRef> rows;
 
-    std::string pendingConnectionString;
+    std::string launchNotice; // web launch link: why nothing was connected (shown until the student connects)
     bool autoConnect;
     bool opened{ false };
     uint64 lastStatusSecond{ 0 };
@@ -260,10 +322,12 @@ class LearningModeWindow : public Window, public Handlers::OnTreeViewItemPressed
     }
 
   public:
-    LearningModeWindow(std::string_view prefilled, bool connectNow)
-        : Window("Learning and Evaluation Mode", "d:c,w:98%,h:96%", WindowFlags::Sizeable), autoConnect(connectNow)
+    // useSaved: an empty `prefilled` shows (and connects with) the saved connection string. notice: a failed web launch
+    // opens the window with an empty connection field (useSaved = false) and the reason, so the string can be pasted.
+    LearningModeWindow(std::string_view prefilled, bool connectNow, bool useSaved = true, std::string_view notice = {})
+        : Window("Learning and Evaluation Mode", "d:c,w:98%,h:96%", WindowFlags::Sizeable), launchNotice(notice), autoConnect(connectNow)
     {
-        std::string initial = prefilled.empty() ? LoadSavedConnectionString() : std::string(prefilled);
+        std::string initial = (prefilled.empty() && useSaved) ? LoadSavedConnectionString() : std::string(prefilled);
         if (prefilled.empty() && !initial.empty() && !Session().HasSession())
             autoConnect = true; // previously verified connection string
 
@@ -440,7 +504,9 @@ class LearningModeWindow : public Window, public Handlers::OnTreeViewItemPressed
         else
             tmp.Set("Blocked features: none");
         lbBlocked->SetText(tmp);
-        lbMessage->SetText(st.message);
+        if (st.state != Learning::SessionState::Disconnected)
+            launchNotice.clear(); // a launch error only explains why nothing is connected
+        lbMessage->SetText(launchNotice.empty() ? st.message : launchNotice);
 
         const bool connecting = st.state == Learning::SessionState::Connecting;
         connectButton->SetText(Session().HasSession() && !connecting ? "Re&connect" : "&Connect");
@@ -543,6 +609,8 @@ class LearningModeWindow : public Window, public Handlers::OnTreeViewItemPressed
 
     void RunStartActions()
     {
+        if (!launchNotice.empty())
+            Dialogs::MessageBox::ShowError("Learning and Evaluation Mode", launchNotice);
         if (autoConnect && !Session().HasSession())
             StartConnect();
         else if (Session().HasSession() && !Session().IsCatalogueLoaded())
@@ -557,6 +625,7 @@ class LearningModeWindow : public Window, public Handlers::OnTreeViewItemPressed
             Dialogs::MessageBox::ShowError("Learning and Evaluation Mode", "Please paste the connection string provided by your teacher.");
             return;
         }
+        launchNotice.clear();
         auto st = Session().Connect(cs, LoadLearningSettings(), Guarded([this, cs](const GView::Utils::GStatus& result) {
             if (result.ok)
             {
@@ -752,6 +821,72 @@ void GView::App::ShowLearningModeWindow(std::string_view prefilledConnectionStri
     LearningModeWindow dlg(prefilledConnectionString, autoConnect);
     dlg.Show();
 }
+
+#ifdef BUILD_FOR_WASM
+void GView::App::RunLearningLaunch(const Browser::LearningLaunch& launch)
+{
+    // any failure: the window opens with the reason and an empty connection field (the string can still be pasted);
+    // a connection string already stored is left as it is
+    const auto failed = [](std::string_view message) {
+        LearningModeWindow dlg("", false, false, message);
+        dlg.Show();
+    };
+#ifndef GVIEW_HAS_LEARNING_NETWORK
+    failed("Learning and Evaluation Mode is not available in this build of GView.");
+#else
+    if (!launch.error.empty() || launch.connectionString.empty())
+    {
+        failed(launch.error.empty() ? std::string_view("The launch link could not be opened. Open GView again from the course page.")
+                                    : std::string_view(launch.error));
+        return;
+    }
+    // the same parser and checks as a pasted string, plus: version 2 with the policy key, and the server the code was
+    // redeemed at
+    const auto settings = LoadLearningSettings();
+    Learning::ConnectionInfo info;
+    if (auto st = Learning::ValidateLaunchConnectionString(launch.connectionString, launch.serverOrigin, settings.allowPlainHttpLocalhost, info);
+        !st.ok)
+    {
+        failed("Nothing was connected: " + st.message + ".");
+        return;
+    }
+    const std::string origin = Learning::ServerOrigin(launch.serverOrigin);
+    const std::string host   = origin.substr(origin.find("://") + 3);
+
+    if (!Learning::OriginListContains(TrustedLaunchOrigins(), origin))
+    {
+        LaunchTrustDialog ask(host);
+        if (ask.Show() != Dialogs::Result::Ok)
+        {
+            failed("Not connected to " + host + ". You can still paste the connection string here.");
+            return;
+        }
+        TrustLaunchOrigin(origin);
+    }
+
+    // another connection (another student on a lab computer, another course): ended first, as End session does - its
+    // pending telemetry is sent with its own token - and its connection string is forgotten
+    auto& session = Learning::GetSession();
+    if (session.HasSession() && !session.UsesConnection(info))
+    {
+        if (auto st = session.EndSession("user"); !st.ok)
+        {
+            failed("The current course session could not be ended: " + st.message);
+            return;
+        }
+        GView::App::RefreshAllFileWindowTitles();
+    }
+    std::string saved = LoadSavedConnectionString();
+    if (!saved.empty() && saved != launch.connectionString)
+        ForgetSavedConnectionString();
+    Learning::WipeString(saved);
+
+    // exactly as if the string had been pasted: connect, then store it once the connection is verified
+    LearningModeWindow dlg(launch.connectionString, true);
+    dlg.Show();
+#endif
+}
+#endif
 
 void Instance::ShowRestrictedModeWindow()
 {

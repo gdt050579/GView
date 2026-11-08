@@ -68,6 +68,22 @@ Utils::GStatus ValidateServerUrl(std::string_view url, bool allowPlainHttpLocalh
 Utils::GStatus ParseConnectionString(std::string_view connectionString, bool allowPlainHttpLocalhost, ConnectionInfo& out);
 std::string BuildConnectionString(std::string_view token, std::string_view serverUrl, std::string_view publicKeyHex, std::string_view extraJson);
 
+// ---------------------------------------------------------------- launch link of the web build
+// <page>#launch=<one-time code>&server=<url>: the page redeems the code at POST <server>/GView/WebLaunch and gives the
+// returned connection string to GView (GView/web/gview-page.js, docs/source/learning_mode_protocol.rst).
+//
+// "scheme://host[:port]" of a server URL (lower case, default port omitted: the same text as URL.origin in a browser);
+// empty when the URL is not accepted by ValidateServerUrl (plain http is accepted here for the loopback hosts only)
+std::string ServerOrigin(std::string_view url);
+// A connection string received from a launch code redeemed at serverOrigin: the same parser and checks as a pasted one,
+// plus: version 2 with the policy public key, and its server has the origin the code was redeemed at.
+Utils::GStatus ValidateLaunchConnectionString(std::string_view connectionString, std::string_view serverOrigin, bool allowPlainHttpLocalhost, ConnectionInfo& out);
+// Space separated list of the launch servers approved in this browser ([GView] LearningTrustedLaunchOrigins)
+constexpr size_t MAX_TRUSTED_LAUNCH_ORIGINS = 32;
+bool OriginListContains(std::string_view list, std::string_view origin);
+// adds the origin (the oldest entries are dropped beyond MAX_TRUSTED_LAUNCH_ORIGINS); an invalid origin is ignored
+std::string OriginListAdd(std::string_view list, std::string_view origin);
+
 // hex(sha256(token))[0:16]
 std::string SubjectForToken(const SecureString& token);
 bool IsValidItemName(std::string_view name) noexcept;

@@ -433,9 +433,7 @@ Utils::GStatus LearningSession::Connect(std::string_view connectionString, const
         if (auto req = CheckTransportRequirements(probe, BROWSER_TRANSPORT, PageIsServedLocally()); !req.ok)
             return req;
     }
-    if (HasSession() && !bindings.empty() &&
-        (ci.serverUrl != info.serverUrl || ci.token.size() != info.token.size() ||
-         !Crypto::Internal::ConstantTimeEquals(ci.token.data(), info.token.data(), ci.token.size())))
+    if (HasSession() && !bindings.empty() && !UsesConnection(ci))
         return Utils::GStatus::Error("Close all learning task windows before connecting with a different account or server.");
 
     std::shared_ptr<IHttpTransport> newTransport = deps.transportFactory(ci, s);
@@ -462,6 +460,12 @@ Utils::GStatus LearningSession::Connect(std::string_view connectionString, const
         };
     });
     return Utils::GStatus::Ok();
+}
+
+bool LearningSession::UsesConnection(const ConnectionInfo& ci) const noexcept
+{
+    return HasSession() && ci.serverUrl == info.serverUrl && ci.token.size() == info.token.size() &&
+           Crypto::Internal::ConstantTimeEquals(ci.token.data(), info.token.data(), ci.token.size());
 }
 
 Utils::GStatus LearningSession::ApplyConnectResult(ConnectionInfo&& newInfo, std::shared_ptr<IHttpTransport> newTransport, ConnectResult&& result)

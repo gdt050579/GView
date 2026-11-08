@@ -417,6 +417,81 @@ TEST_CASE("Learning: connection string v1/v2 parsing", "[learning][protocol]")
     }
 }
 
+TEST_CASE("Learning: launch link of the web build (origin, connection string, trusted origins)", "[learning][protocol]")
+{
+    SECTION("server origin, as URL.origin of a browser")
+    {
+        REQUIRE(ServerOrigin("https://Course.Example.edu/gview/") == "https://course.example.edu");
+        REQUIRE(ServerOrigin("https://course.example.edu:443") == "https://course.example.edu");
+        REQUIRE(ServerOrigin("https://course.example.edu:8443/x") == "https://course.example.edu:8443");
+        REQUIRE(ServerOrigin("http://127.0.0.1:80") == "http://127.0.0.1");
+        REQUIRE(ServerOrigin("http://127.0.0.1:8770") == "http://127.0.0.1:8770");
+        REQUIRE(ServerOrigin("https://[::1]:8443/gview") == "https://[::1]:8443");
+        REQUIRE(ServerOrigin("http://example.org").empty()); // plain http only for the loopback
+        REQUIRE(ServerOrigin("https://user@course.example.edu").empty());
+        REQUIRE(ServerOrigin("https://course.example.edu/?x").empty());
+        REQUIRE(ServerOrigin("javascript:alert(1)").empty());
+        REQUIRE(ServerOrigin("").empty());
+    }
+    SECTION("connection string redeemed with a launch code")
+    {
+        ConnectionInfo ci;
+        const auto cs = BuildConnectionString(TEST_TOKEN, "https://course.example.edu/gview", ServerKey().PublicHex(), R"({"label":"x"})");
+        REQUIRE(ValidateLaunchConnectionString(cs, "https://course.example.edu", false, ci).ok);
+        REQUIRE(ci.serverUrl == "https://course.example.edu/gview");
+        REQUIRE(ci.publicKey == ServerKey().publicKey);
+        REQUIRE(ValidateLaunchConnectionString(cs, "https://COURSE.example.edu:443", false, ci).ok);
+
+        // another server than the one the code was redeemed at
+        auto st = ValidateLaunchConnectionString(cs, "https://evil.example.org", false, ci);
+        REQUIRE_FALSE(st.ok);
+        REQUIRE(st.message.find("another server") != std::string::npos);
+        REQUIRE_FALSE(ValidateLaunchConnectionString(cs, "https://course.example.edu:8443", false, ci).ok);
+        REQUIRE_FALSE(ValidateLaunchConnectionString(cs, "http://course.example.edu", false, ci).ok);
+        const auto other = BuildConnectionString(TEST_TOKEN, "https://course.example.edu.evil.org", ServerKey().PublicHex(), "");
+        REQUIRE_FALSE(ValidateLaunchConnectionString(other, "https://course.example.edu", false, ci).ok);
+
+        // version 1 (no policy public key): refused, even if [GView] PolicyPublicKey would complete a pasted one
+        REQUIRE_FALSE(ValidateLaunchConnectionString(BuildConnectionString(TEST_TOKEN, TEST_SERVER, "", ""), TEST_SERVER, false, ci).ok);
+        // same parser as a pasted string
+        REQUIRE_FALSE(ValidateLaunchConnectionString("not base64!!", TEST_SERVER, false, ci).ok);
+        REQUIRE_FALSE(ValidateLaunchConnectionString(BuildConnectionString(TEST_TOKEN, TEST_SERVER, "zz", ""), TEST_SERVER, false, ci).ok);
+        REQUIRE_FALSE(ValidateLaunchConnectionString(cs, "", false, ci).ok);
+
+        // plain http: only with the setting, as for a pasted string
+        const auto local = BuildConnectionString(TEST_TOKEN, "http://127.0.0.1:8770", ServerKey().PublicHex(), "");
+        REQUIRE_FALSE(ValidateLaunchConnectionString(local, "http://127.0.0.1:8770", false, ci).ok);
+        REQUIRE(ValidateLaunchConnectionString(local, "http://127.0.0.1:8770", true, ci).ok);
+        REQUIRE_FALSE(ValidateLaunchConnectionString(local, "http://localhost:8770", true, ci).ok); // another origin
+    }
+    SECTION("trusted launch origins")
+    {
+        std::string list;
+        REQUIRE_FALSE(OriginListContains(list, "https://course.example.edu"));
+        list = OriginListAdd(list, "https://course.example.edu");
+        REQUIRE(list == "https://course.example.edu");
+        REQUIRE(OriginListContains(list, "https://course.example.edu"));
+        REQUIRE_FALSE(OriginListContains(list, "https://course.example"));
+        REQUIRE_FALSE(OriginListContains(list, ""));
+        list = OriginListAdd(list, "https://course.example.edu"); // no duplicate
+        list = OriginListAdd(list, "http://127.0.0.1:8770");
+        REQUIRE(list == "https://course.example.edu http://127.0.0.1:8770");
+        // not an origin: ignored
+        REQUIRE(OriginListAdd(list, "https://x.example.edu/path") == list);
+        REQUIRE(OriginListAdd(list, "https://a.edu https://b.edu") == list);
+        REQUIRE(OriginListAdd(list, "http://example.org") == list);
+        REQUIRE(OriginListContains("  https://a.edu,https://b.edu ", "https://b.edu"));
+        // bounded: the oldest entries are dropped
+        std::string many;
+        for (size_t i = 0; i < MAX_TRUSTED_LAUNCH_ORIGINS + 3; i++)
+            many = OriginListAdd(many, "https://h" + std::to_string(i) + ".example.edu");
+        REQUIRE_FALSE(OriginListContains(many, "https://h0.example.edu"));
+        REQUIRE_FALSE(OriginListContains(many, "https://h2.example.edu"));
+        REQUIRE(OriginListContains(many, "https://h3.example.edu"));
+        REQUIRE(OriginListContains(many, "https://h" + std::to_string(MAX_TRUSTED_LAUNCH_ORIGINS + 2) + ".example.edu"));
+    }
+}
+
 TEST_CASE("Learning: transport requirements of the browser build", "[learning][protocol]")
 {
     TransportConfig cfg;
@@ -1087,6 +1162,17 @@ TEST_CASE("Learning: session connect T1 (valid policy)", "[learning][session]")
     REQUIRE(refreshed.ok);
     REQUIRE(s.IsCatalogueLoaded());
     REQUIRE(fx.transport->policyHeaders.back() == "pol_2026w1_ab12cd");
+
+    // UsesConnection: the launch of the web build decides with it whether the current session must be ended first
+    ConnectionInfo same, otherToken, otherServer;
+    REQUIRE(ParseConnectionString(fx.ConnectionString(), false, same).ok);
+    REQUIRE(ParseConnectionString(BuildConnectionString("tok_ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ0123456789abcd", TEST_SERVER, "", ""), false, otherToken).ok);
+    REQUIRE(ParseConnectionString(BuildConnectionString(TEST_TOKEN, "https://other.example.edu", "", ""), false, otherServer).ok);
+    REQUIRE(s.UsesConnection(same));
+    REQUIRE_FALSE(s.UsesConnection(otherToken));
+    REQUIRE_FALSE(s.UsesConnection(otherServer));
+    REQUIRE(s.EndSession("user").ok);
+    REQUIRE_FALSE(s.UsesConnection(same));
 }
 
 TEST_CASE("Learning: session rejects invalid policies (T2/T3)", "[learning][session]")

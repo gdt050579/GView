@@ -249,6 +249,8 @@ class LearningSession
     {
         return state != SessionState::Disconnected;
     }
+    // the current session belongs to this server and access token (constant-time token comparison)
+    bool UsesConnection(const ConnectionInfo& ci) const noexcept;
     bool CanOpenItems() const noexcept;
     bool CanSubmit() const noexcept;
     const Catalogue& GetCatalogue() const noexcept

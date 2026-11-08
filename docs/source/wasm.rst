@@ -4,7 +4,8 @@ GView in a web browser (WebAssembly)
 GView can be compiled with `Emscripten <https://emscripten.org>`_ into a static web site: the AppCUI browser frontend
 draws the interface in an HTML5 canvas and the whole application (viewers and plugins) runs inside the page. The files
 you open are analysed by the WebAssembly module in your browser tab and are never uploaded. The only network traffic is
-Learning and Evaluation Mode, once you connect, towards the course server named in your connection string.
+Learning and Evaluation Mode, once you connect (or open GView from a course page), towards the course server named in
+your connection string.
 
 Try it
 ------
@@ -62,7 +63,8 @@ What is different from the native GView
   through the ``fetch()`` API of the page (``GVIEW_ENABLE_BROWSER_NETWORK``). The server must allow the origin of the
   page (CORS) and its certificate must be trusted by the browser: a connection string that pins a private certificate
   authority (``caPem``) is refused. Policies that require screen protection cannot be met in a page. Details:
-  :doc:`learning_mode_protocol`, section *16. Browser clients*.
+  :doc:`learning_mode_protocol`, section *16. Browser clients*. A course page can also open GView already connected
+  (see `Opening GView from a course page`_).
 * **Other network features** are not built (``GVIEW_ENABLE_NETWORK=OFF``, no libcurl): the auto-updater (and
   ``GViewUpdater``), the Smart Assistant requests and FileDownloader. The remote TUI (``GVIEW_ENABLE_REMOTE``) is
   always off.
@@ -70,6 +72,34 @@ What is different from the native GView
 * **Keyboard.** The browser keeps some shortcuts for itself (for example Ctrl+W, Ctrl+T, Ctrl+N). The ``Keyboard.Ctrl`` /
   ``Keyboard.Alt`` keys of the ``[AppCUI]`` section remap the modifiers if needed.
 * Closing the last window does not end GView: the desktop stays open so more files can be dropped on the page.
+
+Opening GView from a course page
+--------------------------------
+
+A course portal can send students to the web build already connected to the course: the student presses *Open GView
+in the browser* and pastes nothing. The portal opens the page with a one-time launch code in the fragment::
+
+   https://<GView site>/GView.html#launch=<code>&server=<url-encoded course server URL>
+
+* The page removes the fragment from the address bar and the history at once, before anything else, so a reload or a
+  bookmark never carries the code. An invalid link (malformed code, a server that is not ``https://``) sends nothing.
+* While ``GView.wasm`` downloads, the page exchanges the code for the connection string at
+  ``POST <server>/GView/WebLaunch``. The code is single use and expires a few minutes after the click: it is never
+  retried, and a used or expired link shows *"This launch link has expired or was already used. Open GView again from
+  the course page."*
+* The first time a course server is used this way in a browser, GView asks *"Connect to the course server <host>?"*.
+  The answer *Connect* is remembered for that server (``LearningTrustedLaunchOrigins`` in the settings).
+* GView then connects as if the connection string had been pasted, ends another student's or course's session first
+  (its pending telemetry is still sent with its own token), opens *Learning and Evaluation Mode* and keeps the
+  connection string encrypted after the connection is verified, like a pasted one.
+* On any error, *Learning and Evaluation Mode* opens with the message and an empty connection field: the connection
+  string can still be pasted by hand.
+
+The connection string never appears in a URL, and neither it nor the code is written to the console, the status bar,
+``localStorage`` or ``sessionStorage``. The course server must allow the origin of the page (CORS) for
+``/GView/WebLaunch`` too. Protocol details: :doc:`learning_mode_protocol`, section *17. One-click launch of the web
+build*. For a local test, ``tools/learning_mode_stub_server.py --http --cors-origin <page origin> --launch-code <code>``
+plays the course server (with ``LearningAllowPlainHttpLocalhost = true`` in the settings of the page).
 
 Persistent storage
 ------------------

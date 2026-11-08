@@ -250,10 +250,12 @@ bool OnFrame(bool desktopHasFocus)
     // the jobs of Learning and Evaluation Mode that wait for the network (no threads in a page, BackgroundWorker.hpp)
     GView::Security::Learning::Cooperative::Pump();
     GView::Security::Learning::Hooks::OnBrowserFrame(hidden);
+    // launch link (#launch=<code>&server=<url>): handled once the page has the answer of the course server
+    const bool launched = LaunchOnFrame(desktopHasFocus);
 
     // a file window is not opened under a modal window (it would get the focus while the modal one waits for input)
     if (pendingFiles.empty() || !desktopHasFocus)
-        return false;
+        return launched;
     while (!pendingFiles.empty())
     {
         const auto path = std::move(pendingFiles.front());

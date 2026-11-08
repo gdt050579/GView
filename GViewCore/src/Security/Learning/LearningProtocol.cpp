@@ -663,6 +663,91 @@ std::string BuildConnectionString(std::string_view token, std::string_view serve
     return Base64Encode(BufferView(inner));
 }
 
+std::string ServerOrigin(std::string_view url)
+{
+    std::string normalized;
+    if (!ValidateServerUrl(url, true, normalized).ok)
+        return {};
+    const size_t schemeEnd = normalized.find("://");
+    if (schemeEnd == std::string::npos)
+        return {};
+    const size_t pathStart = normalized.find('/', schemeEnd + 3);
+    std::string origin     = normalized.substr(0, pathStart);
+    // URL.origin omits the default port of the scheme
+    const std::string_view defaultPort = normalized.starts_with("https://") ? ":443" : ":80";
+    if (origin.size() > defaultPort.size() && origin.ends_with(defaultPort))
+        origin.resize(origin.size() - defaultPort.size());
+    return origin;
+}
+
+Utils::GStatus ValidateLaunchConnectionString(std::string_view cs, std::string_view serverOrigin, bool allowPlainHttpLocalhost, ConnectionInfo& out)
+{
+    const std::string expected = ServerOrigin(serverOrigin);
+    if (expected.empty())
+        return Utils::GStatus::Error("the launch link names an invalid course server");
+    ConnectionInfo info;
+    auto st = ParseConnectionString(cs, allowPlainHttpLocalhost, info);
+    if (!st.ok)
+        return Utils::GStatus::Error("invalid connection string: " + st.message);
+    if (info.version != 2 || info.publicKey.size() != 32)
+        return Utils::GStatus::Error("the connection string carries no policy public key (version 2 is required)");
+    // the code was redeemed at `expected`: a connection string for another server is refused (the trust prompt names
+    // the server the code was redeemed at)
+    if (ServerOrigin(info.serverUrl) != expected)
+        return Utils::GStatus::Error("the connection string is for another server than " + expected);
+    out = std::move(info);
+    return Utils::GStatus::Ok();
+}
+
+namespace
+{
+    std::vector<std::string_view> SplitOriginList(std::string_view list)
+    {
+        std::vector<std::string_view> r;
+        size_t i = 0;
+        while (i < list.size())
+        {
+            while (i < list.size() && (list[i] == ' ' || list[i] == ',' || list[i] == '\t'))
+                i++;
+            const size_t start = i;
+            while (i < list.size() && list[i] != ' ' && list[i] != ',' && list[i] != '\t')
+                i++;
+            if (i > start)
+                r.push_back(list.substr(start, i - start));
+        }
+        return r;
+    }
+} // namespace
+
+bool OriginListContains(std::string_view list, std::string_view origin)
+{
+    if (origin.empty())
+        return false;
+    for (auto entry : SplitOriginList(list))
+        if (entry == origin)
+            return true;
+    return false;
+}
+
+std::string OriginListAdd(std::string_view list, std::string_view origin)
+{
+    auto entries = SplitOriginList(list);
+    // only origins as produced by ServerOrigin (no path, no separator) are kept
+    const bool valid = !origin.empty() && ServerOrigin(origin) == origin;
+    if (valid && !OriginListContains(list, origin))
+        entries.push_back(origin);
+    if (entries.size() > MAX_TRUSTED_LAUNCH_ORIGINS)
+        entries.erase(entries.begin(), entries.begin() + static_cast<std::ptrdiff_t>(entries.size() - MAX_TRUSTED_LAUNCH_ORIGINS));
+    std::string r;
+    for (auto e : entries)
+    {
+        if (!r.empty())
+            r.push_back(' ');
+        r.append(e);
+    }
+    return r;
+}
+
 std::string SubjectForToken(const SecureString& token)
 {
     uint8 hash[32];

@@ -77,6 +77,8 @@ Key                                 Meaning
 ``PolicyPublicKey``                 64 hex chars; used when the connection string has no key (v1).
 ``LearningAllowPlainHttpLocalhost`` ``true``/``false`` (default ``false``), see above.
 ``LearningDownloadFolder``          Default folder for ``file`` deliveries (empty = ``<Documents>/GView/<week>``).
+``LearningTrustedLaunchOrigins``    Web build only: course servers approved for the one-click launch (space separated
+                                    origins, written after the first *Connect* of the trust prompt; see section 17).
 ``Key.LearningSubmitFlag``          Shortcut of "Submit flag for this task" in a task window (default Ctrl+Alt+F).
 =================================== ================================================================================
 
@@ -653,3 +655,93 @@ so its network jobs complete only when it becomes visible again.
 under a non-extractable key (*File > Stored files > Forget Learning connection*). Learning task files saved in
 ``file`` mode land in the home folder and are kept like any other file; ``memory`` content is never written to the
 file system and therefore never stored.
+
+17. One-click launch of the web build
+-------------------------------------
+
+The course portal can open the web build already connected: the student presses *Open GView in the browser* and
+pastes nothing. The connection string is never put in a URL (it holds a long-lived bearer token, and URLs end up in
+the history, history sync and screenshots). The URL carries a **one-time launch code** instead, which the page
+exchanges for the connection string. Desktop builds are not concerned: the portal still shows them the connection
+string, and ``GView learn <connectionString>`` is unchanged.
+
+**Launch URL.** The portal redirects the student to::
+
+   <GView page URL>#launch=<code>&server=<url-encoded base URL of the course server>
+
+=========== ============================================================================================================
+Parameter   Format
+=========== ============================================================================================================
+``launch``  ``^[A-Za-z0-9_-]{32,64}$`` (one-time code; anything else and the whole launch is refused as invalid)
+``server``  absolute ``https://`` URL; ``http://`` only to ``localhost``/``127.0.0.1``/``[::1]`` and only when the page
+            itself is served from the local machine (same rule as ``PageIsServedLocally``). No user info, query or
+            fragment. Endpoint = ``server`` (trailing ``/`` removed) + ``/GView/WebLaunch``
+=========== ============================================================================================================
+
+Unknown parameters are ignored. The fragment is never sent to the web server that hosts GView.
+
+**Endpoint.** ``POST <server>/GView/WebLaunch`` with ``Content-Type: application/json``, ``X-GView-Protocol: 2``,
+``X-GView-Client: <version>``, ``X-GView-Platform: web-wasm32`` and the body ``{"code": "<launch code>"}``; no
+``XAppUserID`` (the code is the credential). ``fetch`` options: ``credentials: "omit"``, ``cache: "no-store"``,
+``redirect: "error"``, ``referrerPolicy: "no-referrer"``. The server answers the CORS preflight like every other
+endpoint, for its allowed GView origins only (any other origin, or no ``Origin``: ``403 FORBIDDEN``).
+
+============================================== ==========================================================================
+Answer                                         Client
+============================================== ==========================================================================
+200 ``{"status":"ok","connectionString":...}`` continue with the connection string (below)
+401 ``UNAUTHORIZED``                           "This launch link has expired or was already used. Open GView again from
+                                               the course page."
+403 ``FORBIDDEN``                              the ``details`` of the server (this page's origin is not allowed)
+426 ``UNSUPPORTED_CLIENT``                     "The course server requires a newer GView version ..."
+429 ``RATE_LIMITED``                           "Too many attempts, wait N s ..." (``Retry-After``)
+5xx, network error, timeout                    a generic error that says to open GView again from the course page
+============================================== ==========================================================================
+
+The code is single use and expires 5 minutes after the click: the request is **never retried** automatically (a lost
+answer may already have consumed it). A new code is obtained by opening GView again from the course page.
+
+**Page (``gview-page.js``), before GView starts.**
+
+1. If the fragment has a ``launch`` parameter, it is removed at once with ``history.replaceState`` - whatever the
+   values - so a reload, a bookmark or the history never carry the code.
+2. ``launch`` and ``server`` are validated; an invalid link is reported as such and **nothing is sent**.
+3. The ``WebLaunch`` request starts immediately, in parallel with the download of ``GView.wasm`` (several MB).
+4. The outcome is published in ``globalThis.gviewLaunch`` (``state``: ``none``/``pending``/``ok``/``error``/``taken``,
+   ``serverOrigin``, ``connectionString``, ``error``, ``done``). GView polls it from its frames without blocking and
+   the page empties ``connectionString`` as soon as GView has taken it.
+
+The code and the connection string are never written to the console, the status bar, ``localStorage`` or
+``sessionStorage``.
+
+**GView (``App/BrowserLaunch.cpp``, ``RunLearningLaunch`` in ``App/LearningModeWindow.cpp``),** once the persistent
+storage is restored, the outcome is known and no modal window is open:
+
+1. The connection string is validated with the same parser and checks as a pasted one, and must be version 2 with
+   the policy public key; the origin of its server URL must equal the origin the code was redeemed at
+   (``ValidateLaunchConnectionString``). Otherwise nothing is connected.
+2. **Trust prompt, once per server origin and browser:** *"Connect to the course server <host>? Only continue if you
+   opened GView from your course page."* [Connect] [Cancel]. *Connect* adds the origin to
+   ``[GView] LearningTrustedLaunchOrigins`` (not secret; kept with the other settings); later launches from that
+   origin connect without asking. This keeps a crafted link (``#launch=x&server=https://attacker``) from silently
+   pointing GView at another server on a deployment whose page CSP allows any ``https:`` server.
+3. **Another connection is replaced.** If a session with another server or token is active, it is ended like *End
+   session* does (``session_end`` with reason ``user``, its pending telemetry sent with **its own** token, restrictions
+   removed). A different stored connection string is forgotten.
+4. The connection string is connected exactly as if it had been pasted into *Options > Learning and Evaluation Mode*,
+   whose window opens on the connection and the catalogue.
+5. It is stored (encrypted secret ``learning.connectionString``) only after a successful, verified connect - so a
+   reload reconnects like after a paste, when the Learning and Evaluation Mode window is opened.
+6. Any error opens that window with the message above and an **empty** connection field, so the string can still be
+   pasted by hand; a connection string stored before is left untouched.
+
+Test server: ``tools/learning_mode_stub_server.py --launch-code <code>`` answers ``/GView/WebLaunch`` once and with
+``401`` afterwards (``--launch-token`` another student, ``--launch-server-url`` a connection string for another server,
+``--launch-delay-ms`` a slow answer). For a page served locally::
+
+   python tools/learning_mode_stub_server.py --http --cors-origin http://127.0.0.1:8765 --launch-code <code>
+   # page setting: [GView] LearningAllowPlainHttpLocalhost = true, then open
+   # http://127.0.0.1:8765/GView.html#launch=<code>&server=http%3A%2F%2F127.0.0.1%3A8443
+
+Without ``--cors-origin`` the request is refused (403), and in its default TLS mode the stub hands out a connection
+string with ``caPem``, which the web client refuses.
