@@ -3778,7 +3778,24 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         const std::string name = CalleeName(call, functionArch);
         if (const auto* api = FindApiPrototype(name))
             return api;
+        if (const auto* other = operands.directTarget.has_value() ? OtherZonePrototype(operands.directTarget.value() & addressMask, functionArch) : nullptr)
+            return other;
         return FindMethodPrototypeByName(methodPrototypes, name);
+    }
+
+    // a direct target in another code zone of the file analyzed before this one (ntfs: a call from PAGE to .text): the prototype the user gave
+    // there or the one that zone inferred, for the code of the same instruction set (not the ARM64 code an x64 zone of an ARM64X image calls)
+    const AsmFunctionDetails* OtherZonePrototype(uint64 target, DissasmArch functionArch) const
+    {
+        if (target == NO_TARGET || target < codeSize)
+            return nullptr;
+        const uint64 address = (labelBase + target) & addressMask;
+        const auto* other    = zone->FindCodeZoneOfAddress(address);
+        if (!other || other == zone || other->GetArchAt(address - other->labelAddressBase) != functionArch)
+            return nullptr;
+        if (const auto* user = other->FindUserPrototype(address - other->labelAddressBase))
+            return user;
+        return other->FindInferredPrototype(address - other->labelAddressBase);
     }
 
     // GCC (System V x64): the functions of the zone named by a demangled C++ name that is no constructor / destructor
@@ -3819,8 +3836,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (prototype && !prototype->details.params.empty() && !prototype->details.params[0].name[0] && !prototype->details.params[0].type[0]) {
                 uint64 passedTo = NO_TARGET;
                 const auto use  = FirstUseOfFirstArgument(start, functionEnds[index], passedTo);
-                // this or a result: the object it reads; no address of a result returned
-                if (use == FirstArgumentUse::Read || ReturnsOtherThanFirstArgument(start, functionEnds[index]))
+                // this or a result: the object it reads; no address of a result returned, an object read on another path
+                if (use == FirstArgumentUse::Read || FirstArgumentIsAnObject(start, functionEnds[index]))
                     prototype = MakeGccMethodPrototype(name, highest, true);
                 else if (use == FirstArgumentUse::PassedToCall)
                     undecided.push_back({ index, highest, passedTo });
@@ -3927,7 +3944,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (!prototype->details.params.empty() && !prototype->details.params[0].name[0] && !prototype->details.params[0].type[0]) {
                 uint64 passedTo = NO_TARGET;
                 const auto use  = FirstUseOfFirstArgument(start, functionEnds[unknown[entry].index], passedTo);
-                if (use == FirstArgumentUse::Read || ReturnsOtherThanFirstArgument(start, functionEnds[unknown[entry].index]))
+                if (use == FirstArgumentUse::Read || FirstArgumentIsAnObject(start, functionEnds[unknown[entry].index]))
                     prototype = MakeGccMethodPrototype(name, highest, true);
                 else if (use == FirstArgumentUse::PassedToCall)
                     undecided.push_back({ unknown[entry].index, highest, passedTo });
@@ -4038,42 +4055,50 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         return reads.has_value() ? (reads.value() ? FirstArgumentUse::Read : FirstArgumentUse::Write) : use;
     }
 
-    // System V x64: a ret of the entry of a function returns something else than its first argument (rdi): a function that returns a class
-    // in memory returns the address it got at every ret (this for a method whose first use of rdi decides nothing: a setter writes through it
-    // first; basic_filebuf::open returns this or nullptr). The paths of the entry: both sides of its conditional jumps, its direct jumps
-    // inside the function, its calls (not the ones that do not return); a state (address, registers holding rdi, rax) walked once, 256
-    // instructions at most over all the paths. rax never written or written from no register holding rdi (xor eax, eax; sete al; mov eax,
-    // dword ptr [rbx + 0x10]) decides; a copy of rdi (mov rax, rbx after mov rbx, rdi), anything computed from it, a load from the stack
-    // (-O0 keeps rdi in a slot of the frame), the result of a call do not
-    bool ReturnsOtherThanFirstArgument(uint64 start, uint64 end)
+    // System V x64: the entry of a function shows that its first argument (rdi) is no address of a class it returns (this for a method whose
+    // first use of rdi decides nothing): a ret returns something else than rdi (a function that returns a class in memory returns the
+    // address it got at every ret: a setter writes through rdi first; basic_filebuf::open returns this or nullptr), or a path reads memory
+    // through rdi before any write through it, any store of it, any call it is passed to (the memory of a result is written before it is
+    // read: std::string::append returns *this on every path, one of them reads the string first). The paths of the entry: both sides of its
+    // conditional jumps, its direct jumps inside the function, its calls (not the ones that do not return); a state (address, registers
+    // holding rdi, rax, reads deciding, rdi stored) walked once, 256 instructions at most over all the paths. rax never written or written from
+    // no register holding rdi (xor eax, eax; sete al; mov eax, dword ptr [rbx + 0x10]) decides, as the result of a call or a tail jmp to a
+    // function that never got rdi (not in an argument register, never stored: _M_create returns what operator new returns); a copy of rdi
+    // (mov rax, rbx after mov rbx, rdi), anything computed from it, a load from the stack (-O0 keeps rdi in a slot of the frame) do not
+    bool FirstArgumentIsAnObject(uint64 start, uint64 end)
     {
         enum class Returned : uint8 { Nothing, First, Other, NotKnown };
         struct PathState {
             uint64 address;
             uint32 holders; // the families of the registers that hold it
             Returned rax;
+            bool unwritten; // no write through it, no store of it, no call it is passed to yet: a read through it decides
+            bool stored;    // stored to memory (mov [rsp + 8], rbx; push rbx): a callee may load it
         };
         constexpr uint32 MAX_INSTRUCTIONS = 256;
         constexpr uint64 MAX_BYTES        = 0x1000;
         // the families of GetX64RegisterFamily: rax, rdi; rbx, rbp, r12 .. r15
         constexpr int RAX = 0, FIRST = 7;
         constexpr uint32 CALLEE_SAVED = (1u << 3) | (1u << 5) | (1u << 12) | (1u << 13) | (1u << 14) | (1u << 15);
+        constexpr uint32 ARGUMENTS    = (1u << 7) | (1u << 6) | (1u << 2) | (1u << 1) | (1u << 8) | (1u << 9); // rdi, rsi, rdx, rcx, r8, r9
         const auto data =
               start < end ? obj->GetData().Get(codeStart + start, static_cast<uint32>(std::min<uint64>(end - start, MAX_BYTES)), false) : BufferView{};
         cs_insn* insn = data.IsValid() && data.GetLength() > 0 ? cs_malloc(detailHandle) : nullptr;
         if (!insn)
             return false;
         const uint64 limit = start + data.GetLength();
-        std::vector<PathState> pending{ { start, 1u << FIRST, Returned::Nothing } };
-        std::set<std::tuple<uint64, uint32, Returned>> seen;
-        bool returned = false;
-        uint32 count  = 0;
-        while (!pending.empty() && !returned && count < MAX_INSTRUCTIONS) {
+        std::vector<PathState> pending{ { start, 1u << FIRST, Returned::Nothing, true, false } };
+        std::set<std::tuple<uint64, uint32, Returned, bool, bool>> seen;
+        bool decided = false;
+        uint32 count = 0;
+        while (!pending.empty() && !decided && count < MAX_INSTRUCTIONS) {
             const PathState state = pending.back();
             pending.pop_back();
             uint64 address     = state.address;
             uint32 holders     = state.holders;
             Returned rax       = state.rax;
+            bool unwritten     = state.unwritten;
+            bool stored        = state.stored;
             const uint8* bytes = data.GetData() + (address - start);
             size_t size        = static_cast<size_t>(limit - address);
             const auto held    = [&holders](unsigned int reg) {
@@ -4085,12 +4110,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 size    = static_cast<size_t>(limit - target);
                 address = target;
             };
-            while (count < MAX_INSTRUCTIONS && address < limit && seen.insert({ address, holders, rax }).second &&
+            while (count < MAX_INSTRUCTIONS && address < limit && seen.insert({ address, holders, rax, unwritten, stored }).second &&
                    cs_disasm_iter(detailHandle, &bytes, &size, &address, insn)) {
                 count++;
                 const auto flow = GetInstructionFlow(*insn, DissasmArch::X64);
                 if (flow == X86Flow::Return) {
-                    returned = rax == Returned::Nothing || rax == Returned::Other;
+                    decided = rax == Returned::Nothing || rax == Returned::Other;
                     break;
                 }
                 if (flow == X86Flow::Interrupt || insn->id == X86_INS_UD2 || insn->id == X86_INS_HLT || !insn->detail)
@@ -4101,22 +4126,50 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     const bool inside   = target >= start && target < limit;
                     if (flow == X86Flow::ConditionalJump) {
                         if (inside)
-                            pending.push_back({ target, holders, rax });
+                            pending.push_back({ target, holders, rax, unwritten, stored });
                         continue;
                     }
-                    if (!inside)
-                        break; // a tail call, a jump through a table
+                    if (!inside) { // a tail call (what the function returns: it never got rdi), a jump through a table
+                        decided = target != NO_TARGET && (holders & ARGUMENTS) == 0 && !stored &&
+                                  std::binary_search(functionStarts.begin(), functionStarts.end(), target);
+                        break;
+                    }
                     jumpTo(target);
                     continue;
                 }
                 if (flow == X86Flow::Call) {
                     if (noReturnCalls.contains(insn->address))
                         break;
+                    if ((holders & ARGUMENTS) != 0)
+                        unwritten = false; // passed to the call: it may write it
+                    rax = (holders & ARGUMENTS) == 0 && !stored ? Returned::Other : Returned::NotKnown;
                     holders &= CALLEE_SAVED;
-                    rax = Returned::NotKnown;
                     continue;
                 }
                 const auto& x86 = insn->detail->x86;
+                // the first access through it on this path: a read (cmp qword ptr [rdi], 0; mov rax, [rbx + 8]; add [rdi], 1) decides, a write
+                // (mov qword ptr [rdi], 0) or a store of it (mov [rsp + 8], rbx; push rbx: a callee may write through it) ends the reads
+                const bool accesses = insn->id != X86_INS_LEA && insn->id != X86_INS_NOP && !std::string_view(insn->mnemonic).starts_with("prefetch");
+                bool storesIt = false, writesMemory = insn->id == X86_INS_PUSH;
+                for (uint8 index = 0; index < x86.op_count; index++) {
+                    const auto& op = x86.operands[index];
+                    if (unwritten && accesses && op.type == X86_OP_MEM &&
+                        ((op.mem.base != X86_REG_INVALID && held(op.mem.base)) || (op.mem.index != X86_REG_INVALID && held(op.mem.index)))) {
+                        if (op.access & CS_AC_READ)
+                            decided = true;
+                        unwritten = false;
+                    }
+                    if (op.type == X86_OP_MEM && (op.access & CS_AC_WRITE))
+                        writesMemory = true;
+                    if (op.type == X86_OP_REG && (op.access & CS_AC_READ) && held(op.reg))
+                        storesIt = true;
+                }
+                if (decided)
+                    break;
+                if (storesIt && writesMemory) {
+                    unwritten = false;
+                    stored    = true;
+                }
                 if (insn->id == X86_INS_MOV && x86.op_count == 2 && x86.operands[0].type == X86_OP_REG && x86.operands[0].size == 8 &&
                     x86.operands[1].type == X86_OP_REG && held(x86.operands[1].reg)) { // a copy: mov rbx, rdi
                     const int family = GetX64RegisterFamily(x86.operands[0].reg);
@@ -4154,7 +4207,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             }
         }
         cs_free(insn, 1);
-        return returned;
+        return decided;
     }
 
     // System V x64: the highest argument register (0: rdi, rsi, rdx, rcx, r8, 5: r9) the entry of a function reads before writing it, on the
@@ -4279,7 +4332,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     else
                         candidate = knownPrototypeCalls.contains(record.address) ||
                                     (outside && (inferredNow.contains(record.target) || zone->FindUserPrototype(record.target) ||
-                                                 IsInferenceCallee(FindApiPrototype(TargetName(record.target)))));
+                                                 IsInferenceCallee(FindApiPrototype(TargetName(record.target))) ||
+                                                 IsInferenceCallee(OtherZonePrototype(record.target, arch))));
                 }
                 if (!candidate)
                     continue;

@@ -15520,3 +15520,134 @@ TEST_CASE("GccMethodsReturningAnotherValueOnABranch", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x0000000d  mov    rdi, rbx").find(';') == std::string_view::npos);
     REQUIRE(FindListingLine(listing, "0x00000010  mov    esi, 7").ends_with("; int"));
 }
+
+TEST_CASE("GccMethodsReadingTheirObjectOnAPath", "[Dissasm]Help")
+{
+    // a GCC method returning rdi on every path (*this or the address of a class it returns): one path reads memory through rdi before any
+    // write through it (the memory of a result is written before it is read): this (Foo::append(int): add dword ptr [rdi], esi on the path
+    // of its jne); Foo::build(int) writes through rdi first, then reads it: undecided
+    std::vector<unsigned char> file = {
+        0x48, 0x89, 0xDF,             // 0x00: mov rdi, rbx              (this)
+        0xBE, 0x05, 0x00, 0x00, 0x00, // 0x03: mov esi, 5                (int)
+        0xE8, 0x33, 0x00, 0x00, 0x00, // 0x08: call 0x40                 Foo::append(int)
+        0x48, 0x89, 0xDF,             // 0x0d: mov rdi, rbx              (this or a result)
+        0xBE, 0x07, 0x00, 0x00, 0x00, // 0x10: mov esi, 7                (int)
+        0xE8, 0x46, 0x00, 0x00, 0x00, // 0x15: call 0x60                 Foo::build(int)
+        0xC3,                         // 0x1a: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), {
+                                  0x85, 0xF6,       // 0x40: test esi, esi
+                                  0x75, 0x04,       // 0x42: jne 0x48
+                                  0x48, 0x89, 0xF8, // 0x44: mov rax, rdi
+                                  0xC3,             // 0x47: ret
+                                  0x01, 0x37,       // 0x48: add dword ptr [rdi], esi
+                                  0x48, 0x89, 0xF8, // 0x4a: mov rax, rdi
+                                  0xC3,             // 0x4d: ret
+                            });
+    file.resize(0x60, 0xCC);
+    file.insert(file.end(), {
+                                  0x89, 0x37,       // 0x60: mov dword ptr [rdi], esi
+                                  0x83, 0x07, 0x01, // 0x62: add dword ptr [rdi], 1
+                                  0x48, 0x89, 0xF8, // 0x65: mov rax, rdi
+                                  0xC3,             // 0x68: ret
+                            });
+    file.resize(0x80, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.systemV         = true;
+    layout.functionEntries = { { 0x40, { "Foo::append(int)", 14 } }, { 0x60, { "Foo::build(int)", 9 } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000000  mov    rdi, rbx").ends_with("; this"));
+    REQUIRE(FindListingLine(listing, "0x00000003  mov    esi, 5").ends_with("; int"));
+    REQUIRE(FindListingLine(listing, "0x0000000d  mov    rdi, rbx").find(';') == std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000010  mov    esi, 7").ends_with("; int"));
+}
+
+TEST_CASE("GccMethodsReturningWhatACalleeReturns", "[Dissasm]Help")
+{
+    // a GCC method whose path ends in a tail jmp (or a call before its ret) to a function that never got rdi returns what that function
+    // returns: no address of a result (std::string::_M_create jumps to operator new with the size in rdi): this; Foo::wrap(int) jumps there
+    // with rdi: undecided
+    std::vector<unsigned char> file = {
+        0x48, 0x89, 0xDF,             // 0x00: mov rdi, rbx              (this)
+        0xBE, 0x05, 0x00, 0x00, 0x00, // 0x03: mov esi, 5                (int)
+        0xE8, 0x33, 0x00, 0x00, 0x00, // 0x08: call 0x40                 Foo::create(int)
+        0x48, 0x89, 0xDF,             // 0x0d: mov rdi, rbx              (this or a result)
+        0xBE, 0x07, 0x00, 0x00, 0x00, // 0x10: mov esi, 7                (int)
+        0xE8, 0x46, 0x00, 0x00, 0x00, // 0x15: call 0x60                 Foo::wrap(int)
+        0xC3,                         // 0x1a: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), {
+                                  0x89, 0x37,                   // 0x40: mov dword ptr [rdi], esi
+                                  0x89, 0xF7,                   // 0x42: mov edi, esi
+                                  0xE9, 0x57, 0x00, 0x00, 0x00, // 0x44: jmp 0xa0
+                            });
+    file.resize(0x60, 0xCC);
+    file.insert(file.end(), {
+                                  0x89, 0x37,                   // 0x60: mov dword ptr [rdi], esi
+                                  0xE9, 0x39, 0x00, 0x00, 0x00, // 0x62: jmp 0xa0 (rdi passed on)
+                            });
+    file.resize(0xA0, 0xCC);
+    file.insert(file.end(), { 0x89, 0xF8, 0xC3 }); // 0xa0: mov eax, edi; ret
+    file.resize(0xC0, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.systemV         = true;
+    layout.functionEntries = { { 0x40, { "Foo::create(int)", 9 } }, { 0x60, { "Foo::wrap(int)", 7 } }, { 0xA0, { "make_value", 3 } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000000  mov    rdi, rbx").ends_with("; this"));
+    REQUIRE(FindListingLine(listing, "0x00000003  mov    esi, 5").ends_with("; int"));
+    REQUIRE(FindListingLine(listing, "0x0000000d  mov    rdi, rbx").find(';') == std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000010  mov    esi, 7").ends_with("; int"));
+}
+
+TEST_CASE("PrototypesOfAnotherZone", "[Dissasm]Zones")
+{
+    // the deep scan of PAGE sees the prototypes of .text, analyzed before it: its function passes its incoming rcx to closeIt(HANDLE handle)
+    // of .text (the user's prototype there): a wrapper, inferred (HANDLE handle); a .text without it: nothing inferred
+    std::vector<unsigned char> file = {
+        0x31, 0xC0, // 0x00: xor eax, eax   closeIt (.text)
+        0xC3,       // 0x02: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), {
+                                  0x48, 0x83, 0xEC, 0x28,       // 0x40: sub rsp, 0x28   (PAGE)
+                                  0xE8, 0xB7, 0xFF, 0xFF, 0xFF, // 0x44: call 0x00       closeIt
+                                  0x48, 0x83, 0xC4, 0x28,       // 0x49: add rsp, 0x28
+                                  0xC3,                         // 0x4d: ret
+                            });
+    file.resize(0x60, 0xCC);
+    for (const bool withPrototype : { true, false }) {
+        ZoneLayout layout;
+        layout.size       = 0x40;
+        layout.entryPoint = 0;
+        layout.language   = DisassemblyLanguage::x64;
+        DissasmTestInstance text(file.data(), file.size(), true, layout);
+        if (withPrototype)
+            text.zone->userPrototypes[0x00] = "void closeIt(HANDLE handle)";
+        layout.start      = 0x40;
+        layout.size       = 0x20;
+        layout.entryPoint = 0x40;
+        layout.siblings   = { text.zone.get() };
+        DissasmTestInstance page(file.data(), file.size(), true, layout);
+        INFO(page.GetListing());
+        const auto* inferred = page.zone->FindInferredPrototype(0x00);
+        if (!withPrototype) {
+            REQUIRE(inferred == nullptr);
+            continue;
+        }
+        REQUIRE(inferred != nullptr);
+        REQUIRE(inferred->params.size() == 1);
+        REQUIRE(std::string_view(inferred->params[0].name) == "handle");
+    }
+}
