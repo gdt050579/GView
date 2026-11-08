@@ -3784,15 +3784,17 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // (std::istream::ignore(long)): the name tells neither a static method from a method nor the address of a class returned before this;
     // the highest argument register the entry of the function reads tells how many arguments come before its parameters
     // (MakeGccMethodPrototype); by the name of the function (its j_ thunks: FindMethodPrototypeByName)
+    // a GCC method the reads of its entry do not decide (AddGccMethodPrototypes)
+    struct UndecidedMethod {
+        size_t index;    // of the function
+        int32 highest;   // the highest argument register it reads
+        uint64 passedTo; // the target of the call its first argument goes to first
+    };
     void AddGccMethodPrototypes()
     {
         methodPrototypes.clear();
-        struct UndecidedMethod {
-            size_t index;    // of the function
-            int32 highest;   // the highest argument register it reads
-            uint64 passedTo; // the target of the call its first argument goes to first
-        };
         std::vector<UndecidedMethod> undecided; // this or a result, not read first
+        std::vector<UndecidedMethod> unknown;   // the reads of the entry decide nothing (DecideGccMethodsByCallers)
         if (!hasDetailHandle || !zone->systemVCalls || functionEnds.size() != functionStarts.size())
             return;
         for (size_t index = 0; index < functionStarts.size(); index++) {
@@ -3809,6 +3811,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 continue;
             const int32 highest = HighestArgumentRead(start, functionEnds[index], parameters.value());
             auto prototype      = MakeGccMethodPrototype(name, highest);
+            if (!prototype) {
+                unknown.push_back({ index, highest, NO_TARGET });
+                continue;
+            }
             if (prototype && !prototype->details.params.empty() && !prototype->details.params[0].name[0] && !prototype->details.params[0].type[0]) {
                 uint64 passedTo = NO_TARGET;
                 const auto use  = FirstUseOfFirstArgument(start, functionEnds[index], passedTo);
@@ -3820,6 +3826,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (prototype)
                 methodPrototypes.emplace(name, std::move(prototype));
         }
+        DecideGccMethodsByCallers(unknown, undecided);
         // this or a result, not read before a call: passed first as the this of a method (a result is built first: a constructor); the
         // methods known by this round decide the next ones (3 rounds)
         for (uint32 round = 0; round < 3 && !undecided.empty(); round++) {
@@ -3837,6 +3844,111 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 break;
             undecided = std::move(left);
         }
+    }
+
+    // the GCC methods the reads of their entry do not decide (an unused last parameter: std::string::_Rep::_M_destroy(std::allocator<char>
+    // const&) reads rdi only): the highest argument register their callers write in the block of the call (through their j_ stubs too), as
+    // the highest one read, when at least 4 in 5 of two or more calls agree and it is not below the one the entry reads; this or a result
+    // then as the reads of the entry decide (FirstUseOfFirstArgument)
+    void DecideGccMethodsByCallers(const std::vector<UndecidedMethod>& unknown, std::vector<UndecidedMethod>& undecided)
+    {
+        constexpr uint64 MAX_BLOCK = 0x100; // the bytes decoded before a call
+        if (unknown.empty())
+            return;
+        std::unordered_map<std::string, size_t> byName; // the name of the method (its j_ stub without the prefix) -> its entry of unknown
+        for (size_t entry = 0; entry < unknown.size(); entry++)
+            byName.emplace(TargetName(functionStarts[unknown[entry].index]), entry);
+        std::vector<std::array<uint32, 7>> written(unknown.size(), std::array<uint32, 7>{}); // the calls by the highest register (-1 .. 5)
+        std::unordered_map<uint64, size_t> entryOfTarget;                                    // a target -> its entry, SIZE_MAX: none
+        cs_insn* insn = cs_malloc(detailHandle);
+        if (!insn)
+            return;
+        for (size_t position = 0; position < flowRecords.size(); position++) {
+            const auto& record = flowRecords[position];
+            if (record.kind != FlowKind::Call || record.target == NO_TARGET)
+                continue;
+            auto known = entryOfTarget.find(record.target);
+            if (known == entryOfTarget.end()) {
+                std::string name = TargetName(record.target);
+                if (name.starts_with("j_"))
+                    name.erase(0, 2);
+                const auto found = byName.find(name);
+                known            = entryOfTarget.emplace(record.target, found != byName.end() ? found->second : SIZE_MAX).first;
+            }
+            if (known->second == SIZE_MAX)
+                continue;
+            // the block of the call: after the flow before it, not before the start of its function
+            const auto function = std::upper_bound(functionStarts.begin(), functionStarts.end(), record.address);
+            uint64 from         = function != functionStarts.begin() ? *(function - 1) : 0;
+            if (position > 0)
+                from = std::max(from, flowRecords[position - 1].address + flowRecords[position - 1].size);
+            if (from > record.address || record.address - from > MAX_BLOCK)
+                continue;
+            if (const auto highest = HighestArgumentWritten(insn, from, record.address); highest.has_value())
+                written[known->second][static_cast<size_t>(highest.value() + 1)]++;
+        }
+        cs_free(insn, 1);
+        for (size_t entry = 0; entry < unknown.size(); entry++) {
+            const auto& counts = written[entry];
+            uint32 total = 0, best = 0;
+            size_t bestIndex = 0;
+            for (size_t index = 0; index < counts.size(); index++) {
+                total += counts[index];
+                if (counts[index] > best) {
+                    best      = counts[index];
+                    bestIndex = index;
+                }
+            }
+            const int32 highest = static_cast<int32>(bestIndex) - 1;
+            if (total < 2 || best * 5 < total * 4 || highest < unknown[entry].highest)
+                continue;
+            const uint64 start     = functionStarts[unknown[entry].index];
+            const std::string name = TargetName(start);
+            auto prototype         = MakeGccMethodPrototype(name, highest);
+            if (!prototype)
+                continue;
+            if (!prototype->details.params.empty() && !prototype->details.params[0].name[0] && !prototype->details.params[0].type[0]) {
+                uint64 passedTo = NO_TARGET;
+                const auto use  = FirstUseOfFirstArgument(start, functionEnds[unknown[entry].index], passedTo);
+                if (use == FirstArgumentUse::Read)
+                    prototype = MakeGccMethodPrototype(name, highest, true);
+                else if (use == FirstArgumentUse::PassedToCall)
+                    undecided.push_back({ unknown[entry].index, highest, passedTo });
+            }
+            methodPrototypes.emplace(name, std::move(prototype));
+        }
+    }
+
+    // System V x64: the highest argument register (rdi 0 .. r9 5, -1: none) the instructions of [from, to) write; none when the code does not
+    // end at `to`
+    std::optional<int32> HighestArgumentWritten(cs_insn* insn, uint64 from, uint64 to)
+    {
+        static constexpr int SYSTEM_V[] = { 7, 6, 2, 1, 8, 9 }; // the families of rdi, rsi, rdx, rcx, r8, r9
+
+        const auto data = obj->GetData().Get(codeStart + from, static_cast<uint32>(to - from), false);
+        if (!data.IsValid() || data.GetLength() != to - from)
+            return std::nullopt;
+        const uint8* bytes = data.GetData();
+        size_t size        = data.GetLength();
+        uint64 address     = from;
+        int32 highest      = -1;
+        const auto note    = [&highest](unsigned int reg) {
+            const int family = GetX64RegisterFamily(reg);
+            for (int32 argument = 0; argument < 6; argument++)
+                if (SYSTEM_V[argument] == family)
+                    highest = std::max(highest, argument);
+        };
+        while (address < to && cs_disasm_iter(detailHandle, &bytes, &size, &address, insn)) {
+            if (!insn->detail || GetInstructionFlow(*insn, DissasmArch::X64) != X86Flow::None)
+                return std::nullopt;
+            const auto& x86 = insn->detail->x86;
+            for (uint8 index = 0; index < x86.op_count; index++)
+                if (x86.operands[index].type == X86_OP_REG && (x86.operands[index].access & CS_AC_WRITE))
+                    note(x86.operands[index].reg);
+        }
+        if (address != to)
+            return std::nullopt;
+        return highest;
     }
 
     // how the entry of a function first uses its first argument (System V: rdi): memory read / written through it (or a copy of it: mov rbx,
@@ -4010,7 +4122,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         std::unordered_set<uint64> inferredBefore;
         argumentStepsOf.clear();
         for (uint32 round = 0; round < 3; round++) {
-            keepArgumentSteps = round == 0; // the code CollectArgumentDefinitions follows: decoded once
+            // the code CollectArgumentDefinitions follows: decoded once, by the last round that decodes the function (a caller of a function
+            // inferred after it in the first round is decoded first by the second one)
+            keepArgumentSteps = true;
             std::unordered_set<uint64> inferredNow;
             for (size_t index = 0; index < functionStarts.size(); index++) {
                 const uint64 start = functionStarts[index];
@@ -4069,8 +4183,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::vector<uint64> forwardTargets; // CollectArgumentDefinitions: the targets of the forward branches of a function (sorted)
     // a write that reaches the call along the code that falls into it farther than the walk of the display looks back (24 lines of x64 /
     // ARM64: more instructions are more lines; nearer: the display names it, its own way, once): named by CollectFunctionArgumentDefinitions;
-    // a call with at least so many bytes of code before it in its block, in a function the first round of InferPrototypes decoded (its steps
-    // kept: not decoded again)
+    // a call with at least so many bytes of code before it in its block, in a function a round of InferPrototypes decoded (its steps kept: not
+    // decoded again)
     static constexpr uint32 FAR_ARGUMENT_STEPS = 24;
     static constexpr uint64 FAR_CALL_BYTES     = 0x80;
     // an instruction of a function for CollectArgumentDefinitions: the argument registers it writes, its branch, its callee
@@ -4084,7 +4198,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         ArgumentStepKind kind;
         bool movesStack = false; // Windows x64: a write of rsp (push, sub rsp): the stack slots are others
     };
-    // the steps of the x64 / ARM64 functions the first round of InferPrototypes decodes (the same code: not decoded again), by start
+    // the steps of the x64 / ARM64 functions the rounds of InferPrototypes decode (the same code: not decoded again), by start
     std::unordered_map<uint64, std::vector<ArgumentStep>> argumentStepsOf;
     bool keepArgumentSteps = false;
 
@@ -4379,15 +4493,17 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 // a tail jump: its stack arguments are above the return address of the caller (not followed)
                 const size_t followed = step.kind == StepKind::TailCall ? registersCount : argumentsCount;
                 for (size_t parameter = 0; parameter < params.size() && parameter < followed; parameter++) {
-                    if (!params[parameter].name || !params[parameter].name[0])
+                    // the text the display shows: the name, else the type (a demangled C++ name: wchar_t*)
+                    const char* text = params[parameter].name && params[parameter].name[0] ? params[parameter].name : params[parameter].type;
+                    if (!text || !text[0])
                         continue; // a parameter an inferred prototype does not know
                     const auto& definitions = state[parameter];
                     for (uint8 k = 0; k < definitions.count; k++) {
                         auto& reach = reaches[definitions.steps[k]];
-                        if (!reach.parameter.empty() && (reach.parameter != params[parameter].name || reach.function != step.callee->functionName))
+                        if (!reach.parameter.empty() && (reach.parameter != text || reach.function != step.callee->functionName))
                             reach.rejected = true; // two calls take it as two parameters
                         reach.function  = step.callee->functionName;
-                        reach.parameter = params[parameter].name;
+                        reach.parameter = text;
                         // the display names a write that falls into the block of a call (not past the lines it looks back through); a tail
                         // jump has no argument names of its own
                         if ((definitions.jumped & (1u << k)) || step.kind == StepKind::TailCall)

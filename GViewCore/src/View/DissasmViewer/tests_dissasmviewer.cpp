@@ -13588,7 +13588,7 @@ TEST_CASE("CxxDemangledPrototypes", "[Dissasm]Help")
     REQUIRE(FindApiPrototype("Point::Point(double, int)")->params.size() == 2); // the double in xmm0 (9w)
     REQUIRE(FindApiPrototype("Name::Name(std::string, int)")->params.size() == 1);
     REQUIRE(FindApiPrototype("std::locale::id::_M_id() const") == nullptr);
-    REQUIRE(FindApiPrototype("std::__throw_bad_cast()") == nullptr);
+    REQUIRE(FindApiPrototype("std::__throw_bad_cast()")->params.empty()); // a function of a namespace (10y)
     REQUIRE(FindApiPrototype("mayThrow(int)") == nullptr);
     // names made of the pieces of the forms (unbalanced parentheses and template arguments): a prototype or none, never a crash
     static constexpr std::string_view PIECES[] = { "(",    ")",     "<",       ">",          ",",        "::",      "*",       "&",  " ",
@@ -15220,4 +15220,161 @@ TEST_CASE("FarArgumentWrites", "[Dissasm]Help")
     REQUIRE(!dissasmInstance.zone->argumentDefinitions.contains(0xAD));
     REQUIRE(FindListingLine(listing, "0x00000004  mov    rcx, rbx").ends_with("; hObject"));
     REQUIRE(FindListingLine(listing, "0x000000ad  mov    rcx, rdi").ends_with("; hObject"));
+}
+
+TEST_CASE("FarArgumentWritesOfLaterRounds", "[Dissasm]Help")
+{
+    // a far write (41 instructions before the call) in a function the inference decodes first in its second round (it calls sub_100, inferred
+    // after it in the first round): its steps are kept too, the write named after the parameter of sub_100
+    std::vector<unsigned char> file = {
+        0xE8, 0x3B, 0x00, 0x00, 0x00, // 0x00: call 0x40
+        0xC3,                         // 0x05: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x28 }); // 0x40: sub rsp, 0x28
+    file.insert(file.end(), { 0x48, 0x89, 0xD9 });       // 0x44: mov rcx, rbx  (hObject of sub_100: 41 instructions before the call)
+    for (int i = 0; i < 40; i++)
+        file.insert(file.end(), { 0x48, 0x83, 0xC0, 0x01 }); // 0x47 ..: add rax, 1
+    file.insert(file.end(), { 0xE8, 0x14, 0x00, 0x00, 0x00 });  // 0xe7: call 0x100
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x28, 0xC3 });  // 0xec: add rsp, 0x28; ret
+    file.resize(0x100, 0xCC);
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x28 }); // 0x100: sub rsp, 0x28
+    const uint32 displacement = 0x200 - static_cast<uint32>(file.size() + 6); // 0x104: call qword ptr [CloseHandle] (rcx: its hObject)
+    file.insert(file.end(), { 0xFF, 0x15 });
+    for (uint32 i = 0; i < 4; i++)
+        file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x28, 0xC3 }); // 0x10a: add rsp, 0x28; ret
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "CloseHandle", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(dissasmInstance.zone->FindInferredPrototype(0x100) != nullptr);
+    REQUIRE(dissasmInstance.zone->argumentDefinitions.contains(0x44));
+    REQUIRE(FindListingLine(listing, "0x00000044  mov    rcx, rbx").ends_with("; hObject"));
+}
+
+TEST_CASE("GccNamespaceFunctions", "[Dissasm]Help")
+{
+    // GCC: a function of a namespace takes no this: std::__throw_* never returns (no address of a result: its parameters from rdi, the string
+    // before the variadic arguments of a *_fmt one its format); another one has none or the address of what it returns before its parameters,
+    // as the registers its entry reads tell (std::filesystem::status: none, std::filesystem::space: a space_info); a method of a class stays
+    // not known by its name
+    const auto* fmt = FindApiPrototype("std::__throw_out_of_range_fmt(char const*, ...)");
+    REQUIRE(fmt != nullptr);
+    REQUIRE(fmt->params.size() == 1);
+    REQUIRE(std::string_view(fmt->params[0].name) == "format");
+    REQUIRE(FindApiPrototype("std::filesystem::status(std::filesystem::__cxx11::path const&, std::error_code&)") == nullptr);
+    const auto status = MakeGccMethodPrototype("std::filesystem::status(std::filesystem::__cxx11::path const&, std::error_code&)", 1);
+    REQUIRE(status != nullptr);
+    REQUIRE(status->details.params.size() == 2);
+    REQUIRE(std::string_view(status->details.params[0].type) == "std::filesystem::__cxx11::path const&");
+    const auto space = MakeGccMethodPrototype("std::filesystem::space(std::filesystem::__cxx11::path const&, std::error_code&)", 2);
+    REQUIRE(space != nullptr);
+    REQUIRE(space->details.params.size() == 3);
+    REQUIRE(std::string_view(space->details.params[0].name) == "result");
+    REQUIRE(FindApiPrototype("std::locale::facet::_S_destroy_c_locale(__locale_struct*&)") == nullptr);
+
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x08,                   // 0x00: sub rsp, 8
+        0x48, 0x8D, 0x3D, 0x35, 0x02, 0x00, 0x00, // 0x04: lea rdi, [rip + 0x235] (format "%zu > %zu" at 0x240)
+        0x48, 0x89, 0xDE,                         // 0x0b: mov rsi, rbx  (%zu)
+        0x4C, 0x89, 0xE2,                         // 0x0e: mov rdx, r12  (%zu)
+    };
+    const uint32 displacement = 0x200 - static_cast<uint32>(file.size() + 6); // 0x11: call qword ptr [std::__throw_out_of_range_fmt]
+    file.insert(file.end(), { 0xFF, 0x15 });
+    for (uint32 i = 0; i < 4; i++)
+        file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    file.resize(0x240, 0xCC);
+    for (const char c : std::string_view("%zu > %zu"))
+        file.push_back(static_cast<unsigned char>(c));
+    file.resize(0x260, 0x00);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.systemV          = true;
+    layout.imports          = { { 0x200, { "std::__throw_out_of_range_fmt(char const*, ...)", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000004  lea    rdi").ends_with("; format \"%zu > %zu\""));
+    REQUIRE(FindListingLine(listing, "0x0000000b  mov    rsi, rbx").ends_with("; %zu"));
+    REQUIRE(FindListingLine(listing, "0x0000000e  mov    rdx, r12").ends_with("; %zu"));
+}
+
+TEST_CASE("GccMethodsByTheirCallers", "[Dissasm]Help")
+{
+    // a GCC method whose entry reads rdi only (its parameter unused): the reads decide nothing; its callers write rdi and esi (this, the int):
+    // the highest register the callers agree on decides it (Foo::reset(int): this, int); one caller only decides nothing (Foo::clear(int))
+    std::vector<unsigned char> file = {
+        0x48, 0x89, 0xDF,             // 0x00: mov rdi, rbx              (this)
+        0xBE, 0x05, 0x00, 0x00, 0x00, // 0x03: mov esi, 5                (int)
+        0xE8, 0x33, 0x00, 0x00, 0x00, // 0x08: call 0x40                 Foo::reset(int)
+        0x4C, 0x89, 0xE7,             // 0x0d: mov rdi, r12              (this)
+        0xBE, 0x07, 0x00, 0x00, 0x00, // 0x10: mov esi, 7                (int)
+        0xE8, 0x26, 0x00, 0x00, 0x00, // 0x15: call 0x40                 Foo::reset(int)
+        0x48, 0x89, 0xDF,             // 0x1a: mov rdi, rbx
+        0xBE, 0x09, 0x00, 0x00, 0x00, // 0x1d: mov esi, 9
+        0xE8, 0x39, 0x00, 0x00, 0x00, // 0x22: call 0x60                 Foo::clear(int) (one caller)
+        0xC3,                         // 0x27: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x8B, 0x07, 0xC3 }); // 0x40: mov eax, dword ptr [rdi]; ret (the int not read)
+    file.resize(0x60, 0xCC);
+    file.insert(file.end(), { 0x8B, 0x07, 0xC3 }); // 0x60: mov eax, dword ptr [rdi]; ret
+    file.resize(0x80, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.systemV         = true;
+    layout.functionEntries = { { 0x40, { "Foo::reset(int)", 3 } }, { 0x60, { "Foo::clear(int)", 3 } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000000  mov    rdi, rbx").ends_with("; this"));
+    REQUIRE(FindListingLine(listing, "0x00000003  mov    esi, 5").ends_with("; int"));
+    REQUIRE(FindListingLine(listing, "0x00000010  mov    esi, 7").ends_with("; int"));
+    REQUIRE(FindListingLine(listing, "0x0000001d  mov    esi, 9").find(';') == std::string_view::npos);
+}
+
+TEST_CASE("TypedArgumentsThroughAJump", "[Dissasm]Help")
+{
+    // a parameter of a demangled C++ name has a type and no name: a write that reaches it through a jump is named by its type, as the display
+    // names the ones of the block of the call (a write two calls take as two parameters stays the display's: the conflict sees the types)
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,       // 0x00: sub rsp, 0x28
+        0x85, 0xC9,                   // 0x04: test ecx, ecx
+        0x74, 0x07,                   // 0x06: je loc_F
+        0xBA, 0x05, 0x00, 0x00, 0x00, // 0x08: mov edx, 5    (int: through the jmp)
+        0xEB, 0x05,                   // 0x0d: jmp loc_14
+        0xBA, 0x07, 0x00, 0x00, 0x00, // 0x0f: loc_F: mov edx, 7 (int: falls into the call)
+        0x48, 0x89, 0xD9,             // 0x14: loc_14: mov rcx, rbx (this)
+    };
+    const uint32 displacement = 0x200 - static_cast<uint32>(file.size() + 6); // 0x17: call qword ptr [A::Set(int)]
+    file.insert(file.end(), { 0xFF, 0x15 });
+    for (uint32 i = 0; i < 4; i++)
+        file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x28, 0xC3 }); // 0x1d: add rsp, 0x28; ret
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "public: void __cdecl A::Set(int)", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(dissasmInstance.zone->argumentDefinitions.contains(0x08));
+    REQUIRE(FindListingLine(listing, "0x00000008  mov    edx, 5").ends_with("; int"));
+    REQUIRE(FindListingLine(listing, "0x0000000f  mov    edx, 7").ends_with("; int"));
+    REQUIRE(FindListingLine(listing, "0x00000014  mov    rcx, rbx").ends_with("; this"));
 }

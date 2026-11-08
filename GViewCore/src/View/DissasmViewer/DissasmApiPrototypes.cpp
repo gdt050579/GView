@@ -2716,6 +2716,16 @@ bool IsConstructorOrDestructor(std::string_view functionName, std::string_view s
     return !className.empty() && (own == className || (own.size() == className.size() + 1 && own.front() == '~' && own.substr(1) == className));
 }
 
+// GCC: a scope that is a namespace, never a class (the demangled names do not tell them apart): its functions take no this
+bool IsGccNamespace(std::string_view scope)
+{
+    static constexpr std::string_view NAMESPACES[] = {
+        "std",      "std::_V2",         "std::__cxx11", "std::__detail", "std::__exception_ptr", "std::chrono", "std::filesystem", "std::filesystem::__cxx11",
+        "std::pmr", "std::this_thread", "__gnu_cxx",    "__cxxabiv1"
+    };
+    return std::find(std::begin(NAMESPACES), std::end(NAMESPACES), scope) != std::end(NAMESPACES);
+}
+
 // a pointer to a function (void (*)(void*), struct DirectUI::PropertyInfo const * (__cdecl *)(void)): one pointer; not a pointer to a member
 // function (void (__cdecl A::*)(void): its size depends on the class)
 bool IsPointerToFunction(std::string_view type)
@@ -2923,6 +2933,30 @@ std::unique_ptr<DissasmUserPrototype> MakeDemangledPrototype(std::string_view na
         const std::string_view scope = ScopeOfName(functionName);
         if (scope.empty())
             return nullptr;
+        if (scope == "std" && functionName.substr(scope.size() + 2).starts_with("__throw_")) {
+            // std::__throw_logic_error(char const*), std::__throw_out_of_range_fmt(char const*, ...): a function of the namespace std that never
+            // returns (no address of a result before its parameters, whatever the code of another file reads; no this): its parameters in the
+            // registers of System V; the string before the variadic arguments of a function named *_fmt is its format
+            details.callerCleansStack = true;
+            text                      = std::string(functionName) + "(";
+            for (const auto parameter : parameters) {
+                text += (text.ends_with('(') ? "" : ", ") + std::string(parameter);
+                variadic = variadic || parameter == "...";
+            }
+            const auto slots = AssignSystemVSlots(parameters, 0);
+            kept             = slots.registers;
+            if (!slots.stack.empty())
+                kept.resize(6);
+            kept.insert(kept.end(), slots.stack.begin(), slots.stack.end());
+            const bool format = variadic && functionName.ends_with("_fmt") && !kept.empty() && kept.size() + 1 == parameters.size() &&
+                                (kept.back() == "char const*" || kept.back() == "wchar_t const*");
+            for (size_t index = 0; index < kept.size(); index++)
+                details.params.push_back({ format && index + 1 == kept.size() ? prototype->strings.emplace_back("format").c_str() : unnamed.c_str(),
+                                           prototype->strings.emplace_back(kept[index]).c_str() });
+            details.prototype    = prototype->strings.emplace_back(text + ")");
+            details.functionName = prototype->strings.emplace_back(functionName);
+            return prototype;
+        }
         if (!IsConstructorOrDestructor(functionName, scope))
             return nullptr;
         const std::string_view outer     = ScopeOfName(scope);
@@ -3135,25 +3169,28 @@ std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::MakeGccM
     const std::string_view scope = ScopeOfName(parsed->functionName);
     const bool isConst           = parsed->qualifiers.find("const") != std::string_view::npos;
     const bool returnInRegisters = !parsed->returnType.empty() && (parsed->returnType == "void" || SystemVIntegerRegisters(parsed->returnType) >= 0);
-    if (scope.empty() && isConst)
+    // a function of a namespace (std::filesystem::status, std::_Hash_bytes): no this; none or the address of what it returns before its
+    // parameters (std::filesystem::space returns a space_info)
+    const bool inNamespace = IsGccNamespace(scope);
+    if ((scope.empty() || inNamespace) && isConst)
         return nullptr;
-    int32 hidden = 0;
+    int32 hidden = -1;
     SystemVSlots slots;
-    for (int32 candidate = 1; candidate <= 2; candidate++) {
-        if ((candidate == 2 && (scope.empty() || returnInRegisters)) || (candidate == 1 && scope.empty() && returnInRegisters))
+    for (int32 candidate = inNamespace ? 0 : 1; candidate <= 2; candidate++) {
+        if ((candidate == 2 && (scope.empty() || inNamespace || returnInRegisters)) || (candidate == 1 && (scope.empty() || inNamespace) && returnInRegisters))
             continue;
         auto assigned    = AssignSystemVSlots(parsed->parameters, static_cast<uint32>(candidate));
         const int32 last = candidate + static_cast<int32>(assigned.registers.size()) - 1;
         if (highestRead == last || (candidate == 1 && isConst && returnInRegisters && highestRead < last)) {
-            if (hidden != 0 && !slots.stack.empty())
+            if (hidden >= 0 && !slots.stack.empty())
                 return nullptr; // both fit
-            if (hidden != 0)
+            if (hidden >= 0)
                 break; // both fit, this alone with every parameter in a register (as 9v: far more common than a result in memory)
             hidden = candidate;
             slots  = std::move(assigned);
         }
     }
-    if (hidden == 0)
+    if (hidden < 0)
         return nullptr;
     auto prototype            = std::make_shared<DissasmUserPrototype>();
     auto& details             = prototype->details;
@@ -3162,11 +3199,13 @@ std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::MakeGccM
     const auto& unnamed       = prototype->strings.emplace_back();
     const auto& thisType      = prototype->strings.emplace_back(std::string(scope) + "*");
     std::string text          = std::string(parsed->functionName) + "(";
-    if (hidden == 2 || scope.empty()) { // the address of what it returns (a function: no this)
+    if (hidden == 2 || ((scope.empty() || inNamespace) && hidden == 1)) { // the address of what it returns (a function: no this)
         details.params.push_back({ "result", unnamed.c_str() });
         text += hidden == 2 ? "void* result, " : "void* result";
     }
-    if (hidden == 2 || isConst || (!scope.empty() && (returnInRegisters || readsFirstArgument))) { // the object read: no result written first
+    if (inNamespace) {
+        // no this
+    } else if (hidden == 2 || isConst || (!scope.empty() && (returnInRegisters || readsFirstArgument))) { // the object read: no result written first
         details.params.push_back({ "this", thisType.c_str() });
         text += thisType + " this";
     } else if (!scope.empty()) { // this, or the address of what a static method / a function of a namespace returns
@@ -3181,7 +3220,7 @@ std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::MakeGccM
         details.params.push_back({ unnamed.c_str(), prototype->strings.emplace_back(slots.stack[index]).c_str() });
     }
     for (const auto parameter : parsed->parameters)
-        text += ", " + std::string(parameter);
+        text += (text.ends_with('(') ? "" : ", ") + std::string(parameter);
     details.prototype    = prototype->strings.emplace_back(text + ")" + std::string(parsed->qualifiers));
     details.functionName = prototype->strings.emplace_back(parsed->functionName);
     return prototype;
