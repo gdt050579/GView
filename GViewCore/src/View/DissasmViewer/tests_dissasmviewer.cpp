@@ -13558,7 +13558,7 @@ TEST_CASE("CxxDemangledPrototypes", "[Dissasm]Help")
     REQUIRE(std::string_view(desiredSize->returnType).empty());
     REQUIRE(FindApiPrototype("public: static class UID __cdecl DirectUI::Button::Click(void)") == nullptr);
     REQUIRE(FindApiPrototype("void (__cdecl * __cdecl _set_se_translator(void (__cdecl *)(unsigned int, struct _EXCEPTION_POINTERS *)))(unsigned int, "
-                             "struct _EXCEPTION_POINTERS *)") == nullptr);
+                             "struct _EXCEPTION_POINTERS *)") != nullptr); // a pointer to a function returned (MsvcFunctionsReturningPointersToFunctions)
     REQUIRE(FindApiPrototype("public: void __cdecl Foo::Set(struct tagRECT)") == nullptr);
     REQUIRE(FindApiPrototype("public: void __fastcall Foo::Set(int)") == nullptr);
     // 32 bit x86: __thiscall takes this in ecx and pops its pushes, __cdecl does not
@@ -15650,4 +15650,113 @@ TEST_CASE("PrototypesOfAnotherZone", "[Dissasm]Zones")
         REQUIRE(inferred->params.size() == 1);
         REQUIRE(std::string_view(inferred->params[0].name) == "handle");
     }
+}
+
+TEST_CASE("MsvcFunctionsReturningPointersToFunctions", "[Dissasm]Help")
+{
+    // MSVC: a function returning a pointer to a function has its parameters inside the declarator of that pointer
+    const auto* translator = FindApiPrototype("void (__cdecl * __cdecl _set_se_translator(void (__cdecl *)(unsigned int, struct _EXCEPTION_POINTERS "
+                                              "*)))(unsigned int, struct _EXCEPTION_POINTERS *)");
+    REQUIRE(translator != nullptr);
+    REQUIRE(translator->params.size() == 1);
+    REQUIRE(std::string_view(translator->params[0].type) == "void (__cdecl *)(unsigned int, struct _EXCEPTION_POINTERS *)");
+    REQUIRE(std::string_view(translator->returnType) == "void (__cdecl *)(unsigned int, struct _EXCEPTION_POINTERS *)");
+    REQUIRE(translator->callerCleansStack);
+    // a method returning one: this, then its int
+    const auto* handler = FindApiPrototype("public: int (__cdecl * __thiscall Foo::Handler(int))(void)");
+    REQUIRE(handler != nullptr);
+    REQUIRE(handler->params.size() == 1); // __thiscall: this in ecx
+    REQUIRE(std::string_view(handler->params[0].type) == "int");
+    REQUIRE(std::string_view(handler->returnType) == "int (__cdecl *)(void)");
+    // GCC: not read (no convention: the return type before the name)
+    REQUIRE(FindApiPrototype("void (*std::set_terminate(void (*)()))()") == nullptr);
+}
+
+TEST_CASE("GccMethodsOperatorsAndTheirObjectPassed", "[Dissasm]Help")
+{
+    // GCC methods whose first argument is this or a result, undecided by their entry: an operator of a class is never static
+    // (Foo::operator=(Foo const&)): this; Foo::put(int) passes rdi in rsi to Foo::Sentry::Sentry(Foo&) (a reference of its class: an object
+    // that exists): this
+    REQUIRE(IsGccMemberOperator("std::istream::operator>>(int&)"));
+    REQUIRE(IsGccMemberOperator("Foo::operator=(Foo const&)"));
+    REQUIRE_FALSE(IsGccMemberOperator("Foo::operator new(unsigned long)"));
+    REQUIRE_FALSE(IsGccMemberOperator("std::operator<<(std::ostream&, char const*)")); // a function of a namespace
+    REQUIRE(GetGccMethodClass("std::ostream::put(char)") == "std::ostream");
+    REQUIRE(GetGccMethodClass("std::filesystem::status(std::filesystem::path const&)").empty());
+    std::vector<unsigned char> file = {
+        0x48, 0x89, 0xDF,             // 0x00: mov rdi, rbx              (this)
+        0xBE, 0x05, 0x00, 0x00, 0x00, // 0x03: mov esi, 5                (int)
+        0xE8, 0x53, 0x00, 0x00, 0x00, // 0x08: call 0x60                 Foo::put(int)
+        0x48, 0x89, 0xDF,             // 0x0d: mov rdi, rbx              (this)
+        0x4C, 0x89, 0xE6,             // 0x10: mov rsi, r12              (Foo const&)
+        0xE8, 0x68, 0x00, 0x00, 0x00, // 0x13: call 0x80                 Foo::operator=(Foo const&)
+        0xC3,                         // 0x18: ret
+    };
+    file.resize(0x60, 0xCC);
+    file.insert(file.end(), {
+                                  0x89, 0xF0,                   // 0x60: mov eax, esi
+                                  0x48, 0x89, 0xFE,             // 0x62: mov rsi, rdi
+                                  0x48, 0x8D, 0x7C, 0x24, 0xF8, // 0x65: lea rdi, [rsp - 8]
+                                  0xE8, 0x31, 0x00, 0x00, 0x00, // 0x6a: call 0xa0         Foo::Sentry::Sentry(Foo&)
+                                  0xC3,                         // 0x6f: ret
+                            });
+    file.resize(0x80, 0xCC);
+    file.insert(file.end(), { 0x8B, 0x06, 0x89, 0x07, 0x48, 0x89, 0xF8, 0xC3 }); // 0x80: mov eax, [rsi]; mov [rdi], eax; mov rax, rdi; ret
+    file.resize(0xA0, 0xCC);
+    file.insert(file.end(), { 0xC3 }); // 0xa0: ret
+    file.resize(0xC0, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.systemV         = true;
+    layout.functionEntries = { { 0x60, { "Foo::put(int)", 0x10 } },
+                               { 0x80, { "Foo::operator=(Foo const&)", 8 } },
+                               { 0xA0, { "Foo::Sentry::Sentry(Foo&)", 1 } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000000  mov    rdi, rbx").ends_with("; this"));
+    REQUIRE(FindListingLine(listing, "0x00000003  mov    esi, 5").ends_with("; int"));
+    REQUIRE(FindListingLine(listing, "0x0000000d  mov    rdi, rbx").ends_with("; this"));
+    REQUIRE(FindListingLine(listing, "0x00000010  mov    rsi, r12").ends_with("; Foo const&"));
+}
+
+TEST_CASE("X86JumpedFormatConversions", "[Dissasm]Help")
+{
+    // 32 bit x86: the arguments of a variadic call pushed in a block that jumps to it (push 5; push esi; push offset format; jmp loc_16 ...
+    // loc_16: call printf): the pushes after the format take the conversions of its string ("%s %d")
+    std::vector<unsigned char> file = {
+        0x85, 0xC0,                   // 0x00: test eax, eax
+        0x74, 0x0A,                   // 0x02: je 0x0e
+        0x6A, 0x05,                   // 0x04: push 5             (%d)
+        0x56,                         // 0x06: push esi           (%s)
+        0x68, 0x60, 0x00, 0x00, 0x00, // 0x07: push 0x60          (format)
+        0xEB, 0x08,                   // 0x0c: jmp 0x16
+        0x6A, 0x07,                   // 0x0e: push 7             (the other path: the walk of the display)
+        0x53,                         // 0x10: push ebx
+        0x68, 0x60, 0x00, 0x00, 0x00, // 0x11: push 0x60
+        0xE8, 0x25, 0x00, 0x00, 0x00, // 0x16: call 0x40          printf
+        0x83, 0xC4, 0x0C,             // 0x1b: add esp, 0xc
+        0xC3,                         // 0x1e: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.push_back(0xC3); // 0x40: ret (printf)
+    file.resize(0x60, 0xCC);
+    for (const char c : std::string_view("%s %d")) // 0x60: "%s %d"
+        file.push_back(static_cast<unsigned char>(c));
+    file.push_back(0x00);
+    file.resize(0x80, 0x00);
+    ZoneLayout layout;
+    layout.size                = 0x60;
+    layout.entryPoint          = 0;
+    layout.language            = DisassemblyLanguage::x86;
+    layout.functionEntries     = { { 0x40, { "printf", 1 } } };
+    layout.addressToFileOffset = [](uint64 address) -> std::optional<uint64> { return address < 0x80 ? std::optional<uint64>(address) : std::nullopt; };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(dissasmInstance.zone->argumentDefinitions.contains(0x06));
+    REQUIRE(FindListingLine(listing, "0x00000004  push   5").ends_with("; %d"));
+    REQUIRE(FindListingLine(listing, "0x00000006  push   esi").ends_with("; %s"));
 }

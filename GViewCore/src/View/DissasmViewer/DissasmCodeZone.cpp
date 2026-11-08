@@ -3836,8 +3836,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (prototype && !prototype->details.params.empty() && !prototype->details.params[0].name[0] && !prototype->details.params[0].type[0]) {
                 uint64 passedTo = NO_TARGET;
                 const auto use  = FirstUseOfFirstArgument(start, functionEnds[index], passedTo);
-                // this or a result: the object it reads; no address of a result returned, an object read on another path
-                if (use == FirstArgumentUse::Read || FirstArgumentIsAnObject(start, functionEnds[index]))
+                // this or a result: the object it reads; an operator of its class; no address of a result returned, an object read on another path
+                if (use == FirstArgumentUse::Read || IsGccMemberOperator(name) || FirstArgumentIsAnObject(start, functionEnds[index], GetGccMethodClass(name)))
                     prototype = MakeGccMethodPrototype(name, highest, true);
                 else if (use == FirstArgumentUse::PassedToCall)
                     undecided.push_back({ index, highest, passedTo });
@@ -3944,7 +3944,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (!prototype->details.params.empty() && !prototype->details.params[0].name[0] && !prototype->details.params[0].type[0]) {
                 uint64 passedTo = NO_TARGET;
                 const auto use  = FirstUseOfFirstArgument(start, functionEnds[unknown[entry].index], passedTo);
-                if (use == FirstArgumentUse::Read || FirstArgumentIsAnObject(start, functionEnds[unknown[entry].index]))
+                if (use == FirstArgumentUse::Read || IsGccMemberOperator(name) ||
+                    FirstArgumentIsAnObject(start, functionEnds[unknown[entry].index], GetGccMethodClass(name)))
                     prototype = MakeGccMethodPrototype(name, highest, true);
                 else if (use == FirstArgumentUse::PassedToCall)
                     undecided.push_back({ unknown[entry].index, highest, passedTo });
@@ -4065,7 +4066,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // no register holding rdi (xor eax, eax; sete al; mov eax, dword ptr [rbx + 0x10]) decides, as the result of a call or a tail jmp to a
     // function that never got rdi (not in an argument register, never stored: _M_create returns what operator new returns); a copy of rdi
     // (mov rax, rbx after mov rbx, rdi), anything computed from it, a load from the stack (-O0 keeps rdi in a slot of the frame) do not
-    bool FirstArgumentIsAnObject(uint64 start, uint64 end)
+    // `objectClass`: the class of the method (GetGccMethodClass): rdi passed after the first argument of a call as a reference / pointer of it
+    // (the stream of std::istream::sentry::sentry(std::istream&, bool), the source of a copy) is an object that exists
+    bool FirstArgumentIsAnObject(uint64 start, uint64 end, std::string_view objectClass = {})
     {
         enum class Returned : uint8 { Nothing, First, Other, NotKnown };
         struct PathState {
@@ -4140,6 +4143,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 if (flow == X86Flow::Call) {
                     if (noReturnCalls.contains(insn->address))
                         break;
+                    if (!objectClass.empty() && (holders & ARGUMENTS & ~(1u << FIRST)) != 0 && PassesObjectOfClass(*insn, holders, objectClass)) {
+                        decided = true;
+                        break;
+                    }
                     if ((holders & ARGUMENTS) != 0)
                         unwritten = false; // passed to the call: it may write it
                     rax = (holders & ARGUMENTS) == 0 && !stored ? Returned::Other : Returned::NotKnown;
@@ -4208,6 +4215,38 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
         cs_free(insn, 1);
         return decided;
+    }
+
+    // System V x64: a call passes a register of `holders` after its first argument (rsi .. r9) as a parameter typed as a reference / pointer of
+    // `objectClass` (std::ostream&, std::ostream const&, std::ostream*), not as this or the address of a result
+    bool PassesObjectOfClass(const cs_insn& call, uint32 holders, std::string_view objectClass)
+    {
+        static constexpr int SYSTEM_V[] = { 7, 6, 2, 1, 8, 9 };
+        const auto trim                 = [](std::string_view text) {
+            while (!text.empty() && text.front() == ' ')
+                text.remove_prefix(1);
+            while (!text.empty() && text.back() == ' ')
+                text.remove_suffix(1);
+            return text;
+        };
+        const auto* callee = CalleePrototype(call, DissasmArch::X64);
+        if (!callee)
+            return false;
+        for (size_t argument = 1; argument < 6 && argument < callee->params.size(); argument++) {
+            if ((holders & (1u << SYSTEM_V[argument])) == 0 || !callee->params[argument].type)
+                continue;
+            const std::string_view name = callee->params[argument].name ? callee->params[argument].name : "";
+            std::string_view type       = trim(callee->params[argument].type);
+            if (name == "this" || name == "result" || !(type.ends_with('&') || type.ends_with('*')))
+                continue;
+            type.remove_suffix(1);
+            type = trim(type);
+            if (type.ends_with(" const"))
+                type.remove_suffix(6);
+            if (type == objectClass)
+                return true;
+        }
+        return false;
     }
 
     // System V x64: the highest argument register (0: rdi, rsi, rdx, rcx, r8, 5: r9) the entry of a function reads before writing it, on the
@@ -4733,7 +4772,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // CSPrintErrorLineFile: the shared error paths of MSVC, before or after the block). The stack pointer at the jmp is the one at its target,
     // so the pushes of the block before the jmp are the arguments of the call after the ones pushed from the target on. The block: from the
     // branch / call before the jmp; the target: up to its first call, without another branch or write of the stack pointer on the way. The
-    // walk of the display stops at the jmp (AnnounceCallInstruction): no push is named twice
+    // walk of the display stops at the jmp (AnnounceCallInstruction): no push is named twice. A variadic callee whose format is pushed in the
+    // block (push offset aWs; jmp loc_X ... loc_X: call sub_4CBAD9): the pushes after it take the conversions of the string (ReadFormatTexts)
     template <typename HasPrototype>
     void CollectX86JumpedPushes(uint64 start, uint64 end, const HasPrototype& hasPrototype)
     {
@@ -4745,6 +4785,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             uint64 address;
             PushStepKind kind;
             uint32 taken;
+            uint64 immediate = NO_TARGET; // push imm: the value pushed
         };
         std::vector<PushStep> pushSteps;
         cs_insn* insn = nullptr;
@@ -4765,7 +4806,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 if (toCall && address == to)
                     return insn->id == X86_INS_CALL && (callee = CalleePrototype(*insn, DissasmArch::X86)) != nullptr;
                 if (insn->id == X86_INS_PUSH) {
-                    pushSteps.push_back({ insn->address, PushStepKind::Push, 0 });
+                    const bool constant = x86.op_count == 1 && x86.operands[0].type == X86_OP_IMM;
+                    pushSteps.push_back(
+                          { insn->address, PushStepKind::Push, 0, constant ? static_cast<uint64>(x86.operands[0].imm) & 0xFFFFFFFFull : NO_TARGET });
                     continue;
                 }
                 if (GetInstructionFlow(*insn, DissasmArch::X86) != X86Flow::None)
@@ -4820,9 +4863,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     plain = false;
             if (!plain || slot >= prototype->params.size() || !decode(blockStart, jump.address, false))
                 continue;
-            // the block before the jmp, walked back: the next arguments (the pushes taken back by a pop / add esp are not)
+            // the block before the jmp, walked back: the next arguments (the pushes taken back by a pop / add esp are not); after the parameters
+            // of a variadic callee, the conversions of its format when the block pushes it
+            const bool variadic = std::string_view(prototype->prototype).find("...") != std::string_view::npos;
+            std::vector<std::string> conversions;
             uint32 taken = 0;
-            for (auto step = pushSteps.rbegin(); step != pushSteps.rend() && slot < prototype->params.size(); ++step) {
+            for (auto step = pushSteps.rbegin(); step != pushSteps.rend(); ++step) {
                 if (step->kind == PushStepKind::Moved)
                     break;
                 if (step->kind == PushStepKind::Taken) {
@@ -4833,13 +4879,54 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     taken--;
                     continue;
                 }
+                if (slot >= prototype->params.size()) {
+                    const size_t index = slot++ - prototype->params.size();
+                    if (index >= conversions.size())
+                        break;
+                    if (!conversions[index].empty())
+                        argumentDefinitions.emplace(step->address, std::make_pair(std::string(prototype->functionName), conversions[index]));
+                    continue;
+                }
                 const auto& parameter = prototype->params[slot++];
                 if (parameter.name && parameter.name[0]) // not a parameter an inferred prototype does not know
                     argumentDefinitions.emplace(step->address, std::make_pair(std::string(prototype->functionName), std::string(parameter.name)));
+                if (variadic && slot == prototype->params.size() && step->immediate != NO_TARGET)
+                    conversions = ReadFormatTexts(step->immediate, parameter.type, prototype->functionName);
             }
         }
         if (insn)
             cs_free(insn, 1);
+    }
+
+    // 32 bit x86: the conversions of the format string at `address` (a VA of the file, pushed): one text per slot of the arguments after it
+    // (GetFormatArgumentTexts); UTF-16 for a type of wide characters (wchar_t, WSTR, WCHAR); none when the string is not in the file
+    std::vector<std::string> ReadFormatTexts(uint64 address, const char* type, std::string_view functionName)
+    {
+        constexpr uint32 MAX_BYTES = 0x200;
+        const auto offset          = addressToFileOffset ? addressToFileOffset(address) : std::nullopt;
+        if (!offset.has_value())
+            return {};
+        const std::string_view typeText = type ? type : "";
+        const bool wide                 = typeText.find("wchar_t") != std::string_view::npos || typeText.find("WSTR") != std::string_view::npos ||
+                          typeText.find("WCHAR") != std::string_view::npos;
+        const auto data = obj->GetData().Get(offset.value(), MAX_BYTES, false);
+        if (!data.IsValid())
+            return {};
+        std::string text;
+        bool ended = false;
+        for (size_t index = 0; index + (wide ? 1 : 0) < data.GetLength(); index += wide ? 2 : 1) {
+            const uint8 c = data.GetData()[index];
+            if (c == 0 && (!wide || data.GetData()[index + 1] == 0)) {
+                ended = true;
+                break;
+            }
+            if ((wide && data.GetData()[index + 1] != 0) || (c < 0x20 && c != '\n' && c != '\r' && c != '\t') || c >= 0x7F)
+                return {}; // not a text of the format
+            text.push_back(static_cast<char>(c));
+        }
+        if (!ended)
+            return {};
+        return GetFormatArgumentTexts(text, functionName.find("scanf") != std::string_view::npos, true, false);
     }
 
     // a cmp of a register with a constant (cmp eax, 0x102 / cmp w0, #0x102 / cmn x0, #1: -1) when the register holds the return value of a
@@ -5885,9 +5972,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         if (!parameters[slot.first - 1].has_value() && !slot.formatType.empty() && !secondHalves[slot.first - 1])
             parameters[slot.first - 1] = std::make_pair(std::string_view("format"), slot.formatType);
         auto prototype = MakeInferredPrototype(start, parameters, secondHalves, old && !old->returnType.empty() ? old : nullptr, true, true);
-        if (prototype)
+        if (prototype) {
             inferredPrototypes[start] = std::move(prototype);
+            formatWrappers.insert(start);
+        }
     }
+    std::unordered_set<uint64> formatWrappers; // InferFormatWrapperPrototype: the functions whose ... the labels phase found
 
     // ARM64: a variadic function (the homes of its variadic registers in its frame, DissasmFunctionFrame::variadic): its prototype inferred
     // again with its frame (InferFunctionPrototype: its fixed arguments, the format it passes with its va_list), unless the user gave one
@@ -7271,6 +7361,14 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         // may be a cdecl one cleaned up later); the listing leaves to such a call the pushes it takes when they are between the arguments of
         // another call
         zone->calleeStackPurges.clear();
+        // 32 bit x86: the format wrappers known since the labels phase only (sub_4CBAD9(const wchar_t* format, ...)): the pushes of the blocks
+        // that jump to their calls, as CollectArgumentDefinitions does for the callees known before it (their format, its conversions)
+        if (!is64 && !zone->IsArmCode() && hasDetailHandle && !formatWrappers.empty() && functionEnds.size() == functionStarts.size()) {
+            const auto toWrapper = [this](const FlowRecord& record) { return record.target != NO_TARGET && formatWrappers.contains(record.target); };
+            for (size_t index = 0; index < functionStarts.size(); index++)
+                if (zone->GetArchAt(functionStarts[index]) == DissasmArch::X86)
+                    CollectX86JumpedPushes(functionStarts[index], functionEnds[index], toWrapper);
+        }
         if (!is64 && !zone->IsArmCode() && hasDetailHandle)
             for (const uint64 start : functionStarts) {
                 auto known = calleePurges.find(start);

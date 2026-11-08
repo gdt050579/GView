@@ -485,6 +485,15 @@ namespace View
         std::optional<uint32> GetGccMethodParameters(std::string_view name);
         // a qualified name of a constructor / destructor of C++ (std::locale::~locale, Foo::Foo<int>)
         bool IsCxxConstructorOrDestructor(std::string_view functionName);
+        // the arguments a format string passes after it (printf, DbgPrintEx, scanf): one text per argument slot, the conversion that takes it
+        // (%s, %08x); `slotsOf4Bytes`: 32 bit x86 (a value of 8 bytes takes two slots), `floatsInXmm`: System V / AAPCS64 (no slot for a double)
+        std::vector<std::string> GetFormatArgumentTexts(std::string_view format, bool scanf, bool slotsOf4Bytes, bool floatsInXmm);
+        // GCC: the class of a demangled name of a method (std::istream for std::istream::ignore(long)); empty for a function without a scope or of
+        // a namespace (IsGccNamespace)
+        std::string GetGccMethodClass(std::string_view name);
+        // GCC: an operator of a class (std::istream::operator>>(int&), Foo::operator=(Foo const&), a conversion): never static (but new / delete,
+        // and since C++23 () / [])
+        bool IsGccMemberOperator(std::string_view name);
         // its prototype once the code of the function tells the highest argument register it reads (0: rdi .. 5: r9): one more than its
         // parameters (this for a const method, the address of what a function returns, else one of them: this when the entry reads memory
         // through it first, `readsFirstArgument`: a result is written first), two more (that address, then this); null otherwise. A static

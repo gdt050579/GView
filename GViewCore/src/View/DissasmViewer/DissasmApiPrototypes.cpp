@@ -2825,7 +2825,8 @@ SystemVSlots AssignSystemVSlots(const std::vector<std::string_view>& parameters,
 // - GCC (std::locale::~locale(), std::runtime_error::runtime_error(char const*)): the constructors and the destructors only (the name of
 //   Itanium tells neither a static method nor what a method returns through a hidden pointer before this); its parameters up to the first
 //   one that takes no integer register of System V (a float, a class by value), none of a stream (a virtual base: the VTT after this)
-std::unique_ptr<DissasmUserPrototype> MakeDemangledPrototype(std::string_view name)
+// `returnsPointerToFunction`: the name rewritten with the type of the pointer to a function it returns before its convention
+std::unique_ptr<DissasmUserPrototype> MakeDemangledPrototype(std::string_view name, bool returnsPointerToFunction = false)
 {
     // the number of a name given twice (std::ios_base::~ios_base()_1), the qualifiers after the parameters (const, &, __ptr64)
     size_t end = name.size();
@@ -2842,7 +2843,25 @@ std::unique_ptr<DissasmUserPrototype> MakeDemangledPrototype(std::string_view na
     if (open == std::string_view::npos || open == 0)
         return nullptr;
     const std::string_view head = Trim(name.substr(0, open));
-    if (head.empty() || head.front() == '[' || (head.find('(') != std::string_view::npos && !head.ends_with("operator()")))
+    if (!returnsPointerToFunction && head.ends_with(')') && !head.ends_with("operator()")) {
+        // MSVC: a function returning a pointer to a function, its parameters inside the declarator of the pointer (void (__cdecl * __cdecl
+        // _set_se_translator(void (__cdecl *)(unsigned int, struct _EXCEPTION_POINTERS *)))(unsigned int, struct _EXCEPTION_POINTERS *)):
+        // read as `void (__cdecl *)(unsigned int, struct _EXCEPTION_POINTERS *) __cdecl _set_se_translator(void (__cdecl *)(...))`
+        const size_t group = FindParametersOpen(head, head.size() - 1);
+        const size_t star  = group == std::string_view::npos ? std::string_view::npos : head.find('*', group);
+        if (group == std::string_view::npos || group == 0 || star == std::string_view::npos || head.find('(', group + 1) < star)
+            return nullptr;
+        std::string pointer          = std::string(Trim(head.substr(group + 1, star - group)));
+        std::string_view declaration = Trim(head.substr(star + 1, head.size() - star - 2));
+        if (declaration.starts_with("__ptr64 ")) {
+            pointer += " __ptr64";
+            declaration.remove_prefix(8);
+        }
+        const std::string rewritten =
+              std::string(head.substr(0, group)) + "(" + pointer + ")" + std::string(name.substr(open, close - open + 1)) + " " + std::string(declaration);
+        return MakeDemangledPrototype(rewritten, true);
+    }
+    if (head.empty() || head.front() == '[' || (head.find('(') != std::string_view::npos && !head.ends_with("operator()") && !returnsPointerToFunction))
         return nullptr; // [thunk]:, a pointer to a function returned
     const auto parameters = SplitDemangledParameters(name.substr(open + 1, close - open - 1));
 
@@ -3154,6 +3173,30 @@ std::optional<uint32> GView::View::DissasmViewer::GetGccMethodParameters(std::st
         return std::nullopt;
     const auto slots = AssignSystemVSlots(parsed->parameters, 0);
     return static_cast<uint32>(slots.registers.size() + slots.stack.size());
+}
+
+std::string GView::View::DissasmViewer::GetGccMethodClass(std::string_view name)
+{
+    const auto parsed = name.find('(') != std::string_view::npos ? ParseGccMethodName(name) : std::nullopt;
+    if (!parsed.has_value())
+        return {};
+    const std::string_view scope = ScopeOfName(parsed->functionName);
+    return scope.empty() || IsGccNamespace(scope) ? std::string() : std::string(scope);
+}
+
+bool GView::View::DissasmViewer::IsGccMemberOperator(std::string_view name)
+{
+    const auto parsed = name.find('(') != std::string_view::npos ? ParseGccMethodName(name) : std::nullopt;
+    if (!parsed.has_value())
+        return false;
+    const std::string_view scope = ScopeOfName(parsed->functionName);
+    if (scope.empty() || IsGccNamespace(scope))
+        return false;
+    std::string_view own = parsed->functionName.substr(scope.size() + 2);
+    if (!own.starts_with("operator") || own.size() == 8)
+        return false;
+    own = Trim(own.substr(8));
+    return own != "new" && own != "delete" && own != "new[]" && own != "delete[]" && own != "()" && own != "[]" && !own.empty();
 }
 
 std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::MakeGccMethodPrototype(

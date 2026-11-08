@@ -1821,7 +1821,7 @@ static bool HasFormatArguments(const AsmFunctionDetails& function)
 // %I64x, %lld, %f); none for a double of System V (an xmm register), for the %m of glibc. scanf: %*d assigns nothing, %[a-z] takes a
 // buffer. The texts up to a conversion it does not know (a long double, an unknown letter, the end of a shortened string); none for a
 // positional one (%1$s)
-static std::vector<std::string> GetFormatArgumentTexts(std::string_view format, bool scanf, bool slotsOf4Bytes, bool floatsInXmm)
+std::vector<std::string> GView::View::DissasmViewer::GetFormatArgumentTexts(std::string_view format, bool scanf, bool slotsOf4Bytes, bool floatsInXmm)
 {
     std::vector<std::string> texts;
     const auto isDigit = [&format](size_t index) { return index < format.size() && format[index] >= '0' && format[index] <= '9'; };
