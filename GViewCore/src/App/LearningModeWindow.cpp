@@ -3,7 +3,9 @@
 
 #include "Internal.hpp"
 #include "Learning/LearningSession.hpp"
+#include "Learning/LearningFormat.hpp"
 #include "Learning/TaskFiles.hpp"
+#include "LearningCourse.hpp"
 
 #include <cstdio>
 #include <optional>
@@ -30,6 +32,23 @@ constexpr int BTN_SUBMIT  = 5;
 constexpr int BTN_REFRESH = 6;
 constexpr int BTN_CLOSE   = 7;
 constexpr int BTN_NOTES   = 8;
+constexpr int BTN_OPEN_WITH_WORK = 9;
+constexpr int BTN_OPEN_SOLUTION  = 10;
+
+// what the course server keeps for a problem (spec §10.12): "work 2026-11-08", "solution", "solution+replay"
+std::string CourseColumnText(const Learning::CatalogueItem& item)
+{
+    std::string text;
+    if (item.hasMe && item.me.workSavedAt != 0)
+        text = "work " + Learning::FormatLocalDate(item.me.workSavedAt);
+    if (item.solutionAvailable)
+    {
+        if (!text.empty())
+            text += ", ";
+        text += item.solutionHasReplay ? "solution+replay" : "solution";
+    }
+    return text;
+}
 
 constexpr uint64 ROW_NONE = 0xFFFFFFFFFFFFFFFFull;
 
@@ -277,17 +296,7 @@ std::string FormatRemaining(uint64 endsAt, uint64 now)
     return buf;
 }
 
-std::string FormatSize(uint64 size)
-{
-    char buf[32];
-    if (size >= 1024 * 1024)
-        snprintf(buf, sizeof(buf), "%.1f MiB", static_cast<double>(size) / (1024.0 * 1024.0));
-    else if (size >= 1024)
-        snprintf(buf, sizeof(buf), "%.1f KiB", static_cast<double>(size) / 1024.0);
-    else
-        snprintf(buf, sizeof(buf), "%llu B", (unsigned long long) size);
-    return buf;
-}
+using Learning::FormatSize;
 
 std::string FeatureList(const std::vector<Feature>& features)
 {
@@ -453,6 +462,7 @@ class LearningModeWindow : public Window,
     Reference<TextField> connectionField;
     Reference<Label> lbMaskedConnection;
     Reference<Button> connectButton, reconnectButton, endButton, openButton, detailsButton, submitButton, refreshButton, notesButton;
+    Reference<Button> openWithWorkButton, openSolutionButton;
     Reference<ColoredLine> statusLine, previewLine;
     Reference<Label> lbPolicy, lbBlocked, lbMessage, lbHint;
     Reference<TreeView> tree;
@@ -500,7 +510,10 @@ class LearningModeWindow : public Window,
               this, "Click an item to preview its description below the list; press Details for the full explanation.", "l:1,t:7,r:1,h:1");
 
         tree = Factory::TreeView::Create(
-              this, "l:1,t:8,r:1,b:3", { "n:Week / item,w:44", "n:Kind,w:9", "n:Points,w:10", "n:Status,w:34" }, TreeViewFlags::Searchable);
+              this,
+              "l:1,t:8,r:1,b:3",
+              { "n:Week / item,w:44", "n:Kind,w:9", "n:Points,w:10", "n:Status,w:34", "n:Course,w:28" },
+              TreeViewFlags::Searchable);
         tree->Handlers()->OnItemPressed        = this;
         tree->Handlers()->OnCurrentItemChanged = this;
         previewLine                            = this->CreateChildControl<ColoredLine>("l:1,b:2,r:1,h:1");
@@ -510,6 +523,9 @@ class LearningModeWindow : public Window,
         submitButton  = Factory::Button::Create(this, "&Submit flag", "l:27,b:0,w:15", BTN_SUBMIT, ButtonFlags::Flat);
         refreshButton = Factory::Button::Create(this, "&Refresh", "l:43,b:0,w:12", BTN_REFRESH, ButtonFlags::Flat);
         notesButton   = Factory::Button::Create(this, "&Notes", "l:56,b:0,w:11", BTN_NOTES, ButtonFlags::Flat);
+        // course work (spec §10.12): the task with the saved work loaded, the teacher's solution on its own
+        openWithWorkButton = Factory::Button::Create(this, "Open with &work", "l:68,b:0,w:17", BTN_OPEN_WITH_WORK, ButtonFlags::Flat);
+        openSolutionButton = Factory::Button::Create(this, "Open sol&ution", "l:86,b:0,w:16", BTN_OPEN_SOLUTION, ButtonFlags::Flat);
         Factory::Button::Create(this, "C&lose", "r:1,b:0,w:12", BTN_CLOSE, ButtonFlags::Flat);
 
         UpdateStatus();
@@ -558,13 +574,16 @@ class LearningModeWindow : public Window,
 
     void OnTreeViewItemPressed(Reference<TreeView>, TreeViewItem&) override
     {
-        OpenSelected();
+        OpenSelected(ResumeMode::Offer);
     }
 
     void OnTreeViewCurrentItemChanged(Reference<TreeView>, TreeViewItem&) override
     {
         if (!populating) // the tree reports changes while it is rebuilt, before the rows are complete
+        {
             UpdatePreview();
+            UpdateItemButtons();
+        }
     }
 
     bool OnEvent(Reference<Control> c, Event eventType, int id) override
@@ -580,7 +599,13 @@ class LearningModeWindow : public Window,
                 EndSession();
                 return true;
             case BTN_OPEN:
-                OpenSelected();
+                OpenSelected(ResumeMode::Offer);
+                return true;
+            case BTN_OPEN_WITH_WORK:
+                OpenSelected(ResumeMode::Load);
+                return true;
+            case BTN_OPEN_SOLUTION:
+                OpenSolutionSelected();
                 return true;
             case BTN_DETAILS:
                 ShowDetails();
@@ -708,6 +733,23 @@ class LearningModeWindow : public Window,
         detailsButton->SetEnabled(Session().IsCatalogueLoaded());
         // the Notes UI exists only while notes are on (absent object or 403 => hidden, spec §10.11)
         notesButton->SetVisible(st.notes == Learning::NotesAvailability::Available);
+        UpdateItemButtons();
+    }
+
+    // Open with work / Open solution: for the selected problem, when the server keeps course work (spec §10.12)
+    void UpdateItemButtons()
+    {
+        const auto& s     = Session();
+        const bool shown  = s.GetWorkAvailability() != Learning::WorkAvailability::Absent;
+        const bool usable = shown && s.CanUseWork() && s.CanOpenItems() && !s.GetStatus().busy;
+        const auto* item  = SelectedItem();
+        const bool problem = item != nullptr && item->IsProblem();
+        if ((openWithWorkButton->HasFocus() || openSolutionButton->HasFocus()) && !shown)
+            tree->SetFocus(); // AppCUI keeps the focus on a hidden control
+        openWithWorkButton->SetVisible(shown);
+        openSolutionButton->SetVisible(shown);
+        openWithWorkButton->SetEnabled(usable && problem && item->hasMe && item->me.workSavedAt != 0);
+        openSolutionButton->SetEnabled(usable && problem && item->solutionAvailable);
     }
 
     void ShowNotes()
@@ -801,6 +843,8 @@ class LearningModeWindow : public Window,
                         status += ", " + FormatSize(it.size);
                 }
                 node.SetText(3, status);
+                if (problem)
+                    node.SetText(4, CourseColumnText(it));
                 if (problem && it.hasMe && it.me.solved)
                     node.SetType(TreeViewItem::Type::Emphasized_1);
                 rows.push_back(RowRef{ w, problem ? RowKind::Problem : RowKind::Resource, idx });
@@ -990,6 +1034,16 @@ class LearningModeWindow : public Window,
                 text += std::string("\nSolved: ") + (item->me.solved ? "yes" : "no") + ", attempts: " + std::to_string(item->me.attempts);
             if (item->requireExplanation)
                 text += "\nAn explanation is required with the flag.";
+            if (Session().GetWorkAvailability() != Learning::WorkAvailability::Absent)
+            {
+                if (item->hasMe && item->me.workSavedAt != 0)
+                    text += "\nYour course work: saved " + Learning::FormatLocalTime(item->me.workSavedAt) + " (revision " +
+                            std::to_string(item->me.workRevision) + "); Open with work loads it";
+                else
+                    text += "\nYour course work: not saved on the course server (Course menu of the task window: Ctrl+Alt+L)";
+                if (item->solutionAvailable)
+                    text += std::string("\nTeacher solution: published") + (item->solutionHasReplay ? ", with a replay of the teacher's steps" : "");
+            }
         }
         if (!item->fileName.empty())
             text += "\nFile: " + item->fileName;
@@ -1033,17 +1087,19 @@ class LearningModeWindow : public Window,
                item.kind != Learning::ItemKind::ResourceLink;
     }
 
-    void OpenTaskFile(const std::filesystem::path& path, const Learning::CatalogueItem& item, uint32 version)
+    void OpenTaskFile(
+          const std::filesystem::path& path, const Learning::CatalogueItem& item, uint32 version, Learning::WorkspaceRole role = Learning::WorkspaceRole::Student)
     {
         Learning::ItemBinding binding;
         binding.item    = item.name;
         binding.problem = item.IsProblem();
         binding.mode    = Learning::DeliveryMode::File;
         binding.version = version;
+        binding.role    = role;
         Session().SetPendingBinding(binding);
         GView::App::OpenFile(path, GView::App::OpenMethod::BestMatch, "", nullptr, "Learning mode task");
         Session().ClearPendingBinding();
-        Session().RecordItemOpened(item, Learning::DeliveryMode::File, version);
+        Session().RecordItemOpened(item, Learning::DeliveryMode::File, version, role);
     }
 
     // The copy saved by an earlier open is used as it is (no download) while it still matches the catalogue checksum.
@@ -1059,7 +1115,21 @@ class LearningModeWindow : public Window,
         return true;
     }
 
-    void OpenSelected()
+    // what happens with the course work saved on the server once the task window is open (spec §10.12)
+    enum class ResumeMode : uint8 {
+        Offer, // Open: asked when the server has saved work and the window is empty
+        Load,  // Open with work: loaded without asking
+    };
+
+    // after the task window of a problem was opened
+    void AfterTaskOpened(const Learning::CatalogueItem& item, ResumeMode resume)
+    {
+        if (!item.IsProblem())
+            return;
+        GView::App::Course::OfferResumeCourseWork(item.name, resume == ResumeMode::Offer);
+    }
+
+    void OpenSelected(ResumeMode resume)
     {
         std::string weekName;
         const auto* selected = SelectedItem(&weekName);
@@ -1075,18 +1145,21 @@ class LearningModeWindow : public Window,
         }
         if (OpenLocalCopy(item, weekName))
         {
+            AfterTaskOpened(item, resume);
             opened = true;
             Exit(Dialogs::Result::Ok); // show the task
             return;
         }
-        auto st = Session().Download(item, Guarded([this, weekName](Learning::DownloadResult& result) {
+        auto st = Session().Download(item, Guarded([this, weekName, resume](Learning::DownloadResult& result) {
             if (!result.status.ok)
             {
                 Dialogs::MessageBox::ShowError("Download failed", result.status.message);
                 return;
             }
-            if (OpenDelivered(result, weekName))
+            const Learning::CatalogueItem delivered = result.item;
+            if (OpenDelivered(result, weekName, Learning::WorkspaceRole::Student))
             {
+                AfterTaskOpened(delivered, resume);
                 opened = true;
                 Exit(Dialogs::Result::Ok); // show the task
             }
@@ -1096,7 +1169,71 @@ class LearningModeWindow : public Window,
         UpdateStatus();
     }
 
-    bool OpenDelivered(Learning::DownloadResult& result, const std::string& weekName)
+    // Open solution: the teacher's solution of the selected problem in a window of its own (no student window, no tiling),
+    // from the local task file when it is up to date, otherwise from a copy of the delivered bytes kept in memory only
+    void OpenSolutionSelected()
+    {
+        std::string weekName;
+        const auto* selected = SelectedItem(&weekName);
+        if (selected == nullptr || !selected->IsProblem())
+        {
+            Dialogs::MessageBox::ShowError("Open solution", "Select a problem first.");
+            return;
+        }
+        const Learning::CatalogueItem item = *selected;
+        if (!item.solutionAvailable)
+        {
+            Dialogs::MessageBox::ShowError("Open solution", "No solution of the teacher is published for this problem.");
+            return;
+        }
+        bool replay = false;
+        if (item.solutionHasReplay)
+        {
+            const auto answer = Dialogs::MessageBox::ShowYesNoCancel(
+                  "Open solution", "Play the teacher's solution back step by step?\nYes - the replay, No - the finished solution");
+            if (answer == Dialogs::Result::Cancel)
+                return;
+            replay = answer == Dialogs::Result::Yes;
+        }
+        if (DeliveredAsFile(item))
+        {
+            Learning::TaskFileStore store(TaskFolderOf(weekName));
+            auto path = item.sha256.empty() ? store.KnownFile(item.name) : store.FindUpToDate(item.name, item.sha256);
+            if (path.has_value())
+            {
+                GView::App::Course::SolutionSource source;
+                source.file = *path;
+                if (GView::App::Course::OpenSolutionStandalone(item, store.RecordedVersion(item.name), source, replay))
+                {
+                    opened = true;
+                    Exit(Dialogs::Result::Ok);
+                }
+                return;
+            }
+        }
+        // no local copy: the task is downloaded and the solution window reads a copy of it from memory (nothing is written)
+        auto st = Session().Download(item, Guarded([this, replay](Learning::DownloadResult& result) {
+            if (!result.status.ok)
+            {
+                Dialogs::MessageBox::ShowError("Download failed", result.status.message);
+                return;
+            }
+            GView::App::Course::SolutionSource source;
+            source.name  = result.content.fileName.empty() ? Learning::SanitizeFileName(result.item.name) : result.content.fileName;
+            source.bytes = &result.content.data;
+            if (GView::App::Course::OpenSolutionStandalone(result.item, result.content.itemVersion, source, replay))
+            {
+                opened = true;
+                Exit(Dialogs::Result::Ok);
+            }
+        }));
+        if (!st.ok)
+            Dialogs::MessageBox::ShowError("Open solution", st.message);
+        UpdateStatus();
+    }
+
+    // role: the window of the student's task (Student); the solution windows are opened by OpenSolutionStandalone
+    bool OpenDelivered(Learning::DownloadResult& result, const std::string& weekName, Learning::WorkspaceRole role)
     {
         auto& session = Session();
         const auto& item = result.item;
@@ -1111,6 +1248,7 @@ class LearningModeWindow : public Window,
             binding.problem = item.IsProblem();
             binding.mode    = content.mode;
             binding.version = content.itemVersion;
+            binding.role    = role;
 
             // memory mode: no file is created; the viewer reads from locked memory that is wiped on close
             const auto u8name = AsU8(fileName);
@@ -1124,7 +1262,7 @@ class LearningModeWindow : public Window,
                 Dialogs::MessageBox::ShowError("Open", "GView could not open the delivered content.");
                 return false;
             }
-            session.RecordItemOpened(item, content.mode, content.itemVersion);
+            session.RecordItemOpened(item, content.mode, content.itemVersion, role);
             return true;
         }
 
@@ -1182,7 +1320,7 @@ class LearningModeWindow : public Window,
             }
         }
         content.data.Wipe();
-        OpenTaskFile(path, item, version);
+        OpenTaskFile(path, item, version, role);
         return true;
     }
 };

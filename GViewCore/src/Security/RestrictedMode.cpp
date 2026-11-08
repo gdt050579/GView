@@ -577,6 +577,19 @@ namespace
             p.notes.maxChars = ClampToRange(v, 100, 100000);
         }
 
+        // course work documents and solutions (optional object; absent = server without them => no Save/Resume UI)
+        p.work = WorkSettings{};
+        if (auto it = j.find("work"); it != j.end() && !it->is_null())
+        {
+            if (!it->is_object())
+                return Fail("POLICY_MALFORMED", "work must be an object");
+            p.work.present = true;
+            POLICY_TRY(ReadBool(*it, "enabled", p.work.enabled));
+            uint64_t v = p.work.maxBytes;
+            POLICY_TRY(ReadUInt(*it, "maxBytes", v, false));
+            p.work.maxBytes = ClampToRange(v, 64 * 1024, 16 * 1024 * 1024);
+        }
+
         std::string keyIdHex;
         POLICY_TRY(ReadString(j, "contentKeyId", keyIdHex, false, 16));
         POLICY_TRY(ReadString(j, "contentEncryption", p.contentEncryption, false, 32));

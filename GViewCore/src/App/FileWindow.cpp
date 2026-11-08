@@ -80,6 +80,9 @@ FileWindow::FileWindow(std::unique_ptr<GView::Object> _obj, Reference<GView::App
         ApplyKeyBindings(this->gviewApp->GetKeyBindings());
     // binds the window to the learning item being opened (if any)
     GView::Security::Learning::Hooks::OnFileWindowCreated(this->obj.get());
+    // the binding gives the window its role (a teacher's solution): the title says so
+    if (GView::Security::Learning::Hooks::GetWorkspaceRole(this->obj.get()) != GView::Security::Learning::WorkspaceRole::Normal)
+        RefreshTitle();
 }
 std::string FileWindow::GetTypePluginKeysSection() const
 {
@@ -102,10 +105,31 @@ FileWindow::~FileWindow()
 }
 void FileWindow::RefreshTitle()
 {
+    // the windows of a teacher's solution say so (ASCII: appended to the UTF-16 name as it is)
+    std::u16string_view roleSuffix;
+    switch (GView::Security::Learning::Hooks::GetWorkspaceRole(this->obj.get()))
+    {
+    case GView::Security::Learning::WorkspaceRole::Solution:
+        roleSuffix = u" - Teacher solution";
+        break;
+    case GView::Security::Learning::WorkspaceRole::Replay:
+        roleSuffix = u" - Teacher solution (replay)";
+        break;
+    default:
+        break;
+    }
     const auto watermark = GView::Security::RestrictedMode::Internal::GetWatermark();
     if (watermark.empty())
     {
-        this->SetText(obj->GetName());
+        if (roleSuffix.empty())
+        {
+            this->SetText(obj->GetName());
+            return;
+        }
+        LocalUnicodeStringBuilder<512> title;
+        title.Set(obj->GetName());
+        title.Add(roleSuffix);
+        this->SetText(title);
         return;
     }
     // The watermark (UTF-8) is converted on its own: AppCUI's UnicodeStringBuilder::Add miscounts the length when it
@@ -114,6 +138,7 @@ void FileWindow::RefreshTitle()
     mark.Set(std::u8string_view(reinterpret_cast<const char8_t*>(watermark.data()), watermark.size()));
     LocalUnicodeStringBuilder<512> title;
     title.Set(obj->GetName());
+    title.Add(roleSuffix);
     title.Add(u" - ");
     title.Add(mark.ToStringView());
     this->SetText(title);
@@ -140,6 +165,28 @@ std::string_view FileWindow::GetCurrentViewerKind()
     if (dynamic_cast<GView::View::ContainerViewer::Instance*>(p))
         return "Container";
     return "Other";
+}
+GView::View::DissasmViewer::Instance* FileWindow::FindDissasmView()
+{
+    for (uint32 index = 0; index < view->GetChildrenCount(); index++)
+    {
+        auto v = GetViewByIndex(index);
+        if (!v.IsValid())
+            continue;
+        if (auto* dissasm = dynamic_cast<GView::View::DissasmViewer::Instance*>(v.operator->()); dissasm != nullptr)
+            return dissasm;
+    }
+    return nullptr;
+}
+bool FileWindow::ShowDissasmView()
+{
+    for (uint32 index = 0; index < view->GetChildrenCount(); index++)
+    {
+        auto v = GetViewByIndex(index);
+        if (v.IsValid() && dynamic_cast<GView::View::DissasmViewer::Instance*>(v.operator->()) != nullptr)
+            return view->SetCurrentTabPageByIndex(index, true);
+    }
+    return false;
 }
 bool FileWindow::OnFrameUpdate()
 {
@@ -297,14 +344,22 @@ bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
         ShowCopyDialog();
         return true;
     }
-    if (INSTANCE_LEARNING_SUBMIT_FLAG.Matches(keyCode) && GView::Security::Learning::Hooks::IsLearningProblem(this->obj.get())) {
+    if (INSTANCE_LEARNING_SUBMIT_FLAG.Matches(keyCode) && GView::Security::Learning::Hooks::IsCourseWorkWindow(this->obj.get())) {
         GView::Security::Learning::Hooks::ShowSubmitDialogForObject(this->obj.get());
+        return true;
+    }
+    if (INSTANCE_LEARNING_COURSE.Matches(keyCode) && GView::Security::Learning::Hooks::IsLearningProblem(this->obj.get())) {
+        GView::App::ShowLearningCourseMenu(this);
         return true;
     }
     return false;
 }
 bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
 {
+    // a student's task window with course work that is not on the course server: asked before Window::OnEvent closes it
+    if (eventType == Event::WindowClose && GView::Security::Learning::Hooks::IsCourseWorkWindow(this->obj.get()) &&
+        !GView::App::ConfirmCloseCourseWorkWindow(this))
+        return true;
     if (Window::OnEvent(ctrl, eventType, ID))
         return true;
     switch (eventType)
@@ -343,7 +398,12 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
                 GView::App::ShowAddNoteDialog();
             return true;
         case CMD_LEARNING_SUBMIT_FLAG:
-            GView::Security::Learning::Hooks::ShowSubmitDialogForObject(this->obj.get());
+            if (GView::Security::Learning::Hooks::IsCourseWorkWindow(this->obj.get()))
+                GView::Security::Learning::Hooks::ShowSubmitDialogForObject(this->obj.get());
+            return true;
+        case CMD_LEARNING_COURSE_MENU:
+            if (GView::Security::Learning::Hooks::IsLearningProblem(this->obj.get()))
+                GView::App::ShowLearningCourseMenu(this);
             return true;
         }
         if ((ID >= CMD_SHOW_HORIZONTAL_PANEL) && (ID <= CMD_SHOW_HORIZONTAL_PANEL + 100))
@@ -382,8 +442,11 @@ bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     if (INSTANCE_KEY_CONFIGURATOR.Key != Key::None)
         commandBar.SetCommand(INSTANCE_KEY_CONFIGURATOR.Key, "Keys", CMD_SHOW_KEY_CONFIGURATOR);
     commandBar.SetCommand(INSTANCE_OPEN_ADD_NOTE, CMD_OPEN_ADD_NOTE);
-    if (GView::Security::Learning::Hooks::IsLearningProblem(this->obj.get()) && INSTANCE_LEARNING_SUBMIT_FLAG.Key != Key::None)
+    if (GView::Security::Learning::Hooks::IsCourseWorkWindow(this->obj.get()) && INSTANCE_LEARNING_SUBMIT_FLAG.Key != Key::None)
         commandBar.SetCommand(INSTANCE_LEARNING_SUBMIT_FLAG.Key, "SubmitFlag", CMD_LEARNING_SUBMIT_FLAG);
+    // every window of a problem of the course (a solution window too: "Close solution window")
+    if (GView::Security::Learning::Hooks::IsLearningProblem(this->obj.get()) && INSTANCE_LEARNING_COURSE.Key != Key::None)
+        commandBar.SetCommand(INSTANCE_LEARNING_COURSE.Key, "Course", CMD_LEARNING_COURSE_MENU);
     // add commands from type plugin
     if (this->typePlugin.IsValid())
     {

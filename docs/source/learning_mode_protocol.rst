@@ -26,7 +26,10 @@ GView then:
 5. submits flags (with an optional explanation) using idempotency keys;
 6. sends privacy-preserving telemetry (event-level + counters) in the background;
 7. keeps the student's private notes and shows the teachers' course notes (`18. Course notes`_), when the course
-   server offers them.
+   server offers them;
+8. saves the student's work on a task (names, comments, the replay journal) to the course server and resumes it on
+   another computer, and shows the teacher's published solution side by side or replays it step by step
+   (`19. Work documents, solutions and the replay journal`_), when the course server offers it.
 
 **What is guaranteed** (against a student using an unmodified GView build):
 
@@ -121,9 +124,9 @@ All endpoints are ``POST``. Error envelope for every non-2xx answer::
 Codes understood (HTTP mapping as in the spec): ``BAD_REQUEST`` 400, ``UNAUTHORIZED`` 401, ``FORBIDDEN`` 403,
 ``NOT_FOUND`` 404, ``RATE_LIMITED`` 429 (+ ``Retry-After`` seconds), ``POLICY_EXPIRED`` 403, ``POLICY_NOT_STARTED`` 403,
 ``ALREADY_SOLVED`` 409, ``ITEM_DISABLED`` 404, ``UNSUPPORTED_CLIENT`` 426, ``SERVER_ERROR`` 500, ``PAYLOAD_TOO_LARGE`` 413
-and ``CONFLICT`` 409 (note endpoints only). When the body is not an envelope the code is derived from the HTTP status;
-``PAYLOAD_TOO_LARGE`` is always derived from 413, and a 409 of a note endpoint is always ``CONFLICT`` (a 409 of
-``SubmitFlag`` stays ``ALREADY_SOLVED``). ``TRANSPORT_ERROR`` and ``PROTOCOL_ERROR`` are client-side only.
+and ``CONFLICT`` 409 (note and work endpoints only). When the body is not an envelope the code is derived from the HTTP
+status; ``PAYLOAD_TOO_LARGE`` is always derived from 413, and a 409 of a note or work endpoint is always ``CONFLICT``
+(a 409 of ``SubmitFlag`` stays ``ALREADY_SOLVED``). ``TRANSPORT_ERROR`` and ``PROTOCOL_ERROR`` are client-side only.
 
 ============================== =========================================================================================
 Endpoint                       Client behaviour
@@ -141,6 +144,13 @@ Endpoint                       Client behaviour
 ``/GView/DeleteNote``          Deletion of a student note (``404`` = already gone).
 ``/GView/SaveTeacherNote``     Course-staff editor only (``canEditTeacherNotes``).
 ``/GView/DeleteTeacherNote``   Course-staff editor only.
+``/GView/GetWork``             Course work (`19. Work documents, solutions and the replay journal`_): the caller's own
+                               work document of a problem, the solutions it may see (metadata), staff capability,
+                               audiences, ``maxBytes``. Resume, Save (conflict path), *Open with work*.
+``/GView/SaveWork``            Explicit *Save work to course* / the close prompt (compare-and-set on ``revision``).
+``/GView/GetSolution``         Compare / Replay / *Open solution*: a solution with its document.
+``/GView/PublishSolution``     Course staff only (``canPublishSolutions``); one solution per (problem, audience).
+``/GView/DeleteSolution``      Course staff only (client support, no UI in this version).
 ``/GView/Heartbeat``           Not used by the client.
 ============================== =========================================================================================
 
@@ -628,6 +638,8 @@ All of these are additional strictness or clarifications; ``plans/LEARNING_MODE_
 10. Item names must match ``[A-Za-z0-9_-]{1,64}`` (Django ``SlugField`` compatible).
 11. ``/GView/Heartbeat`` is not used by the client.
 12. Course notes: the clarifications listed in `18. Course notes`_ (*Clarifications of spec §10.11*).
+13. Course work and solutions: the clarifications listed in `19. Work documents, solutions and the replay journal`_
+    (*Clarifications of spec §10.12*).
 
 15. Open questions for the server implementer
 ---------------------------------------------
@@ -937,4 +949,202 @@ idempotency rules, the visibility rule for scopes, the limits and the rate limit
 4. Unknown or invalid scopes received from the server are shown (and, when the note is saved again, sent) as general.
 5. Teacher notes are saved explicitly and creates are never retried automatically; student notes autosave.
 6. ``404`` on ``SaveNote`` is resolved with a fresh ``GetNotes`` (see open question 7).
+
+19. Work documents, solutions and the replay journal
+----------------------------------------------------
+
+Students save their work on a task (the names, comments, variables, collapsible zones, bookmarks they added in the
+disassembly, plus the *replay journal* of how they got there) to the course server and resume it on another computer.
+Teachers publish a *solution* of a problem for every student or one lab group; students open it next to their own
+window (read only) or replay it step by step. Only the user's changes travel, never the ``.dissasm.cache`` (binary, it
+holds every label of the analysis). Spec §10.12. Implementation: ``GViewCore/src/Security/Learning/LearningWork.{hpp,cpp}``
+(wire format), ``LearningSession`` (requests), ``GViewCore/src/View/DissasmViewer/DissasmWorkDocument.{hpp,cpp}``
+(document), ``DissasmReplay*.{hpp,cpp}`` (journal, recorder, playback, editor), ``GViewCore/src/App/LearningCourseDialogs.cpp``
+and ``LearningModeWindow.cpp`` (UI).
+
+**Availability.** The optional policy object ``"work": {"enabled": bool, "maxBytes": int}`` (``maxBytes`` clamped to
+[64 KiB, 16 MiB], default 2 MiB) decides at connect time:
+
+=============================== ========================================================================================
+State                           Client behaviour
+=============================== ========================================================================================
+no ``work`` object (or no       no Save / Resume / Compare UI at all (a server without course work); the *Course* menu
+policy, legacy server)          keeps *Course note* / *Submit flag*
+``enabled: false``              students: "Saving course work is disabled by your teacher" (rows shown disabled); course
+                                staff (``canPublishSolutions``) are never gated by the switch
+``enabled: true``               everything is available while the session is *Active*
+``403 FORBIDDEN`` on            students: the Save / Resume / Compare rows are disabled until the next connect;
+``GetWork``/``SaveWork``        a ``403`` on ``PublishSolution`` / ``DeleteSolution`` only removes the staff capability
+=============================== ========================================================================================
+
+``Connect`` may add ``user.canPublishSolutions`` (bool) and ``user.audiences`` (``["all","G1","G2"]``, a wrong type is
+ignored); every ``GetWork`` answer is authoritative and replaces them. ``GetWeeks`` problems may add
+``me.workSavedAt`` / ``me.workRevision`` (0 = nothing saved) and ``solutionAvailable`` / ``solutionHasReplay`` (a
+solution is published for this student; ``solutionHasReplay`` without ``solutionAvailable`` is ignored).
+
+**Endpoints as implemented** (same headers and transport rules as every other call, one ``POST`` per request with a
+constant path; the document is embedded as a JSON object, never as a string):
+
+::
+
+   POST /GView/GetWork          {"problem":"<name>"}
+     <- {"status":"ok","serverTime":..,"maxBytes":2097152,"canPublishSolutions":false,"audiences":["all","G1","G2"],
+         "work": null | {"revision":3,"updatedAt":..,"clientVersion":"0.409.0","hasReplay":true,"replaySteps":57,
+                         "document":{..}},
+         "solutions":[{"id":7,"audience":"all"|"G1"|"G2","revision":2,"updatedAt":..,"enabled":true,
+                       "hasReplay":true,"replaySteps":120}]}
+   POST /GView/SaveWork         {"problem","document":{..},"hasReplay":bool,"replaySteps":int[, "revision":<last seen>]}
+     <- {"status":"ok","revision":4,"updatedAt":..,"created":false}
+   POST /GView/GetSolution      {"problem"[, "id":<int>]}
+     <- {"status":"ok","solution":{"id","audience","revision","updatedAt","enabled","hasReplay","replaySteps",
+                                   "document":{..}}}
+   POST /GView/PublishSolution  {"problem"[, "id":<int>, "revision":<int>],"audience","document":{..},
+                                 "hasReplay","replaySteps","enabled":true}            (course staff)
+     <- {"status":"ok","id":7,"revision":3,"updatedAt":..,"created":true}
+   POST /GView/DeleteSolution   {"id":<int>}                                         (course staff)
+     <- {"status":"ok"}
+
+Rules:
+
+* A hidden or unknown problem is ``404`` (students cannot probe hidden problems; staff see hidden ones). ``work`` is
+  always the caller's own document: staff never read a student's document through GView.
+* ``solutions`` lists metadata only; students get the *enabled* solutions of ``all`` and of their group, staff every
+  one. ``GetSolution`` without ``id`` returns the solution of the student's group, else the one of ``all``; ``404`` when
+  there is none ("No solution of the teacher is available for you yet").
+* Compare-and-set exactly as ``SaveNote``: ``revision`` omitted = create; a create when work exists, or a stale
+  ``revision``, is ``409 CONFLICT`` (``retryable: false``, nothing written); an identical create / update retried after
+  a lost answer is answered ``200`` (``created: false``) with the revision it produced. The client only reports the
+  conflict; the UI resolves it (below).
+* One solution per (problem, audience). ``PublishSolution`` without ``id`` when one exists is ``409 CONFLICT`` whose
+  envelope also carries ``"id"`` and ``"revision"`` of the existing solution; the client asks "Replace it?" and sends
+  again with them. ``id`` requires ``revision`` (``400``).
+* Document validation (client before sending, server again): a JSON object, ``format ==
+  "gview-disassembly-annotations"``, integer ``version`` in [1, 1], no NUL anywhere (raw or ``\u0000``), nesting <= 64,
+  the compact dump <= ``maxBytes`` => otherwise ``400`` (``413 PAYLOAD_TOO_LARGE`` above the body cap). The client
+  sends the compact canonical dump (``nlohmann::json::dump()``, keys sorted) and refuses locally, without a request,
+  a document above ``min(policy.work.maxBytes, GetWork maxBytes, 2 MiB)``.
+* ``hasReplay`` / ``replaySteps`` are client-declared metadata (``replaySteps`` is 0 without a replay) so that the
+  catalogue and the Learning window can show "solution+replay" without the server parsing documents; the server
+  stores the document opaque.
+* Caps: request bodies 2 MiB + 64 KiB on ``SaveWork`` / ``PublishSolution`` (64 KiB otherwise); answers 4 MiB
+  (``GetWork`` / ``GetSolution``) or 64 KiB; at most 64 solutions listed (more are dropped and counted); rate bucket
+  ``work`` = the notes bucket, 60 requests per minute per token (``429`` + ``Retry-After``).
+* Errors: ``403 POLICY_EXPIRED`` expires the session; ``403 FORBIDDEN`` as in the table above; other errors show the
+  server's ``details``. Solution entries without a valid ``id``/``revision``/``audience`` are dropped.
+
+**The work document** (``DissasmWorkDocument.hpp``) is the annotations document of *Export annotations*
+(``BuildAnnotationsDocument``: ``format``, ``version``, ``file``, ``zones``: names, comments, repeatable comments,
+variables, structures, numbers in decimal, collapsible zones, functions, prototypes, bookmarks, the assistant's
+suggestions; keyed by VA) plus two keys that older importers ignore:
+
+::
+
+   { "format": "gview-disassembly-annotations", "version": 1, "file": "p16.exe", "zones": [ .. ],
+     "meta":   { "kind": "work" | "solution", "clientVersion": "0.409.0", "savedAt": 1760000000,
+                 "problem": "w1_stack_var", "itemVersion": 1, "sha256": "<the catalogue sha256 of the task>" },
+     "replay": { "version": 1, "startedAt": 1759990000,
+                 "zones":  [ { "fileOffset": "0x400", "addressBase": "0x401000" } ],
+                 "events": [ ["v", 12, 0, "0x401000", "l", "k"],
+                             ["j", 3, 0, "0x401010", "i", 0, "0x401080", "l", "call", "follow"],
+                             ["b", 5, 0, "0x401010", "i"],
+                             ["e", 20, 0, "0x401080", "l", "name", {"before": "sub_401080", "after": "decrypt"}],
+                             ["u", 2, 0, "0x401080", "l", "name", 3, {..}],
+                             ["i", 0, "server-work"], ["a", 0, 0] ] } }
+
+An event is ``[tag, dt, ...]`` (``dt``: seconds since the previous event). A *place* is ``zone, address (VA hex),
+anchor kind (i instruction / l label / v variable)[, frameOffset (v only)]``. Tags: ``v`` visit (``k`` keyboard /
+``m`` mouse), ``j`` jump (from, to, mnemonic, kind: ``follow``, ``entry``, ``goto``, ``xref``, ``band``, ``search``,
+``bookmark``, ``other``), ``b`` / ``f`` back / forward in the jumps history, ``e`` edit, ``u`` / ``r`` undo / redo
+(``ref`` = the index of the event it undoes, or ``null``), ``i`` import (``file``, ``server-work``,
+``server-solution``), ``a`` new analysis of a zone. Edit kinds use the annotations vocabulary (``comment``, ``name``,
+``variable``, ``decimal``, ``zoneAdd``, ``zoneRemove``, ``dataRanges``, ``functions``, ``variableStructures``,
+``operandStructure``, ``operandConstant``, ``repeatableComment``, ``prototypes``); payloads: ``{"before","after"}``
+(texts; a missing key = none), ``{"operand"}``, ``{"first","last","name","collapsed"}``, lists ``{"before":[..],
+"after":[..]}``. Reading is tolerant (an unreadable zone or event is skipped and counted); a wrong ``format`` or a
+newer ``version`` is an error; a ``replay`` of a newer version is dropped. ``"encoding"`` is reserved (no compression
+in v1: a lab document is 4-40 KB). The server must store the document as received (opaque JSON).
+
+**The replay journal.** Recorded by every Dissasm view (also outside Learning mode): the lines visited, the jumps, the
+edits, undo / redo, imports and new analyses. Idle scrolling is not kept: a keyboard move becomes a visit after the
+cursor rests 600 ms on a code line (a click at once), the same place visited again is one visit, at most the last 3
+visits before an operation are kept and the visits after the last operation are dropped. Limits: 200 000 events,
+4096 zones, texts 64 KiB, mnemonics 15 characters (the recorder stops at the caps). It is stored in the
+``.dissasm.cache`` as the record ``DissasmReplayJournal`` (magic ``GDRJ``, version 1, LEB128 varints, zigzag for signed
+values, strings ``[varint size][bytes]`` without NUL; ``DISSASM_CACHE_VERSION`` stays 2):
+
+::
+
+   [u32 magic][u32 version][u64 startedAt][varint zoneCount] zoneCount x [varint fileOffset][varint addressBase]
+   [varint eventCount] eventCount x [u8 kind][varint dt] then by kind:
+     place = [varint zone][u8 anchorKind][varint address][svarint frameOffset: Variable only]
+     Visit: place [u8 source] | Jump: place(to) place(from) [u8 jumpKind][u8 size][mnemonic] | Back/Forward: place
+     Edit: place [u8 editKind] payload | Undo/Redo: place [u8 editKind][varint ref+1] payload
+     Import: [u8 source] | Reanalysis: [varint zone]
+
+Decoding is all or nothing (an invalid record => an empty journal; its raw bytes are written back unchanged unless
+new events were recorded). An older GView that re-saves the cache drops the record. Typical size: a visit 4-6 bytes,
+a jump ~12, a rename ~20 + the names; a two-hour lab 5-15 KB. Under a policy that restricts ``Export`` the cache is
+not written at all: the course server is then the only persistence of the journal.
+
+**User interface.**
+
+* *Course* menu (``Ctrl+Alt+L``, ``[Keys.GView] LearningCourse``; on the command bar of every window of a problem of
+  the course): *Save work to course* (document size, replay steps), *Resume work from course* ("saved <time>", or
+  "(no saved work)"), *Compare with the teacher's solution* / *Replay the teacher's solution* (when the catalogue says
+  a solution / a replay is published for the student), *Course note*, *Submit flag*; course staff add *Publish
+  solution...* and *Edit replay journal...*. In a solution window the only command is *Close solution window*.
+  Disabled rows say why (disabled by the teacher, not connected, no disassembly view).
+* *Save work*: counts (names, comments, variables, zones, bookmarks), the checkbox "Include replay journal" (checked),
+  the size against the limit (refused above it), then "Saved: revision N (size) at <time>"; the window is clean. On
+  ``409``: ``GetWork`` tells when the server copy was saved; *Keep server copy* loads it into the window (import
+  semantics), *Overwrite* saves again with the revision just fetched, *Cancel* does nothing.
+* Close prompt: closing a student's task window with changes (an edit, a journal event) not on the server asks
+  *Save and close* / *Close without saving* / *Cancel* (only when course work is available; the journal is dropped
+  from the document when it would exceed the limit).
+* *Resume*: from the menu it confirms "Add the saved work to this window?" (the document wins where both have a
+  name / comment; nothing is deleted); opening a task from the Learning window offers it automatically when the
+  server has saved work and the window is empty (no cache, empty journal, no edit). *Open with work* in the Learning
+  window loads it without asking. A document saved for another version of the task file (``meta.sha256`` differs
+  from the catalogue) is confirmed first. The document is applied once the disassembly is analysed (first paint).
+* *Compare*: ``GetSolution``, then a second window of the same task, role *Solution* (title "<name> - Teacher
+  solution"): file mode opens the same local task file, memory mode a copy of the bytes in locked memory
+  (memory-only). The two windows are tiled side by side (student left), the focus goes back to the student.
+  *Replay* opens role *Replay* ("<name> - Teacher solution (replay)"): the window starts without the solution's
+  annotations and plays the journal back with ``Alt+Left`` / ``Alt+Right`` / ``Alt+Home`` / ``Alt+End`` (command bar
+  *Back*, *Forward*, *To start*, *To end*); the status line shows "Replay: step 12/57 - comment added at 0x401040";
+  a step first ends the pending analyses and prepares every code zone (as the other commands do); events whose place this analysis does not have are skipped.
+  *Open solution* in the Learning window opens the same windows on their own (no tiling).
+* Solution windows are read only: no edit command, no undo / redo, no import / export / signatures, no assistant; a
+  refused key shows one notification (at most every 3 s); the right-click menu only expands / collapses zones and
+  clears selections; bookmarks are listed without *Delete*; they never read nor write a ``.dissasm.cache``; no
+  telemetry item events are recorded for them.
+* *Publish solution* (course staff, re-checked when sent): audience ("All students", "Group G1", "Group G2" from
+  ``audiences``), "Include replay (N steps)", size, confirmation, then ``PublishSolution`` (a ``409`` with ``id``
+  offers to replace the existing solution of that audience), then the catalogue is refreshed.
+* *Edit replay journal* (``[Keys.View.Dissasm] EditReplayJournal``, no default key; course staff in a task window,
+  anyone outside Learning mode): ``# | +time | Kind | Address / label | Text``, *Delete*, *Delete visits before*,
+  *Compact*, *Close*; it works on a copy and asks "Apply the changes (N entries removed)?".
+* Learning window: column *Course* ("work <date>", "solution", "solution+replay"), buttons *Open with work* and
+  *Open solution* (enabled for the selected problem), *Details* lines for the saved work and the solution.
+
+**Privacy.** Annotation text and the journal leave the machine only on an explicit *Save work* (or *Save and close*)
+and *Publish solution*, and come back only to their owner (``GetWork``) or to the intended audience (``GetSolution``).
+They are never in telemetry (the whitelist is unchanged; solution windows record no item events), never in logs. A
+memory-mode task's solution window reads a copy of the task bytes in locked memory and writes nothing to disk.
+
+**Stub server.** ``tools/learning_mode_stub_server.py`` implements the five endpoints with these rules;
+``--work on|off|absent`` (the policy object; ``off``: ``GetWork``/``SaveWork`` answer ``403`` to students),
+``--work-max-bytes``, ``--staff-token`` (course staff), ``--group G1|G2``; the work requests share the notes rate
+bucket (``--notes-rate-limit``). State is in memory, per process.
+
+**Clarifications of spec §10.12** (written back to ``plans/LEARNING_MODE_PROTOCOL_SPEC.md``):
+
+1. A ``work`` object without ``enabled`` means off; a present ``work`` field with a wrong JSON type is
+   ``POLICY_MALFORMED``.
+2. Course staff (``canPublishSolutions``) are never gated by ``work.enabled`` or a ``403`` of the own-work endpoints.
+3. A ``409`` of a work endpoint is ``CONFLICT`` whatever its body says; for ``PublishSolution`` the envelope may name
+   the existing solution (``id``, ``revision``).
+4. ``GetSolution`` without ``id`` prefers the student's group over ``all``.
+5. The client never retries a ``409`` by itself: the user chooses (keep the server copy / overwrite / replace).
+6. ``DeleteSolution`` is implemented in the client session but has no UI yet (the course website manages solutions).
 

@@ -15,6 +15,7 @@ target_sources(GViewCore PRIVATE
     LearningModeWindow.cpp
     LearningSubmitDialog.cpp
     LearningNotesWindow.cpp
+    LearningCourseDialogs.cpp
     UpdateDialog.cpp
     GViewDesktop.cpp
     TemporaryFolder.cpp
@@ -31,3 +32,4 @@ endif()
 add_testing_sources(GViewCore tests_keybindings.cpp)
 add_testing_sources(GViewCore tests_browserstorage.cpp)
 add_testing_sources(GViewCore tests_temporaryfolder.cpp)
+add_testing_sources(GViewCore tests_learningcourse.cpp)

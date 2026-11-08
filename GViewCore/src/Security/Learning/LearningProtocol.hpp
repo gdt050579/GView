@@ -133,6 +133,15 @@ std::string_view ErrorCodeName(ErrorCode code) noexcept;
 ServerError ParseErrorEnvelope(long httpStatus, BufferView body, std::string_view retryAfterHeader);
 std::string DescribeError(const ServerError& err);
 
+// JSON string literal of s (quotes included) appended to out: the hand-built request bodies (no copy of secrets in a json DOM)
+void AppendJsonString(SecureString& out, std::string_view s);
+
+// ---------------------------------------------------------------- audiences (course notes §10.11, solutions §10.12)
+enum class NoteAudience : uint8 { All, G1, G2 };
+std::string_view NoteAudienceName(NoteAudience a) noexcept; // "all", "G1", "G2"
+// the wire names above; anything else (other case, unknown group) is not an audience
+std::optional<NoteAudience> ParseNoteAudience(std::string_view name) noexcept;
+
 // ---------------------------------------------------------------- connect (spec §2.1)
 struct ConnectResponse {
     bool legacy{ false }; // empty / non-JSON 200 body from a pre-v2 server
@@ -143,6 +152,10 @@ struct ConnectResponse {
     std::vector<uint8> signature;
     std::string displayName;
     int64 score{ 0 };
+    // optional, additive (spec §10.12): course-staff tokens may publish solutions; the audiences they may publish to
+    // (All first, unknown names dropped). GetWork is authoritative; absent = not announced at connect.
+    std::optional<bool> canPublishSolutions;
+    std::optional<std::vector<NoteAudience>> audiences;
 };
 Utils::GStatus ParseConnectResponse(BufferView body, ConnectResponse& out);
 
@@ -155,6 +168,9 @@ struct MeState {
     uint32 attempts{ 0 };
     int64 pointsAwarded{ 0 };
     uint64 firstDeliveredAt{ 0 };
+    // course work saved on the server (spec §10.12): when, and its revision; 0 = none
+    uint64 workSavedAt{ 0 };
+    int64 workRevision{ 0 };
 };
 
 struct CatalogueItem {
@@ -173,6 +189,9 @@ struct CatalogueItem {
     int64 pointsCurrent{ 0 };
     int64 pointsMin{ 0 };
     bool requireExplanation{ false };
+    // a teacher solution is published for this student (spec §10.12), and it carries a replay journal
+    bool solutionAvailable{ false };
+    bool solutionHasReplay{ false };
     bool hasMe{ false };
     MeState me;
 

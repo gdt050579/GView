@@ -109,6 +109,7 @@ struct PolicyOptions {
     std::string contentKeyId;
     bool corruptDigest{ false };
     std::optional<json> notes; // the "notes" object (absent when empty)
+    std::optional<json> work;  // the "work" object (absent when empty)
 };
 
 // Mirrors the server: digest over the compact, key-sorted document with "digest":"" (PLAN_COURSE_SERVER.md §4)
@@ -137,6 +138,8 @@ std::string BuildPolicy(PolicyOptions o)
     p["submission"] = { { "allowInTool", o.allowInTool }, { "requireExplanation", o.requireExplanation }, { "explanationMaxChars", 2000 } };
     if (o.notes.has_value())
         p["notes"] = *o.notes;
+    if (o.work.has_value())
+        p["work"] = *o.work;
     if (o.storage == "memory")
     {
         if (o.contentKeyId.empty())
@@ -3002,4 +3005,1197 @@ TEST_CASE("Learning: course notes end-to-end against the stub server", "[.integr
         REQUIRE_FALSE(s.NotesLoaded()); // GetNotes is not called
         s.Shutdown();
     }
+}
+
+// ======================================================================== course work and solutions (spec §10.12)
+namespace
+{
+// a work document as the DissasmViewer builds it (Instance::BuildWorkDocumentText), pretty-printed with noise
+const std::string WORK_DOC = R"JSON({
+  "version": 1, "format": "gview-disassembly-annotations", "file": "p16.exe",
+  "zones": [ { "fileOffset": "0x400", "comments": [ { "address": "0x401000", "text": "entry \"main\"" } ] } ],
+  "meta": { "kind": "work", "clientVersion": "0.409.0", "savedAt": 1760000000, "problem": "w1_stack_var" },
+  "replay": { "version": 1, "startedAt": 1759990000, "zones": [ { "fileOffset": "0x400", "addressBase": "0x401000" } ],
+              "events": [ ["v", 12, 0, "0x401000", "l", "m"], ["e", 20, 0, "name", "0x401080", { "before": "sub_401080", "after": "decrypt" }] ] }
+})JSON";
+
+std::string Canonical(std::string_view doc)
+{
+    std::string c;
+    REQUIRE(ValidateWorkDocumentText(doc, MAX_WORK_DOCUMENT_BYTES, c).ok);
+    return c;
+}
+
+json WorkObject(bool enabled = true, int64 maxBytes = 1024 * 1024)
+{
+    return json{ { "enabled", enabled }, { "maxBytes", maxBytes } };
+}
+
+// In-process course server for the work / solution endpoints (compare-and-set as spec §10.12)
+struct FakeWorkServer {
+    bool staff{ false };
+    bool forbidden{ false }; // 403 FORBIDDEN on GetWork / SaveWork (turned off after connect)
+    bool expired{ false };   // 403 POLICY_EXPIRED everywhere
+    json audiences = json::array({ "all", "G1", "G2" });
+    int64 workRevision{ 0 };
+    json workDocument;
+    std::map<std::string, json> solutions; // audience -> {"id", "revision", "document", "enabled", ...}
+    int64 nextId{ 1 };
+
+    std::optional<HttpResponse> Gate(bool ownWork) const
+    {
+        if (expired)
+            return ErrorResponse(403, "POLICY_EXPIRED");
+        if (ownWork && forbidden && !staff)
+            return ErrorResponse(403, "FORBIDDEN");
+        return std::nullopt;
+    }
+    json SolutionMeta(const json& s) const
+    {
+        json r = s;
+        r.erase("document");
+        return r;
+    }
+    HttpResponse Conflict(const json* existing) const
+    {
+        json e{ { "status", "error" }, { "code", "CONFLICT" }, { "details", "x" }, { "retryable", false } };
+        if (existing != nullptr)
+        {
+            e["id"]       = (*existing)["id"];
+            e["revision"] = (*existing)["revision"];
+        }
+        return Response(409, e.dump());
+    }
+    void Install(FakeTransport& t)
+    {
+        t.routes["/GView/GetWork"] = [this](const HttpRequest& r) {
+            if (auto g = Gate(true))
+                return *g;
+            json sols = json::array();
+            for (const auto& [a, s] : solutions)
+                if (staff || (s["enabled"].get<bool>() && (a == "all" || a == "G1")))
+                    sols.push_back(SolutionMeta(s));
+            json work = nullptr;
+            if (workRevision > 0)
+                work = json{ { "revision", workRevision }, { "updatedAt", NOW }, { "clientVersion", "0.409.0" }, { "hasReplay", true },
+                             { "replaySteps", 2 }, { "document", workDocument } };
+            return Response(200, json{ { "status", "ok" }, { "serverTime", NOW }, { "maxBytes", 1024 * 1024 }, { "canPublishSolutions", staff },
+                                       { "audiences", audiences }, { "work", work }, { "solutions", sols } }.dump());
+        };
+        t.routes["/GView/SaveWork"] = [this](const HttpRequest& r) {
+            if (auto g = Gate(true))
+                return *g;
+            const auto b = json::parse(BodyOf(r));
+            const bool create = !b.contains("revision");
+            if ((create && workRevision != 0) || (!create && b["revision"].get<int64>() != workRevision))
+                return Conflict(nullptr);
+            workRevision++;
+            workDocument = b["document"];
+            return Response(200, json{ { "status", "ok" }, { "revision", workRevision }, { "updatedAt", NOW + workRevision }, { "created", create } }.dump());
+        };
+        t.routes["/GView/GetSolution"] = [this](const HttpRequest& r) {
+            if (auto g = Gate(false))
+                return *g;
+            const auto b = json::parse(BodyOf(r));
+            for (const auto& [a, s] : solutions)
+                if ((b.contains("id") && s["id"] == b["id"]) || (!b.contains("id") && a == "all"))
+                    return Response(200, json{ { "status", "ok" }, { "solution", s } }.dump());
+            return ErrorResponse(404, "NOT_FOUND");
+        };
+        t.routes["/GView/PublishSolution"] = [this](const HttpRequest& r) {
+            if (auto g = Gate(false))
+                return *g;
+            if (!staff)
+                return ErrorResponse(403, "FORBIDDEN");
+            const auto b        = json::parse(BodyOf(r));
+            const auto audience = b["audience"].get<std::string>();
+            auto it             = solutions.find(audience);
+            if (!b.contains("id"))
+            {
+                if (it != solutions.end())
+                    return Conflict(&it->second);
+                json s{ { "id", nextId++ },        { "audience", audience },        { "revision", 1 },          { "updatedAt", NOW },
+                        { "enabled", b["enabled"] }, { "hasReplay", b["hasReplay"] }, { "replaySteps", b["replaySteps"] }, { "document", b["document"] } };
+                solutions[audience] = s;
+                return Response(200, json{ { "status", "ok" }, { "id", s["id"] }, { "revision", 1 }, { "updatedAt", NOW }, { "created", true } }.dump());
+            }
+            if (it == solutions.end() || it->second["id"] != b["id"] || it->second["revision"] != b["revision"])
+                return Conflict(it == solutions.end() ? nullptr : &it->second);
+            it->second["revision"] = it->second["revision"].get<int64>() + 1;
+            it->second["document"] = b["document"];
+            return Response(200, json{ { "status", "ok" }, { "id", b["id"] }, { "revision", it->second["revision"] }, { "updatedAt", NOW }, { "created", false } }.dump());
+        };
+        t.routes["/GView/DeleteSolution"] = [this](const HttpRequest& r) {
+            if (!staff)
+                return ErrorResponse(403, "FORBIDDEN");
+            const auto b = json::parse(BodyOf(r));
+            for (auto it = solutions.begin(); it != solutions.end(); ++it)
+                if (it->second["id"] == b["id"])
+                {
+                    solutions.erase(it);
+                    return Response(200, R"({"status":"ok"})");
+                }
+            return ErrorResponse(404, "NOT_FOUND");
+        };
+    }
+};
+
+struct WorkFixture : SessionFixture {
+    FakeWorkServer server;
+    // connectUser: extra "user" fields of the Connect answer (canPublishSolutions / audiences)
+    explicit WorkFixture(std::optional<json> workObject = WorkObject(), bool staff = false, json connectUser = json::object())
+    {
+        server.staff = staff;
+        server.Install(*transport);
+        PolicyOptions o;
+        o.work            = std::move(workObject);
+        const auto policy = BuildPolicy(o);
+        const auto sig    = ServerKey().Sign(policy);
+        auto body         = json::parse(ConnectBody(policy, sig));
+        for (auto& [k, v] : connectUser.items())
+            body["user"][k] = v;
+        transport->routes["/GView/Connect"] = [d = body.dump()](const HttpRequest&) { return Response(200, d); };
+        transport->routes["/GView/GetWeeks"] = [](const HttpRequest&) { return Response(200, WeeksFixture()); };
+    }
+    WorkResult GetWork(std::string_view problem = "w1_stack_var")
+    {
+        WorkResult r;
+        r.status = GView::Utils::GStatus::Error("callback not called");
+        auto st  = session->GetWork(problem, [&](WorkResult& x) { r = std::move(x); });
+        if (!st.ok)
+            r.status = st;
+        return r;
+    }
+    SaveWorkOutcome SaveWork(std::string_view doc, std::string_view problem = "w1_stack_var")
+    {
+        SaveWorkOutcome r;
+        r.status = GView::Utils::GStatus::Error("callback not called");
+        auto st  = session->SaveWork(problem, std::string(doc), true, 2, [&](const SaveWorkOutcome& x) { r = x; });
+        if (!st.ok)
+            r.status = st;
+        return r;
+    }
+    PublishOutcome Publish(PublishSolutionRequest req)
+    {
+        PublishOutcome r;
+        r.status = GView::Utils::GStatus::Error("callback not called");
+        auto st  = session->PublishSolution(std::move(req), [&](const PublishOutcome& x) { r = x; });
+        if (!st.ok)
+            r.status = st;
+        return r;
+    }
+};
+
+std::string OtherDoc(std::string_view text)
+{
+    json d = json::parse(WORK_DOC);
+    d["zones"][0]["comments"][0]["text"] = text;
+    return d.dump();
+}
+} // namespace
+
+TEST_CASE("Learning: work error mapping (CONFLICT and the existing solution)", "[learning][work]")
+{
+    auto e = WorkErrorFromResponse(Response(409, R"({"status":"error","code":"CONFLICT","details":"x","retryable":false,"id":7,"revision":3})"));
+    REQUIRE(e.code == ErrorCode::Conflict);
+    REQUIRE_FALSE(e.retryable);
+    REQUIRE(e.existingId == 7);
+    REQUIRE(e.existingRevision == 3);
+    // a 409 without an envelope is still a conflict (the status decides), without an existing solution
+    e = WorkErrorFromResponse(Response(409, "conflict"));
+    REQUIRE(e.code == ErrorCode::Conflict);
+    REQUIRE_FALSE(e.existingId.has_value());
+    // hostile ids are ignored
+    e = WorkErrorFromResponse(Response(409, R"({"code":"CONFLICT","id":"7","revision":-1})"));
+    REQUIRE_FALSE(e.existingId.has_value());
+    REQUIRE_FALSE(e.existingRevision.has_value());
+    // only a 409 carries them
+    e = WorkErrorFromResponse(Response(400, R"({"code":"BAD_REQUEST","id":7,"revision":3})"));
+    REQUIRE(e.code == ErrorCode::BadRequest);
+    REQUIRE_FALSE(e.existingId.has_value());
+    REQUIRE(WorkErrorFromResponse(Response(413, "")).code == ErrorCode::PayloadTooLarge);
+    REQUIRE(WorkErrorFromResponse(Response(403, R"({"code":"FORBIDDEN"})")).code == ErrorCode::Forbidden);
+    REQUIRE(WorkErrorFromResponse(TransportFailure()).code == ErrorCode::Transport);
+    // regression: SubmitFlag keeps 409 => ALREADY_SOLVED
+    REQUIRE(ParseErrorEnvelope(409, {}, {}).code == ErrorCode::AlreadySolved);
+    SubmitResult sr;
+    ServerError err;
+    REQUIRE(ParseSubmitResponse(409, BufferView(std::string_view(R"({"status":"error","code":"ALREADY_SOLVED","details":"x"})")), sr, err).ok);
+    REQUIRE(sr.alreadySolved);
+}
+
+TEST_CASE("Learning: work document validation and canonical text", "[learning][work]")
+{
+    std::string c;
+    REQUIRE(ValidateWorkDocumentText(WORK_DOC, MAX_WORK_DOCUMENT_BYTES, c).ok);
+    REQUIRE(c == json::parse(WORK_DOC).dump()); // compact, keys sorted, nothing else changed
+    REQUIRE(c.find('\n') == std::string::npos);
+    REQUIRE(c.starts_with(R"({"file":"p16.exe","format":"gview-disassembly-annotations","meta":)"));
+    std::string again;
+    REQUIRE(ValidateWorkDocumentText(c, MAX_WORK_DOCUMENT_BYTES, again).ok);
+    REQUIRE(again == c); // idempotent
+    REQUIRE(ValidateWorkDocumentText(R"({"format":"gview-disassembly-annotations","version":1})", 1000, c).ok);
+
+    const std::string tooLarge = "x";
+    for (const std::string bad : {
+               std::string(""),
+               std::string("[1,2]"),
+               std::string("\"text\""),
+               std::string("{\"format\":\"gview-disassembly-annotations\",\"version\":1"), // truncated
+               std::string(R"({"version":1})"),
+               std::string(R"({"format":"other","version":1})"),
+               std::string(R"({"format":"gview-disassembly-annotations"})"),
+               std::string(R"({"format":"gview-disassembly-annotations","version":"1"})"),
+               std::string(R"({"format":"gview-disassembly-annotations","version":1.0})"),
+               std::string(R"({"format":"gview-disassembly-annotations","version":0})"),
+               std::string(R"({"format":"gview-disassembly-annotations","version":2})"),
+               std::string(R"({"format":"gview-disassembly-annotations","version":1,"t":"a\u0000b"})"),
+               std::string(R"({"format":"gview-disassembly-annotations","version":1,"a\u0000":1})"),
+               std::string("{\"format\":\"gview-disassembly-annotations\",\"version\":1,\"t\":\"a\0b\"}", 52),
+               std::string(R"({"format":"gview-disassembly-annotations","version":1,"t":"\xff"})"), // invalid UTF-8
+               R"({"format":"gview-disassembly-annotations","version":1,"d":)" + std::string(200, '[') + std::string(200, ']') + "}",
+         })
+    {
+        INFO(bad.substr(0, 80));
+        std::string out = "unchanged";
+        REQUIRE_FALSE(ValidateWorkDocumentText(bad, MAX_WORK_DOCUMENT_BYTES, out).ok);
+        REQUIRE(out == "unchanged");
+    }
+    // the size limit applies to the canonical text: exactly maxBytes passes, one byte more does not
+    const std::string head = R"({"format":"gview-disassembly-annotations","pad":")";
+    const std::string tail = R"(","version":1})";
+    const std::string doc  = head + std::string(1000, 'a') + tail;
+    REQUIRE(ValidateWorkDocumentText(doc, doc.size(), c).ok);
+    auto st = ValidateWorkDocumentText(doc, doc.size() - 1, c);
+    REQUIRE_FALSE(st.ok);
+    REQUIRE(st.message.find("too large") != std::string::npos);
+    // a newer document says so (the user must update GView)
+    st = ValidateWorkDocumentText(R"({"format":"gview-disassembly-annotations","version":3})", 1000, c);
+    REQUIRE(st.message.find("newer GView") != std::string::npos);
+}
+
+TEST_CASE("Learning: work request bodies (exact)", "[learning][work]")
+{
+    const std::string doc = R"({"format":"gview-disassembly-annotations","version":1})";
+    auto str              = [](const SecureString& s) { return std::string(s.data(), s.size()); };
+    REQUIRE(str(BuildGetWorkBody("w1_stack_var")) == R"({"problem":"w1_stack_var"})");
+    // escaped (never sent: not a valid item name); the literal is kept out of the macro (MSVC stringizes raw strings badly)
+    const std::string escaped = "{\"problem\":\"a\\\"b\\\\c\\n\"}";
+    REQUIRE(str(BuildGetWorkBody("a\"b\\c\n")) == escaped);
+
+    SaveWorkRequest save{ "w1_stack_var", doc, true, 57, std::nullopt };
+    REQUIRE(str(BuildSaveWorkBody(save)) ==
+            R"({"problem":"w1_stack_var","document":{"format":"gview-disassembly-annotations","version":1},"hasReplay":true,"replaySteps":57})");
+    save.revision  = 4;
+    save.hasReplay = false;
+    save.replaySteps = 0;
+    REQUIRE(str(BuildSaveWorkBody(save)) ==
+            R"({"problem":"w1_stack_var","document":{"format":"gview-disassembly-annotations","version":1},"hasReplay":false,"replaySteps":0,"revision":4})");
+    REQUIRE(json::parse(str(BuildSaveWorkBody(save)))["document"] == json::parse(doc));
+
+    REQUIRE(str(BuildGetSolutionBody("w1_stack_var", std::nullopt)) == R"({"problem":"w1_stack_var"})");
+    REQUIRE(str(BuildGetSolutionBody("w1_stack_var", 12)) == R"({"problem":"w1_stack_var","id":12})");
+
+    PublishSolutionRequest pub;
+    pub.problem     = "w1_stack_var";
+    pub.audience    = NoteAudience::G2;
+    pub.document    = doc;
+    pub.hasReplay   = true;
+    pub.replaySteps = 9;
+    REQUIRE(str(BuildPublishSolutionBody(pub)) ==
+            R"({"problem":"w1_stack_var","audience":"G2","document":{"format":"gview-disassembly-annotations","version":1},"hasReplay":true,"replaySteps":9,"enabled":true})");
+    pub.id       = 5;
+    pub.revision = 2;
+    pub.enabled  = false;
+    pub.audience = NoteAudience::All;
+    REQUIRE(str(BuildPublishSolutionBody(pub)) ==
+            R"({"problem":"w1_stack_var","id":5,"audience":"all","document":{"format":"gview-disassembly-annotations","version":1},"hasReplay":true,"replaySteps":9,"enabled":false,"revision":2})");
+    REQUIRE(str(BuildDeleteSolutionBody(5)) == R"({"id":5})");
+}
+
+TEST_CASE("Learning: GetWork / SaveWork / GetSolution / PublishSolution answers (hostile)", "[learning][work]")
+{
+    const json doc = json::parse(WORK_DOC);
+    json answer{ { "status", "ok" },
+                 { "serverTime", NOW },
+                 { "maxBytes", 1048576 },
+                 { "canPublishSolutions", false },
+                 { "futureField", { 1, 2 } },
+                 { "audiences", json::array({ "G1", "all", "hacker", 5, "G1", "g2" }) },
+                 { "work", { { "revision", 3 }, { "updatedAt", NOW - 10 }, { "clientVersion", "0.409.0\x01" }, { "hasReplay", true }, { "replaySteps", 41 }, { "document", doc }, { "x", 1 } } },
+                 { "solutions",
+                   json::array({ { { "id", 7 }, { "audience", "all" }, { "revision", 2 }, { "updatedAt", NOW }, { "enabled", true }, { "hasReplay", true }, { "replaySteps", 30 } },
+                                 { { "id", 8 }, { "audience", "G1" }, { "revision", 1 }, { "hasReplay", false }, { "replaySteps", 99 } },
+                                 "not an object",
+                                 { { "id", 0 }, { "audience", "all" }, { "revision", 1 } },
+                                 { { "id", "9" }, { "audience", "all" }, { "revision", 1 } },
+                                 { { "id", 1.5 }, { "audience", "all" }, { "revision", 1 } },
+                                 { { "id", 10 }, { "audience", "G3" }, { "revision", 1 } },
+                                 { { "id", 11 }, { "audience", "all" } },
+                                 { { "id", 12 }, { "audience", "all" }, { "revision", 1 }, { "enabled", "yes" } },
+                                 { { "id", 7 }, { "audience", "G2" }, { "revision", 1 } } }) } };
+    WorkResponse r;
+    // BufferView does not own: keep the text alive
+    auto parseText = [&](const std::string& text) { return ParseWorkResponse(BufferView(std::string_view(text)), r); };
+    std::string text = answer.dump();
+    REQUIRE(parseText(text).ok);
+    REQUIRE(r.serverTime == NOW);
+    REQUIRE(r.maxBytes == 1048576);
+    REQUIRE_FALSE(r.canPublishSolutions);
+    REQUIRE(r.audiences == std::vector<NoteAudience>{ NoteAudience::All, NoteAudience::G1 });
+    REQUIRE(r.hasWork);
+    REQUIRE(r.revision == 3);
+    REQUIRE(r.updatedAt == NOW - 10);
+    REQUIRE(r.clientVersion == "0.409.0 "); // control characters sanitized
+    REQUIRE(r.hasReplay);
+    REQUIRE(r.replaySteps == 41);
+    REQUIRE(r.document == doc.dump());
+    REQUIRE(r.solutions.size() == 2);
+    REQUIRE(r.solutions[0].id == 7);
+    REQUIRE(r.solutions[0].audience == NoteAudience::All);
+    REQUIRE(r.solutions[0].hasReplay);
+    REQUIRE(r.solutions[0].replaySteps == 30);
+    REQUIRE(r.solutions[1].enabled); // missing => true
+    REQUIRE(r.solutions[1].replaySteps == 0); // no replay => no steps
+    REQUIRE(r.rejected == 3 /* audiences */ + 8 /* solutions */);
+
+    // work: null / missing = none; empty answer is fine
+    answer["work"] = nullptr;
+    text           = answer.dump();
+    REQUIRE(parseText(text).ok);
+    REQUIRE_FALSE(r.hasWork);
+    REQUIRE(r.document.empty());
+    REQUIRE(r.revision == 0);
+    text = R"({"status":"ok"})";
+    REQUIRE(parseText(text).ok);
+    REQUIRE(r.audiences == std::vector<NoteAudience>{ NoteAudience::All });
+    REQUIRE(r.maxBytes == MAX_WORK_DOCUMENT_BYTES);
+    // maxBytes clamped to [64 KiB, 16 MiB]
+    text = R"({"status":"ok","maxBytes":10})";
+    REQUIRE(parseText(text).ok);
+    REQUIRE(r.maxBytes == WORK_MIN_MAX_BYTES);
+    text = R"({"status":"ok","maxBytes":100000000000})";
+    REQUIRE(parseText(text).ok);
+    REQUIRE(r.maxBytes == WORK_MAX_MAX_BYTES);
+    text = R"({"status":"ok","canPublishSolutions":"true","audiences":"all"})";
+    REQUIRE(parseText(text).ok);
+    REQUIRE_FALSE(r.canPublishSolutions);
+    REQUIRE(r.rejected == 1);
+
+    // errors: the whole answer is refused
+    auto refused = [&](json j) {
+        const std::string t = j.dump();
+        WorkResponse before;
+        before.revision = 99;
+        r               = before;
+        const bool ok   = ParseWorkResponse(BufferView(std::string_view(t)), r).ok;
+        if (!ok)
+            REQUIRE(r.revision == 99); // out untouched on errors
+        return !ok;
+    };
+    json base{ { "status", "ok" }, { "work", { { "revision", 1 }, { "document", doc } } } };
+    REQUIRE_FALSE(refused(base));
+    // an own document that can not be used (not an object, a newer version): the answer is kept, the work has no document
+    auto unusable = [&](const json& j) {
+        WorkResponse r;
+        const std::string t = j.dump();
+        return ParseWorkResponse(BufferView(std::string_view(t)), r).ok && r.hasWork && r.document.empty() && !r.workError.empty() && r.revision == 1;
+    };
+    json bad = base;
+    bad["work"]["document"] = "a string";
+    REQUIRE(unusable(bad));
+    bad["work"]["document"] = json::array({ 1 });
+    REQUIRE(unusable(bad));
+    bad = base;
+    bad["work"]["document"]["version"] = 2;
+    REQUIRE(unusable(bad));
+    bad = base;
+    bad["work"].erase("document");
+    REQUIRE(refused(bad));
+    bad = base;
+    bad["work"]["revision"] = 0;
+    REQUIRE(refused(bad));
+    bad = base;
+    bad["work"] = "yes";
+    REQUIRE(refused(bad));
+    bad = base;
+    bad["solutions"] = json::object();
+    REQUIRE(refused(bad));
+    bad = base;
+    bad["status"] = "error";
+    REQUIRE(refused(bad));
+    bad = base;
+    bad["work"]["document"]["pad"] = std::string(MAX_WORK_DOCUMENT_BYTES, 'a'); // above the client cap: unusable, the answer is kept
+    REQUIRE(unusable(bad));
+    REQUIRE(refused(json::array()));
+    text = "not json";
+    REQUIRE_FALSE(parseText(text).ok);
+
+    // SaveWork / PublishSolution answers
+    SaveWorkResponse sw;
+    text = R"({"status":"ok","revision":4,"updatedAt":1760000000,"created":false,"extra":1})";
+    REQUIRE(ParseSaveWorkResponse(BufferView(std::string_view(text)), sw).ok);
+    REQUIRE(sw.revision == 4);
+    REQUIRE(sw.updatedAt == 1760000000);
+    for (const std::string b : { std::string(R"({"status":"ok"})"), std::string(R"({"status":"ok","revision":"4"})"), std::string(R"({"status":"ok","revision":0})"),
+                                 std::string(R"({"status":"error","revision":4})"), std::string("[]") })
+        REQUIRE_FALSE(ParseSaveWorkResponse(BufferView(std::string_view(b)), sw).ok);
+    PublishSolutionResponse pr;
+    text = R"({"status":"ok","id":3,"revision":1,"updatedAt":5,"created":true})";
+    REQUIRE(ParsePublishSolutionResponse(BufferView(std::string_view(text)), pr).ok);
+    REQUIRE(pr.id == 3);
+    REQUIRE(pr.created);
+    text = R"({"status":"ok","revision":1})";
+    REQUIRE_FALSE(ParsePublishSolutionResponse(BufferView(std::string_view(text)), pr).ok);
+
+    // GetSolution
+    SolutionResponse sol;
+    json s{ { "status", "ok" },
+            { "solution", { { "id", 7 }, { "audience", "G1" }, { "revision", 2 }, { "updatedAt", NOW }, { "enabled", true }, { "hasReplay", true }, { "replaySteps", 3 }, { "document", doc } } } };
+    text = s.dump();
+    REQUIRE(ParseSolutionResponse(BufferView(std::string_view(text)), sol).ok);
+    REQUIRE(sol.info.id == 7);
+    REQUIRE(sol.info.audience == NoteAudience::G1);
+    REQUIRE(sol.info.replaySteps == 3);
+    REQUIRE(sol.document == doc.dump());
+    for (auto mutate : std::vector<std::function<void(json&)>>{
+               [](json& j) { j["solution"]["document"] = 5; },
+               [](json& j) { j["solution"]["document"]["format"] = "x"; },
+               [](json& j) { j["solution"].erase("document"); },
+               [](json& j) { j["solution"]["audience"] = "everyone"; },
+               [](json& j) { j["solution"]["id"] = -1; },
+               [](json& j) { j.erase("solution"); },
+         })
+    {
+        json m = s;
+        mutate(m);
+        text = m.dump();
+        INFO(text.substr(0, 120));
+        REQUIRE_FALSE(ParseSolutionResponse(BufferView(std::string_view(text)), sol).ok);
+    }
+}
+
+TEST_CASE("Learning: policy work object (absent, present, clamping)", "[learning][work][policy]")
+{
+    Policy p;
+    PolicyOptions o;
+    REQUIRE(ParsePolicyWith(o, p).ok);
+    REQUIRE_FALSE(p.work.present); // absent = server without work documents => no Save / Resume UI
+
+    o.work = WorkObject(true, 1048576);
+    REQUIRE(ParsePolicyWith(o, p).ok);
+    REQUIRE(p.work.present);
+    REQUIRE(p.work.enabled);
+    REQUIRE(p.work.maxBytes == 1048576);
+    o.work = WorkObject(true, 10);
+    REQUIRE(ParsePolicyWith(o, p).ok);
+    REQUIRE(p.work.maxBytes == 64 * 1024);
+    o.work = WorkObject(true, 1ll << 40);
+    REQUIRE(ParsePolicyWith(o, p).ok);
+    REQUIRE(p.work.maxBytes == 16 * 1024 * 1024);
+    o.work = json{ { "enabled", false } };
+    REQUIRE(ParsePolicyWith(o, p).ok);
+    REQUIRE(p.work.present);
+    REQUIRE_FALSE(p.work.enabled);
+    REQUIRE(p.work.maxBytes == 2 * 1024 * 1024);
+    o.work = json::object();
+    REQUIRE(ParsePolicyWith(o, p).ok);
+    REQUIRE_FALSE(p.work.enabled);
+    o.work = json(nullptr);
+    REQUIRE(ParsePolicyWith(o, p).ok);
+    REQUIRE_FALSE(p.work.present);
+
+    for (const json bad : { json("on"), json::array(), json{ { "enabled", "yes" } }, json{ { "maxBytes", -1 } }, json{ { "maxBytes", "2097152" } } })
+    {
+        o.work  = bad;
+        auto st = ParsePolicyWith(o, p);
+        INFO(bad.dump());
+        REQUIRE_FALSE(st.ok);
+        REQUIRE(st.message.starts_with("POLICY_MALFORMED"));
+    }
+}
+
+TEST_CASE("Learning: connect and catalogue announce course work and solutions", "[learning][work]")
+{
+    const auto policy = BuildPolicy({});
+    const auto sig    = ServerKey().Sign(policy);
+    ConnectResponse cr;
+    std::string body = ConnectBody(policy, sig);
+    REQUIRE(ParseConnectResponse(BufferView(std::string_view(body)), cr).ok);
+    REQUIRE_FALSE(cr.canPublishSolutions.has_value()); // older servers: not announced
+    REQUIRE_FALSE(cr.audiences.has_value());
+
+    auto j                           = json::parse(body);
+    j["user"]["canPublishSolutions"] = true;
+    j["user"]["audiences"]           = json::array({ "G2", "x", "all" });
+    body                             = j.dump();
+    REQUIRE(ParseConnectResponse(BufferView(std::string_view(body)), cr).ok);
+    REQUIRE(cr.canPublishSolutions == true);
+    REQUIRE(cr.audiences == std::vector<NoteAudience>{ NoteAudience::All, NoteAudience::G2 });
+    j["user"]["canPublishSolutions"] = "yes"; // wrong type = not announced
+    j["user"]["audiences"]           = "all";
+    body                             = j.dump();
+    REQUIRE(ParseConnectResponse(BufferView(std::string_view(body)), cr).ok);
+    REQUIRE_FALSE(cr.canPublishSolutions.has_value());
+    REQUIRE_FALSE(cr.audiences.has_value());
+
+    auto weeks = json::parse(WeeksFixture());
+    auto& p    = weeks["weeks"][1]["problems"][0];
+    p["me"]["workSavedAt"]  = 1760000000;
+    p["me"]["workRevision"] = 4;
+    p["solutionAvailable"]  = true;
+    p["solutionHasReplay"]  = true;
+    std::string text        = weeks.dump();
+    Catalogue cat;
+    REQUIRE(ParseWeeks(BufferView(std::string_view(text)), cat).ok);
+    const auto* item = cat.Find("w1_stack_var", true);
+    REQUIRE(item != nullptr);
+    REQUIRE(item->me.workSavedAt == 1760000000);
+    REQUIRE(item->me.workRevision == 4);
+    REQUIRE(item->solutionAvailable);
+    REQUIRE(item->solutionHasReplay);
+    p["me"]["workRevision"] = -3;
+    p["solutionAvailable"]  = "yes";
+    text                    = weeks.dump();
+    REQUIRE(ParseWeeks(BufferView(std::string_view(text)), cat).ok);
+    item = cat.Find("w1_stack_var", true);
+    REQUIRE(item->me.workRevision == 0);
+    REQUIRE_FALSE(item->solutionAvailable);
+    REQUIRE_FALSE(item->solutionHasReplay); // only with a solution
+}
+
+TEST_CASE("Learning: work availability follows the policy and the server", "[learning][work][session]")
+{
+    {
+        WorkFixture fx(std::nullopt); // a server without work documents
+        REQUIRE(fx.Connect().ok);
+        REQUIRE(fx.session->GetWorkAvailability() == WorkAvailability::Absent);
+        REQUIRE_FALSE(fx.GetWork().status.ok);
+        REQUIRE(fx.transport->Count("/GView/GetWork") == 0);
+    }
+    {
+        WorkFixture fx(WorkObject(false));
+        REQUIRE(fx.Connect().ok);
+        REQUIRE(fx.session->GetWorkAvailability() == WorkAvailability::DisabledByPolicy);
+        REQUIRE(fx.session->GetStatus().work == WorkAvailability::DisabledByPolicy);
+        REQUIRE_FALSE(fx.SaveWork(WORK_DOC).status.ok);
+        REQUIRE(fx.transport->requests.size() == 1); // Connect only
+    }
+    {
+        // course staff are never gated by the switch (Connect announces the capability)
+        WorkFixture fx(WorkObject(false), true, json{ { "canPublishSolutions", true }, { "audiences", { "all", "G1" } } });
+        REQUIRE(fx.Connect().ok);
+        REQUIRE(fx.session->GetWorkAvailability() == WorkAvailability::Available);
+        REQUIRE(fx.session->CanPublishSolutions());
+        REQUIRE(fx.session->IsCourseStaff());
+        REQUIRE(fx.session->SolutionAudiences() == std::vector<NoteAudience>{ NoteAudience::All, NoteAudience::G1 });
+    }
+    {
+        // 403 FORBIDDEN after connect: hidden until the next connect
+        WorkFixture fx;
+        REQUIRE(fx.Connect().ok);
+        REQUIRE(fx.session->CanUseWork());
+        REQUIRE(fx.session->GetStatus().workMaxBytes == 1024 * 1024); // the policy's maxBytes
+        fx.server.forbidden = true;
+        auto r              = fx.GetWork();
+        REQUIRE(r.error.code == ErrorCode::Forbidden);
+        REQUIRE(fx.session->GetWorkAvailability() == WorkAvailability::DisabledByServer);
+        const auto before = fx.transport->requests.size();
+        REQUIRE_FALSE(fx.GetWork().status.ok); // refused locally now
+        REQUIRE(fx.transport->requests.size() == before);
+        fx.server.forbidden = false;
+        REQUIRE(fx.Connect().ok);
+        REQUIRE(fx.session->CanUseWork());
+    }
+}
+
+TEST_CASE("Learning: work revisions, conflicts and the catalogue", "[learning][work][session]")
+{
+    WorkFixture fx;
+    REQUIRE(fx.Connect().ok);
+    REQUIRE(fx.session->RefreshCatalogue(nullptr).ok);
+    auto& s = *fx.session;
+
+    // nothing saved yet: the first save creates (no revision on the wire)
+    auto r = fx.GetWork();
+    REQUIRE(r.status.ok);
+    REQUIRE_FALSE(r.response.hasWork);
+    REQUIRE_FALSE(s.WorkRevision("w1_stack_var").has_value());
+    auto o = fx.SaveWork(WORK_DOC);
+    INFO(o.status.message);
+    REQUIRE(o.status.ok);
+    REQUIRE(o.result.created);
+    REQUIRE(o.result.revision == 1);
+    REQUIRE(s.WorkRevision("w1_stack_var") == 1);
+    auto sent = json::parse(fx.transport->LastBody("/GView/SaveWork"));
+    REQUIRE_FALSE(sent.contains("revision"));
+    REQUIRE(sent["document"] == json::parse(WORK_DOC)); // canonical text embedded as is
+    REQUIRE(sent["hasReplay"] == true);
+    REQUIRE(sent["replaySteps"] == 2);
+    REQUIRE(fx.transport->LastBody("/GView/SaveWork").find("\n") == std::string::npos);
+    const auto* item = s.GetCatalogue().Find("w1_stack_var", true);
+    REQUIRE(item->me.workRevision == 1);
+    REQUIRE(item->me.workSavedAt == NOW + 1);
+
+    // another machine saved revision 2: this save sends revision 1 and conflicts; nothing changes locally
+    fx.server.workRevision = 2;
+    o                      = fx.SaveWork(OtherDoc("from this GView"));
+    REQUIRE_FALSE(o.status.ok);
+    REQUIRE(o.conflict);
+    REQUIRE(o.error.code == ErrorCode::Conflict);
+    REQUIRE(json::parse(fx.transport->LastBody("/GView/SaveWork"))["revision"] == 1);
+    REQUIRE(s.WorkRevision("w1_stack_var") == 1);
+    REQUIRE(s.GetState() == SessionState::Active);
+    REQUIRE(s.CanUseWork());
+
+    // overwrite deliberately: GetWork (caches revision 2 and the capability), then save again
+    r = fx.GetWork();
+    REQUIRE(r.status.ok);
+    REQUIRE(r.response.hasWork);
+    REQUIRE(r.response.revision == 2);
+    REQUIRE(r.response.document == Canonical(WORK_DOC));
+    REQUIRE(s.WorkRevision("w1_stack_var") == 2);
+    REQUIRE_FALSE(s.CanPublishSolutions());
+    REQUIRE(s.GetStatus().audiences == std::vector<NoteAudience>{ NoteAudience::All, NoteAudience::G1, NoteAudience::G2 });
+    o = fx.SaveWork(OtherDoc("from this GView"));
+    REQUIRE(o.status.ok);
+    REQUIRE(o.result.revision == 3);
+    REQUIRE(json::parse(fx.transport->LastBody("/GView/SaveWork"))["revision"] == 2);
+    REQUIRE(s.WorkRevision("w1_stack_var") == 3);
+
+    // refused locally: invalid documents, documents above the limit (GetWork said 1 MiB), invalid problems
+    const auto before = fx.transport->requests.size();
+    REQUIRE_FALSE(s.SaveWork("w1_stack_var", "[]", false, 0, nullptr).ok);
+    REQUIRE_FALSE(s.SaveWork("w1_stack_var", R"({"format":"x","version":1})", false, 0, nullptr).ok);
+    REQUIRE_FALSE(s.SaveWork("w1_stack_var", OtherDoc(std::string(1024 * 1024, 'a')), false, 0, nullptr).ok);
+    REQUIRE_FALSE(s.SaveWork("../x", WORK_DOC, false, 0, nullptr).ok);
+    REQUIRE_FALSE(s.GetWork("", nullptr).ok);
+    REQUIRE(fx.transport->requests.size() == before);
+
+    // the server deleted the work (website): GetWork forgets the revision, the next save creates
+    fx.server.workRevision = 0;
+    REQUIRE(fx.GetWork().status.ok);
+    REQUIRE_FALSE(s.WorkRevision("w1_stack_var").has_value());
+
+    // solutions: a student fetches the one of its audience
+    fx.server.solutions["all"] = json{ { "id", 4 }, { "audience", "all" }, { "revision", 1 }, { "updatedAt", NOW }, { "enabled", true },
+                                       { "hasReplay", true }, { "replaySteps", 5 }, { "document", json::parse(WORK_DOC) } };
+    r = fx.GetWork();
+    REQUIRE(r.response.solutions.size() == 1);
+    REQUIRE(r.response.solutions[0].id == 4);
+    SolutionResult sol;
+    REQUIRE(s.GetSolution("w1_stack_var", std::nullopt, [&](SolutionResult& x) { sol = std::move(x); }).ok);
+    REQUIRE(sol.status.ok);
+    REQUIRE(sol.solution.info.id == 4);
+    REQUIRE(sol.solution.document == Canonical(WORK_DOC));
+    REQUIRE(fx.transport->LastBody("/GView/GetSolution") == R"({"problem":"w1_stack_var"})");
+    REQUIRE(s.GetSolution("w1_stack_var", 99, [&](SolutionResult& x) { sol = std::move(x); }).ok);
+    REQUIRE(sol.error.code == ErrorCode::NotFound);
+    REQUIRE(s.CanUseWork()); // a 404 changes nothing
+
+    // a student can not publish: refused locally, nothing sent
+    PublishSolutionRequest pub;
+    pub.problem  = "w1_stack_var";
+    pub.document = WORK_DOC;
+    auto po      = fx.Publish(pub);
+    REQUIRE_FALSE(po.status.ok);
+    REQUIRE(po.status.message.find("course staff") != std::string::npos);
+    REQUIRE_FALSE(s.DeleteSolution(4, nullptr).ok);
+    REQUIRE(fx.transport->Count("/GView/PublishSolution") == 0);
+    REQUIRE(fx.transport->Count("/GView/DeleteSolution") == 0);
+}
+
+TEST_CASE("Learning: course staff publish solutions (create, 409, republish, delete)", "[learning][work][session]")
+{
+    WorkFixture fx(WorkObject(), true);
+    REQUIRE(fx.Connect().ok);
+    auto& s = *fx.session;
+    REQUIRE_FALSE(s.CanPublishSolutions()); // not announced at connect
+    fx.server.audiences = json::array({ "all", "G1" });
+    REQUIRE(fx.GetWork().status.ok);       // GetWork is authoritative
+    REQUIRE(s.CanPublishSolutions());
+    REQUIRE(s.GetStatus().canPublishSolutions);
+
+    PublishSolutionRequest pub;
+    pub.problem     = "w1_stack_var";
+    pub.audience    = NoteAudience::All;
+    pub.document    = WORK_DOC;
+    pub.hasReplay   = true;
+    pub.replaySteps = 12;
+    auto o          = fx.Publish(pub);
+    INFO(o.status.message);
+    REQUIRE(o.status.ok);
+    REQUIRE(o.result.created);
+    const int64 id = o.result.id;
+    auto sent      = json::parse(fx.transport->LastBody("/GView/PublishSolution"));
+    REQUIRE(sent["audience"] == "all");
+    REQUIRE(sent["document"] == json::parse(WORK_DOC));
+    REQUIRE(sent["replaySteps"] == 12);
+    REQUIRE_FALSE(sent.contains("id"));
+
+    // a second create for the same audience: 409 naming the existing solution
+    pub.document = OtherDoc("better");
+    o            = fx.Publish(pub);
+    REQUIRE_FALSE(o.status.ok);
+    REQUIRE(o.conflict);
+    REQUIRE(o.existingId == id);
+    REQUIRE(o.existingRevision == 1);
+    REQUIRE(s.CanPublishSolutions()); // a conflict is not a refusal
+    // republish over it
+    pub.id       = o.existingId;
+    pub.revision = o.existingRevision;
+    o            = fx.Publish(pub);
+    REQUIRE(o.status.ok);
+    REQUIRE(o.result.revision == 2);
+    REQUIRE_FALSE(o.result.created);
+    sent = json::parse(fx.transport->LastBody("/GView/PublishSolution"));
+    REQUIRE(sent["id"] == id);
+    REQUIRE(sent["revision"] == 1);
+    // stale revision
+    o = fx.Publish(pub);
+    REQUIRE(o.conflict);
+    REQUIRE(o.existingRevision == 2);
+
+    // an audience the server did not announce, an update without its revision: refused locally
+    const auto before = fx.transport->requests.size();
+    PublishSolutionRequest g2 = pub;
+    g2.id.reset();
+    g2.revision.reset();
+    g2.audience = NoteAudience::G2;
+    REQUIRE_FALSE(fx.Publish(g2).status.ok);
+    PublishSolutionRequest noRev = pub;
+    noRev.revision.reset();
+    REQUIRE_FALSE(fx.Publish(noRev).status.ok);
+    REQUIRE(fx.transport->requests.size() == before);
+
+    DeleteSolutionOutcome d;
+    REQUIRE(s.DeleteSolution(id, [&](const DeleteSolutionOutcome& x) { d = x; }).ok);
+    REQUIRE(d.status.ok);
+    REQUIRE(fx.transport->LastBody("/GView/DeleteSolution") == "{\"id\":" + std::to_string(id) + "}");
+    REQUIRE(s.DeleteSolution(id, [&](const DeleteSolutionOutcome& x) { d = x; }).ok);
+    REQUIRE(d.error.code == ErrorCode::NotFound);
+    REQUIRE(s.CanPublishSolutions());
+
+    // the server says: not staff (any more) => the capability is dropped
+    fx.server.staff = false;
+    o               = fx.Publish(pub);
+    REQUIRE(o.error.code == ErrorCode::Forbidden);
+    REQUIRE_FALSE(s.CanPublishSolutions());
+
+    // EndSession clears revisions and capabilities
+    REQUIRE(s.EndSession("user").ok);
+    REQUIRE_FALSE(s.CanPublishSolutions());
+    REQUIRE_FALSE(s.IsCourseStaff());
+    REQUIRE_FALSE(s.WorkRevision("w1_stack_var").has_value());
+    REQUIRE(s.GetStatus().audiences.empty());
+    REQUIRE(s.GetWorkAvailability() == WorkAvailability::Absent);
+}
+
+TEST_CASE("Learning: work requests and POLICY_EXPIRED, end of session", "[learning][work][session]")
+{
+    WorkFixture fx;
+    REQUIRE(fx.Connect().ok);
+    REQUIRE(fx.SaveWork(WORK_DOC).status.ok);
+    REQUIRE(fx.session->WorkRevision("w1_stack_var") == 1);
+    fx.server.expired = true;
+    auto o            = fx.SaveWork(OtherDoc("x"));
+    REQUIRE(o.error.code == ErrorCode::PolicyExpired);
+    REQUIRE_FALSE(o.conflict);
+    REQUIRE(fx.session->GetState() == SessionState::Expired);
+    REQUIRE(fx.session->GetWorkAvailability() == WorkAvailability::Unavailable);
+    REQUIRE_FALSE(fx.GetWork().status.ok); // refused locally
+    REQUIRE(fx.deactivations == 0);        // restrictions stay applied
+
+    // the session ended while a request ran: its completion is dropped (callbacks of another session never run)
+    WorkFixture fx2;
+    REQUIRE(fx2.Connect().ok);
+    bool called                       = false;
+    fx2.transport->routes["/GView/GetWork"] = [&](const HttpRequest&) {
+        REQUIRE(fx2.session->EndSession("user").ok); // inline (synchronous) frontend: ends before the completion
+        return Response(200, R"({"status":"ok","work":null})");
+    };
+    REQUIRE(fx2.session->GetWork("w1_stack_var", [&](WorkResult&) { called = true; }).ok);
+    REQUIRE_FALSE(called);
+}
+
+TEST_CASE("Learning: each work operation is one Post with a constant path", "[learning][work]")
+{
+    const std::string doc = WORK_DOC;
+    PublishSolutionRequest pub;
+    pub.problem  = "w1_stack_var";
+    pub.document = doc;
+    struct Case {
+        std::string path;
+        std::function<void(IHttpTransport&)> call;
+    };
+    const std::vector<Case> cases = {
+        { "/GView/GetWork", [](IHttpTransport& t) { LearningSession::PerformGetWork(t, "w1_stack_var"); } },
+        { "/GView/SaveWork", [&](IHttpTransport& t) { LearningSession::PerformSaveWork(t, SaveWorkRequest{ "w1_stack_var", doc, false, 0, 3 }); } },
+        { "/GView/GetSolution", [](IHttpTransport& t) { LearningSession::PerformGetSolution(t, "w1_stack_var", 2); } },
+        { "/GView/PublishSolution", [&](IHttpTransport& t) { LearningSession::PerformPublishSolution(t, pub); } },
+        { "/GView/DeleteSolution", [](IHttpTransport& t) { LearningSession::PerformDeleteSolution(t, 2); } },
+    };
+    for (const auto& c : cases)
+    {
+        INFO(c.path);
+        for (long status : { 200L, 409L, 500L })
+        {
+            FakeTransport t;
+            t.routes[c.path] = [status](const HttpRequest&) { return Response(status, R"({"status":"ok"})"); };
+            c.call(t);
+            REQUIRE(t.requests.size() == 1);
+            REQUIRE(t.requests[0].first == c.path);
+        }
+    }
+    // the documents travel canonical even when the caller passes pretty-printed text
+    FakeTransport t;
+    LearningSession::PerformSaveWork(t, SaveWorkRequest{ "w1_stack_var", doc, true, 4, std::nullopt });
+    REQUIRE(t.requests[0].second.find(Canonical(doc)) != std::string::npos);
+    // invalid requests are not sent at all
+    FakeTransport none;
+    REQUIRE(LearningSession::PerformGetWork(none, "../x").error.code == ErrorCode::BadRequest);
+    REQUIRE_FALSE(LearningSession::PerformSaveWork(none, SaveWorkRequest{ "w1_stack_var", "{}", false, 0, std::nullopt }).status.ok);
+    REQUIRE_FALSE(LearningSession::PerformSaveWork(none, SaveWorkRequest{ "w1_stack_var", doc, false, 0, 0 }).status.ok);
+    REQUIRE_FALSE(LearningSession::PerformGetSolution(none, "w1_stack_var", 0).status.ok);
+    PublishSolutionRequest noRevision = pub;
+    noRevision.id                     = 3;
+    REQUIRE_FALSE(LearningSession::PerformPublishSolution(none, noRevision).status.ok);
+    REQUIRE_FALSE(LearningSession::PerformDeleteSolution(none, 0).status.ok);
+    REQUIRE(none.requests.empty());
+    // a malformed 2xx is a protocol error, a transport failure stays one
+    FakeTransport odd;
+    odd.routes["/GView/SaveWork"] = [](const HttpRequest&) { return Response(200, R"({"status":"ok"})"); };
+    auto o                        = LearningSession::PerformSaveWork(odd, SaveWorkRequest{ "w1_stack_var", doc, false, 0, std::nullopt });
+    REQUIRE(o.error.code == ErrorCode::Protocol);
+    odd.routes["/GView/GetWork"] = [](const HttpRequest&) { return TransportFailure(); };
+    REQUIRE(LearningSession::PerformGetWork(odd, "w1_stack_var").error.code == ErrorCode::Transport);
+}
+
+TEST_CASE("Learning: solution and replay windows (pending document, roles, telemetry)", "[learning][work][session]")
+{
+    WorkFixture fx;
+    REQUIRE(fx.Connect().ok);
+    auto& s = *fx.session;
+    int student = 0, solution = 0, replay = 0, other = 0; // stand-ins for GView::Object addresses
+
+    REQUIRE_FALSE(s.SetPendingWorkDocument(WORK_DOC, WorkspaceRole::Solution)); // no pending binding
+    ItemBinding b;
+    b.item    = "w1_stack_var";
+    b.problem = true;
+    b.mode    = DeliveryMode::File;
+    s.SetPendingBinding(b);
+    s.OnObjectCreated(&student);
+
+    s.SetPendingBinding(b);
+    REQUIRE_FALSE(s.SetPendingWorkDocument(WORK_DOC, WorkspaceRole::Normal)); // Normal is never a binding
+    REQUIRE(s.SetPendingWorkDocument(Canonical(WORK_DOC), WorkspaceRole::Solution));
+    s.OnObjectCreated(&solution);
+    s.SetPendingBinding(b);
+    REQUIRE(s.SetPendingWorkDocument("{}", WorkspaceRole::Replay));
+    s.OnObjectCreated(&replay);
+
+    WorkspaceRole role = WorkspaceRole::Student;
+    auto doc           = s.TakePendingWork(&solution, role);
+    REQUIRE(role == WorkspaceRole::Solution);
+    REQUIRE(doc == Canonical(WORK_DOC));
+    doc = s.TakePendingWork(&solution, role); // taken once
+    REQUIRE_FALSE(doc.has_value());
+    REQUIRE(role == WorkspaceRole::Solution);
+    REQUIRE(s.TakePendingWork(&replay, role) == std::string("{}"));
+    REQUIRE(role == WorkspaceRole::Replay);
+    REQUIRE_FALSE(s.TakePendingWork(&student, role).has_value());
+    REQUIRE(role == WorkspaceRole::Student);
+    REQUIRE_FALSE(s.TakePendingWork(&other, role).has_value());
+    REQUIRE(role == WorkspaceRole::Normal);
+
+    // telemetry: only the student's window produces item events
+    if (auto pending = s.Telemetry().BeginBatch({}); pending.has_value())
+        s.Telemetry().OnFlushResult(FlushOutcome::Accepted); // drop what connect / open recorded
+    REQUIRE(s.Record(&student, EventType::JumpBack));
+    REQUIRE_FALSE(s.Record(&solution, EventType::JumpBack));
+    REQUIRE_FALSE(s.Record(&replay, EventType::CommentAdd));
+    CatalogueItem item;
+    item.name = "w1_stack_var";
+    s.RecordItemOpened(item, DeliveryMode::File, 1, WorkspaceRole::Solution);
+    s.RecordItemOpened(item, DeliveryMode::File, 1, WorkspaceRole::Replay);
+    for (int i = 0; i < 3; i++)
+    {
+        fx.mono += 200;
+        s.OnFrame(&solution, "Dissasm", true); // no viewer_open for the solution window
+    }
+    s.OnObjectClosed(&solution);
+    s.OnObjectClosed(&replay);
+    auto batch = s.Telemetry().BeginBatch({});
+    REQUIRE(batch.has_value());
+    INFO(*batch);
+    REQUIRE(batch->find("\"type\":\"task_close\"") == std::string::npos);
+    REQUIRE(batch->find("\"type\":\"task_open\"") == std::string::npos);
+    REQUIRE(batch->find("\"type\":\"viewer_open\"") == std::string::npos);
+    REQUIRE(batch->find("\"type\":\"jump_back\"") != std::string::npos);
+    s.Telemetry().OnFlushResult(FlushOutcome::Accepted);
+    s.OnObjectClosed(&student);
+    batch = s.Telemetry().BeginBatch({});
+    REQUIRE(batch.has_value());
+    REQUIRE(batch->find("\"type\":\"task_close\"") != std::string::npos);
+    s.Telemetry().OnFlushResult(FlushOutcome::Accepted);
+    REQUIRE(s.OpenLearningWindows() == 0);
+}
+
+// ======================================================================== course work end-to-end (hidden)
+// Stubs (HTTPS with the generated certificate pinned by the connection string: the desktop transport refuses plain
+// HTTP outside DISSASM_DEV builds; fresh processes: their state is in memory):
+//   python tools/learning_mode_stub_server.py --port 8781 --quiet --staff-token tok_STAFF_0123456789abcdef
+//       GVIEW_LEARNING_STUB_CS        = its "connection string"
+//       GVIEW_LEARNING_STUB_STAFF_CS  = its "staff connection" (same course: the student sees the published solution)
+//                                       or the connection string of a stub started with --staff (staff part only)
+//   python tools/learning_mode_stub_server.py --port 8783 --quiet --work off
+//       GVIEW_LEARNING_STUB_WORK_OFF_CS (optional)
+//   libGViewCore.exe "[integration][work]"
+TEST_CASE("Learning: course work and solutions end-to-end against the stub server", "[.integration][learning][work]")
+{
+    LearningSettings settings;
+    settings.allowPlainHttpLocalhost = true;
+    auto connect = [&](LearningSession& s, const char* cs) {
+        GView::Utils::GStatus result = GView::Utils::GStatus::Error("not called");
+        REQUIRE(s.Connect(cs, settings, [&](const GView::Utils::GStatus& r) { result = r; }).ok);
+        INFO(result.message);
+        REQUIRE(result.ok);
+    };
+    auto makeSession = []() {
+        LearningSession::Dependencies d;
+        d.synchronous     = true;
+        d.telemetryThread = false;
+        return std::make_unique<LearningSession>(std::move(d));
+    };
+    auto directTransport = [](const char* cs, const Policy& policy) {
+        ConnectionInfo ci;
+        REQUIRE(ParseConnectionString(cs, true, ci).ok);
+        auto t = CreateCurlTransport(TransportConfig{ ci.serverUrl, ci.token, ci.caPem, true, ClientVersion() });
+        t->SetPolicyId(policy.id);
+        return t;
+    };
+    auto serverOf = [](const char* cs) {
+        ConnectionInfo ci;
+        REQUIRE(ParseConnectionString(cs, true, ci).ok);
+        return ci.serverUrl;
+    };
+    auto getWork = [](LearningSession& s, std::string_view problem) {
+        WorkResult r;
+        REQUIRE(s.GetWork(problem, [&](WorkResult& x) { r = std::move(x); }).ok);
+        INFO(r.status.message);
+        REQUIRE(r.status.ok);
+        return r.response;
+    };
+    auto saveWork = [](LearningSession& s, const std::string& doc, bool replay, uint32 steps) {
+        SaveWorkOutcome o;
+        o.status = GView::Utils::GStatus::Error("not called");
+        auto st  = s.SaveWork("w1_stack_var", doc, replay, steps, [&](const SaveWorkOutcome& x) { o = x; });
+        if (!st.ok)
+            o.status = st;
+        return o;
+    };
+    auto publish = [](LearningSession& s, PublishSolutionRequest req) {
+        PublishOutcome o;
+        o.status = GView::Utils::GStatus::Error("not called");
+        auto st  = s.PublishSolution(std::move(req), [&](const PublishOutcome& x) { o = x; });
+        if (!st.ok)
+            o.status = st;
+        return o;
+    };
+
+    const char* studentCs = std::getenv("GVIEW_LEARNING_STUB_CS");
+    const char* staffCs   = std::getenv("GVIEW_LEARNING_STUB_STAFF_CS");
+    std::unique_ptr<LearningSession> student;
+    std::unique_ptr<IHttpTransport> studentT;
+    if (studentCs != nullptr && studentCs[0] != 0)
+    {
+        student = makeSession();
+        auto& s = *student;
+        connect(s, studentCs);
+        REQUIRE(s.GetPolicy()->work.present);
+        REQUIRE(s.GetPolicy()->work.enabled);
+        REQUIRE(s.CanUseWork());
+        REQUIRE_FALSE(s.CanPublishSolutions()); // Connect user.canPublishSolutions = false
+        studentT = directTransport(studentCs, *s.GetPolicy());
+
+        auto w = getWork(s, "w1_stack_var");
+        REQUIRE_FALSE(w.hasWork); // a fresh stub
+        REQUIRE_FALSE(w.canPublishSolutions);
+        REQUIRE(w.audiences == std::vector<NoteAudience>{ NoteAudience::All, NoteAudience::G1, NoteAudience::G2 });
+        REQUIRE(w.maxBytes == 2 * 1024 * 1024);
+
+        // create, read back (Python re-serializes the document: the client's canonical text is the same)
+        auto o = saveWork(s, WORK_DOC, true, 2);
+        INFO(o.status.message);
+        REQUIRE(o.status.ok);
+        REQUIRE(o.result.created);
+        REQUIRE(o.result.revision == 1);
+        w = getWork(s, "w1_stack_var");
+        REQUIRE(w.hasWork);
+        REQUIRE(w.revision == 1);
+        REQUIRE(w.document == Canonical(WORK_DOC));
+        REQUIRE(w.hasReplay);
+        REQUIRE(w.replaySteps == 2);
+        REQUIRE(w.clientVersion == ClientVersion());
+
+        // update (revision 1 => 2), the same update retried after a lost answer, a stale revision => 409
+        o = saveWork(s, OtherDoc("second"), false, 0);
+        REQUIRE(o.status.ok);
+        REQUIRE(o.result.revision == 2);
+        SaveWorkRequest retry{ "w1_stack_var", OtherDoc("second"), false, 0, 1 };
+        auto direct = LearningSession::PerformSaveWork(*studentT, retry);
+        REQUIRE(direct.status.ok);
+        REQUIRE(direct.result.revision == 2);
+        retry.document = OtherDoc("stale");
+        direct         = LearningSession::PerformSaveWork(*studentT, retry);
+        REQUIRE(direct.conflict);
+        REQUIRE(direct.error.code == ErrorCode::Conflict);
+        REQUIRE_FALSE(direct.error.retryable);
+        retry.revision.reset(); // a create when work exists
+        REQUIRE(LearningSession::PerformSaveWork(*studentT, retry).conflict);
+        REQUIRE(s.WorkRevision("w1_stack_var") == 2);
+
+        // the server's own checks: hidden problems, invalid documents, oversized bodies
+        REQUIRE(LearningSession::PerformGetWork(*studentT, "w1_hidden").error.code == ErrorCode::NotFound);
+        REQUIRE(LearningSession::PerformSaveWork(*studentT, SaveWorkRequest{ "w1_hidden", WORK_DOC, false, 0, std::nullopt }).error.code ==
+                ErrorCode::NotFound);
+        HttpRequest raw;
+        raw.path = "/GView/SaveWork";
+        raw.body = SecureString(R"({"problem":"w1_xor_key","document":{"format":"gview-disassembly-annotations","version":2}})");
+        REQUIRE(WorkErrorFromResponse(studentT->Post(raw)).code == ErrorCode::BadRequest);
+        raw.body = SecureString(R"({"problem":"w1_xor_key","document":[1]})");
+        REQUIRE(WorkErrorFromResponse(studentT->Post(raw)).code == ErrorCode::BadRequest);
+        const std::string big = R"({"problem":"w1_xor_key","document":{"format":"gview-disassembly-annotations","version":1,"pad":")" +
+                                std::string(2 * 1024 * 1024 + 70 * 1024, 'a') + "\"}}";
+        raw.body = SecureString(big.data(), big.size());
+        REQUIRE(WorkErrorFromResponse(studentT->Post(raw)).code == ErrorCode::PayloadTooLarge);
+
+        // a student can not publish: refused locally, and by the server
+        PublishSolutionRequest pub;
+        pub.problem  = "w1_stack_var";
+        pub.document = WORK_DOC;
+        REQUIRE_FALSE(publish(s, pub).status.ok);
+        auto po = LearningSession::PerformPublishSolution(*studentT, pub);
+        REQUIRE(po.error.code == ErrorCode::Forbidden);
+        REQUIRE(LearningSession::PerformDeleteSolution(*studentT, 1).error.code == ErrorCode::Forbidden);
+        REQUIRE(getWork(s, "w1_stack_var").solutions.empty());
+    }
+    else
+        WARN("GVIEW_LEARNING_STUB_CS is not set: student work part skipped");
+
+    if (staffCs != nullptr && staffCs[0] != 0)
+    {
+        auto staff = makeSession();
+        auto& s    = *staff;
+        connect(s, staffCs);
+        REQUIRE(s.CanPublishSolutions()); // announced at connect
+        REQUIRE(s.IsCourseStaff());
+        auto w = getWork(s, "w1_stack_var");
+        REQUIRE(w.canPublishSolutions);
+        REQUIRE_FALSE(w.hasWork); // the staff token's own work (another subject)
+        REQUIRE(getWork(s, "w1_hidden").solutions.empty()); // staff may open hidden problems
+
+        PublishSolutionRequest pub;
+        pub.problem     = "w1_stack_var";
+        pub.audience    = NoteAudience::All;
+        pub.document    = WORK_DOC;
+        pub.hasReplay   = true;
+        pub.replaySteps = 2;
+        auto o          = publish(s, pub);
+        INFO(o.status.message);
+        REQUIRE(o.status.ok);
+        REQUIRE(o.result.created);
+        const int64 allId = o.result.id;
+        REQUIRE(publish(s, pub).result.created == false); // the same create retried: 200, created false
+        pub.document = OtherDoc("solution v2");
+        o            = publish(s, pub);
+        REQUIRE(o.conflict);
+        REQUIRE(o.existingId == allId);
+        REQUIRE(o.existingRevision == 1);
+        pub.id       = o.existingId;
+        pub.revision = o.existingRevision;
+        o            = publish(s, pub);
+        REQUIRE(o.status.ok);
+        REQUIRE(o.result.revision == 2);
+        o = publish(s, pub); // revision 1 again with the same content: the retried update
+        REQUIRE(o.status.ok);
+        pub.document = OtherDoc("solution v3");
+        o            = publish(s, pub); // stale
+        REQUIRE(o.conflict);
+        REQUIRE(o.existingRevision == 2);
+
+        // G2 (another lab group) and a disabled draft for G1
+        PublishSolutionRequest g2 = pub;
+        g2.id.reset();
+        g2.revision.reset();
+        g2.audience  = NoteAudience::G2;
+        g2.hasReplay = false;
+        o            = publish(s, g2);
+        REQUIRE(o.status.ok);
+        const int64 g2Id = o.result.id;
+        PublishSolutionRequest draft = g2;
+        draft.audience               = NoteAudience::G1;
+        draft.enabled                = false;
+        REQUIRE(publish(s, draft).status.ok);
+        w = getWork(s, "w1_stack_var");
+        REQUIRE(w.solutions.size() == 3); // staff see every one
+        SolutionResult sol;
+        REQUIRE(s.GetSolution("w1_stack_var", g2Id, [&](SolutionResult& x) { sol = std::move(x); }).ok);
+        REQUIRE(sol.status.ok);
+        REQUIRE(sol.solution.info.audience == NoteAudience::G2);
+
+        if (student && serverOf(staffCs) == serverOf(studentCs))
+        {
+            // the student (group G1) sees the enabled solution of "all" only
+            auto& st = *student;
+            auto sw  = getWork(st, "w1_stack_var");
+            REQUIRE(sw.solutions.size() == 1);
+            REQUIRE(sw.solutions[0].id == allId);
+            REQUIRE(sw.solutions[0].hasReplay);
+            REQUIRE(sw.solutions[0].revision == 2);
+            REQUIRE(st.GetSolution("w1_stack_var", std::nullopt, [&](SolutionResult& x) { sol = std::move(x); }).ok);
+            INFO(sol.status.message);
+            REQUIRE(sol.status.ok);
+            REQUIRE(sol.solution.info.id == allId);
+            REQUIRE(sol.solution.document == Canonical(OtherDoc("solution v2")));
+            REQUIRE(st.GetSolution("w1_stack_var", g2Id, [&](SolutionResult& x) { sol = std::move(x); }).ok);
+            REQUIRE(sol.error.code == ErrorCode::NotFound); // another group's solution can not be fetched by id
+            // the catalogue announces it, with the student's own work
+            REQUIRE(st.RefreshCatalogue(nullptr).ok);
+            const auto* item = st.GetCatalogue().Find("w1_stack_var", true);
+            REQUIRE(item != nullptr);
+            REQUIRE(item->solutionAvailable);
+            REQUIRE(item->solutionHasReplay);
+            REQUIRE(item->me.workRevision == 2);
+            REQUIRE(item->me.workSavedAt > 0);
+            REQUIRE_FALSE(st.GetCatalogue().Find("w1_xor_key", true)->solutionAvailable);
+        }
+        else
+            WARN("the staff stub is another server: the student's view of the solutions is not checked");
+
+        DeleteSolutionOutcome d;
+        REQUIRE(s.DeleteSolution(g2Id, [&](const DeleteSolutionOutcome& x) { d = x; }).ok);
+        REQUIRE(d.status.ok);
+        REQUIRE(s.DeleteSolution(g2Id, [&](const DeleteSolutionOutcome& x) { d = x; }).ok);
+        REQUIRE(d.error.code == ErrorCode::NotFound);
+        s.Shutdown();
+    }
+    else
+        WARN("GVIEW_LEARNING_STUB_STAFF_CS is not set: staff part skipped");
+
+    if (const char* cs = std::getenv("GVIEW_LEARNING_STUB_WORK_OFF_CS"); cs != nullptr && cs[0] != 0)
+    {
+        auto session = makeSession();
+        auto& s      = *session;
+        connect(s, cs);
+        REQUIRE(s.GetWorkAvailability() == WorkAvailability::DisabledByPolicy);
+        auto t = directTransport(cs, *s.GetPolicy());
+        REQUIRE(LearningSession::PerformGetWork(*t, "w1_stack_var").error.code == ErrorCode::Forbidden);
+        REQUIRE(LearningSession::PerformSaveWork(*t, SaveWorkRequest{ "w1_stack_var", WORK_DOC, false, 0, std::nullopt }).error.code ==
+                ErrorCode::Forbidden);
+        REQUIRE(LearningSession::PerformGetSolution(*t, "w1_stack_var", std::nullopt).error.code == ErrorCode::NotFound); // not gated
+        s.Shutdown();
+    }
+    if (student)
+        student->Shutdown();
 }

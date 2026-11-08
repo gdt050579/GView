@@ -334,20 +334,6 @@ bool IsValidNoteId(std::string_view id) noexcept
     return true;
 }
 
-std::string_view NoteAudienceName(NoteAudience a) noexcept
-{
-    switch (a)
-    {
-    case NoteAudience::All:
-        return "all";
-    case NoteAudience::G1:
-        return "G1";
-    case NoteAudience::G2:
-        return "G2";
-    }
-    return "all";
-}
-
 // ============================================================================ wire format
 Utils::GStatus ParseNotesResponse(BufferView body, NotesSnapshot& out)
 {

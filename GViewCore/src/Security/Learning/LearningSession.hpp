@@ -16,6 +16,7 @@
 #include "BackgroundWorker.hpp"
 #include "ContentDelivery.hpp"
 #include "LearningNotes.hpp"
+#include "LearningWork.hpp"
 #include "Telemetry.hpp"
 
 #include <array>
@@ -73,12 +74,26 @@ enum class NotesAvailability : uint8 {
     Available,
 };
 
+// Course work documents and teacher solutions (spec §10.12) as seen by the UI. Course staff (canPublishSolutions) are
+// never gated by the switch: they get Available whenever the server has the feature and the session is Active.
+enum class WorkAvailability : uint8 {
+    Absent,           // no policy, or a policy without a "work" object (server without it): no Save / Resume / Compare UI
+    DisabledByPolicy, // policy.work.enabled = false at connect: "disabled by your teacher"
+    DisabledByServer, // GetWork / SaveWork answered 403 FORBIDDEN (turned off after connect): same message
+    Unavailable,      // the session is not Active (connecting, expired, error)
+    Available,
+};
+
 struct ItemBinding {
     std::string item;
     bool problem{ false };
     DeliveryMode mode{ DeliveryMode::File };
     uint32 version{ 0 };
     std::string lastViewer;
+    // what the window shows (Hooks::GetWorkspaceRole); Normal is never stored (it means: no binding)
+    WorkspaceRole role{ WorkspaceRole::Student };
+    // a work document (JSON) the window applies once it is shown (Hooks::TakePendingWorkDocument: taken once)
+    std::optional<std::string> pendingWork;
 };
 
 // Idempotency keys (spec §4): one UUIDv4 per *new* answer, reused for transport retries of the same answer.
@@ -113,6 +128,11 @@ class LearningSession
     using DownloadCallback = std::function<void(DownloadResult&)>;
     using SubmitCallback   = std::function<void(const SubmitOutcome&)>;
     using NoteOpCallback   = std::function<void(const NoteOpOutcome&)>;
+    using WorkCallback           = std::function<void(WorkResult&)>;
+    using SaveWorkCallback       = std::function<void(const SaveWorkOutcome&)>;
+    using SolutionCallback       = std::function<void(SolutionResult&)>;
+    using PublishCallback        = std::function<void(const PublishOutcome&)>;
+    using DeleteSolutionCallback = std::function<void(const DeleteSolutionOutcome&)>;
 
     struct Dependencies {
         TransportFactory transportFactory;
@@ -147,6 +167,10 @@ class LearningSession
         uint32 explanationMaxChars{ 0 };
         NotesAvailability notes{ NotesAvailability::Absent };
         uint32 notesMaxChars{ 0 };
+        WorkAvailability work{ WorkAvailability::Absent };
+        uint32 workMaxBytes{ 0 }; // largest work document this client sends (policy / GetWork / client cap); 0 without a policy
+        bool canPublishSolutions{ false };
+        std::vector<NoteAudience> audiences; // the audiences a solution may be published to (All first); empty = unknown
         bool busy{ false };
     };
 
@@ -200,6 +224,13 @@ class LearningSession
     std::string notesError;              // last GetNotes failure, shown by the Notes window
     std::vector<std::string> notesNotices;
 
+    // course work and solutions (spec §10.12; the documents themselves are never kept here)
+    std::map<std::string, int64> workRevisions; // problem => last revision of the own work seen (GetWork / SaveWork)
+    bool canPublishSolutions{ false };          // Connect user.canPublishSolutions, then GetWork (authoritative)
+    std::vector<NoteAudience> audiences;        // Connect user.audiences, then GetWork
+    bool workDisabledByServer{ false };         // 403 FORBIDDEN from GetWork / SaveWork for a student
+    uint32 workServerMaxBytes{ 0 };             // "maxBytes" of the last GetWork (0 = not known yet)
+
     // activity / time accounting (monotonic ms)
     std::atomic<uint64> lastActivityMs{ 0 };
     bool idle{ false };
@@ -218,6 +249,12 @@ class LearningSession
     void HandleNoteFailure(NoteFailure failure, bool teacherEndpoint);
     void FinalNoteSaves() noexcept;
     void ResetNotes() noexcept;
+    void ResetWork() noexcept;
+    enum class WorkEndpoint : uint8 { OwnWork, Solution, Staff };
+    // PolicyExpired => ExpireLocally; 403 => workDisabledByServer (own work, students) / not course staff (staff endpoints)
+    void HandleWorkFailure(const ServerError& error, WorkEndpoint endpoint);
+    // the precondition of every work / solution request; refusals carry the message for the user
+    Utils::GStatus CheckWorkUsable(bool staffOnly) const;
     void SetState(SessionState s, std::string message);
     void ConfigureTelemetry();
     void RecordSessionEnd(std::string_view reason);
@@ -255,6 +292,14 @@ class LearningSession
           IHttpTransport& t, std::string_view id, const std::atomic<bool>* cancel = nullptr, long timeoutSeconds = REQUEST_TIMEOUT_SECONDS);
     static NoteOpOutcome PerformSaveTeacherNote(IHttpTransport& t, const SaveTeacherNoteRequest& req, const std::atomic<bool>* cancel = nullptr);
     static NoteOpOutcome PerformDeleteTeacherNote(IHttpTransport& t, int64 id, const std::atomic<bool>* cancel = nullptr);
+    // course work and solutions (spec §10.12): one Post each, constant path (deterministic for the WebAssembly job
+    // replay); the documents are validated (ValidateWorkDocumentText) and embedded canonical, nothing is sent otherwise
+    static WorkResult PerformGetWork(IHttpTransport& t, std::string_view problem, const std::atomic<bool>* cancel = nullptr);
+    static SaveWorkOutcome PerformSaveWork(IHttpTransport& t, const SaveWorkRequest& req, const std::atomic<bool>* cancel = nullptr);
+    static SolutionResult PerformGetSolution(
+          IHttpTransport& t, std::string_view problem, std::optional<int64> id, const std::atomic<bool>* cancel = nullptr);
+    static PublishOutcome PerformPublishSolution(IHttpTransport& t, const PublishSolutionRequest& req, const std::atomic<bool>* cancel = nullptr);
+    static DeleteSolutionOutcome PerformDeleteSolution(IHttpTransport& t, int64 id, const std::atomic<bool>* cancel = nullptr);
 
     // ---------------- UI thread state machine ----------------
     // Parses the connection string and starts the connect job. done() runs on the UI thread.
@@ -311,6 +356,43 @@ class LearningSession
     Utils::GStatus DeleteTeacherNote(int64 id, NoteOpCallback done);
     // note_add telemetry (a bare count) for a note created from a task window opened from the catalogue
     void RecordNoteAdd(const void* obj);
+
+    // ---------------- course work and teacher solutions (UI thread, spec §10.12) ----------------
+    // Each call starts one request; done() runs on the UI thread (not at all when the session ended or reconnected in
+    // the meantime, like Download). A refusal before any request is the returned status (done() is not called).
+    WorkAvailability GetWorkAvailability() const noexcept;
+    bool CanUseWork() const noexcept
+    {
+        return GetWorkAvailability() == WorkAvailability::Available;
+    }
+    // course staff: publish / delete solutions (Connect user.canPublishSolutions, then every GetWork answer)
+    bool CanPublishSolutions() const noexcept
+    {
+        return canPublishSolutions && CanUseWork();
+    }
+    // a course-staff token (solutions or teacher notes): staff-only commands such as the replay journal editor
+    bool IsCourseStaff() const noexcept
+    {
+        return canPublishSolutions || canEditTeacherNotes;
+    }
+    // the audiences a solution may be published to (All first); {All} when the server did not announce them
+    std::vector<NoteAudience> SolutionAudiences() const;
+    // largest work document this client sends: min(policy.work.maxBytes, GetWork maxBytes, MAX_WORK_DOCUMENT_BYTES)
+    size_t WorkMaxBytes() const noexcept;
+    // the last revision of the own work of the problem seen by GetWork / SaveWork (none: SaveWork creates)
+    std::optional<int64> WorkRevision(std::string_view problem) const;
+    // GetWork: the own work (caches its revision), the solutions this token may see, canPublishSolutions, audiences
+    Utils::GStatus GetWork(std::string_view problem, WorkCallback done);
+    // SaveWork with the cached revision (none = create). The document is validated and canonicalized here (refused
+    // above WorkMaxBytes()). Success caches the new revision and updates the catalogue's me.workSavedAt/workRevision;
+    // a 409 sets outcome.conflict and keeps the cached revision (re-fetch with GetWork to overwrite deliberately).
+    Utils::GStatus SaveWork(std::string_view problem, std::string document, bool hasReplay, uint32 replaySteps, SaveWorkCallback done);
+    // GetSolution: id omitted = the solution of the student's audience (students); staff pass the id from GetWork
+    Utils::GStatus GetSolution(std::string_view problem, std::optional<int64> id, SolutionCallback done);
+    // course staff only (refused locally otherwise). id omitted = create; a 409 sets outcome.conflict and, when the
+    // server names it, existingId / existingRevision: resend with them to replace that solution.
+    Utils::GStatus PublishSolution(PublishSolutionRequest req, PublishCallback done);
+    Utils::GStatus DeleteSolution(int64 id, DeleteSolutionCallback done);
 
     // Ends the session: refuses while learning windows are open (their content would lose its protection).
     Utils::GStatus EndSession(std::string_view reason);
@@ -374,6 +456,10 @@ class LearningSession
     // ---------------- window bindings / hooks (UI thread) ----------------
     void SetPendingBinding(ItemBinding binding);
     void ClearPendingBinding() noexcept;
+    // the window of the pending binding (SetPendingBinding first) gets this work document and this role; false without a pending binding
+    bool SetPendingWorkDocument(std::string json, WorkspaceRole role);
+    // the work document of the window of the object, taken once (none when it has none); `role`: the role of the window (Normal: not bound)
+    std::optional<std::string> TakePendingWork(const void* obj, WorkspaceRole& role);
     // inMemory: the object is not backed by a file on disk, so it may hold content derived from other open objects
     void OnObjectCreated(const void* obj, bool inMemory = false);
     void OnObjectClosed(const void* obj);
@@ -391,7 +477,8 @@ class LearningSession
     bool Record(const void* obj, EventType type, std::vector<FieldValue> fields = {});
     void RecordFeatureBlocked(RestrictedMode::Feature feature);
     void RecordClientError(std::string_view constantMessage, bool fatal);
-    void RecordItemOpened(const CatalogueItem& item, DeliveryMode mode, uint32 version);
+    // role: the window being opened; Solution / Replay windows produce no item events (the telemetry whitelist is unchanged)
+    void RecordItemOpened(const CatalogueItem& item, DeliveryMode mode, uint32 version, WorkspaceRole role = WorkspaceRole::Student);
 };
 
 // process-wide session used by the UI and the hooks

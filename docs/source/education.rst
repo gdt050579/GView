@@ -88,6 +88,43 @@ sent to the course server: GView never writes it to disk and never puts it in te
 only counts that a note was started). Outside Learning mode, Ctrl+F11 keeps adding the usual
 local note to the window.
 
+**Saving the work and continuing on another computer (when the course keeps course work).**
+
+The names, comments, variables and collapsible zones the student adds in the disassembly, and
+the *replay journal* of how they got there (the lines visited, the jumps followed, the edits),
+can be saved on the course server: *Course* (Ctrl+Alt+L) in the task window, then *Save work
+to course*. The dialog shows what is sent and its size; *Include replay journal* is checked by
+default. Only these changes are sent, never the task file or the local disassembly cache.
+Closing a task window with changes that are not on the server asks *Save and close*,
+*Close without saving* or *Cancel*.
+
+On another computer, opening the task from the Learning window offers to load the saved work
+(when the window is still empty); *Open with work* loads it directly, and *Resume work from
+course* in the *Course* menu adds it to a window that already has annotations (where both have
+a name or a comment, the saved one wins; nothing is deleted). If the same work was saved from
+another computer in the meantime, GView says when, and the student chooses: keep the server
+copy (it is loaded into the window) or overwrite it. The *Course* column of the Learning window
+shows when the work was last saved.
+
+**Comparing with the teacher's solution and replaying it.**
+
+When the teacher publishes a solution of a problem (for everyone or for one lab group), the
+*Course* column says *solution* (or *solution+replay*) and the *Course* menu offers:
+
+* *Compare with the teacher's solution* - a second, read-only window of the same task with the
+  teacher's names and comments, tiled next to the student's window (the student's window on the
+  left keeps the focus). It never changes the student's files or disassembly cache.
+* *Replay the teacher's solution* - a read-only window that starts without the teacher's
+  annotations and replays the teacher's steps: ``Alt+Right`` / ``Alt+Left`` one step forward /
+  back, ``Alt+End`` / ``Alt+Home`` to the end / start (the command bar shows *Forward*, *Back*,
+  *To end*, *To start*). The status line says which step is shown, e.g. "Replay: step 12/57 -
+  rename 0x401080 sub_401080 -> decrypt".
+
+*Open solution* in the Learning window opens the same window on its own. Course staff publish a
+solution from their own task window (*Course* > *Publish solution...*: audience, with or
+without the replay) and can first remove steps from the journal with *Edit replay journal...*
+(delete a step, delete the visits before a step, compact the visits).
+
 **Step 5: Submit the solution.**
 
 The student submits the solution directly from GView (*Submit flag* in the catalogue, or

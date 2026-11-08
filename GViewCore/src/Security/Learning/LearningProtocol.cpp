@@ -194,7 +194,11 @@ namespace
                 item.me.attempts         = attempts < 0 ? 0 : static_cast<uint32>(std::min<int64>(attempts, UINT32_MAX));
                 item.me.pointsAwarded    = GetInt(*me, "pointsAwarded");
                 item.me.firstDeliveredAt = GetUInt(*me, "firstDeliveredAt");
+                item.me.workSavedAt      = GetUInt(*me, "workSavedAt");
+                item.me.workRevision     = std::max<int64>(GetInt(*me, "workRevision"), 0);
             }
+            item.solutionAvailable = GetBool(j, "solutionAvailable");
+            item.solutionHasReplay = item.solutionAvailable && GetBool(j, "solutionHasReplay");
         }
         else
         {
@@ -230,45 +234,98 @@ namespace
         });
     }
 
-    void AppendJsonString(SecureString& out, std::string_view s)
+    // "audiences": the known names, deduplicated, All first (always present); unknown entries dropped
+    std::vector<NoteAudience> ParseAudienceList(const json& arr, uint32* rejected)
     {
-        static constexpr char HEX[] = "0123456789abcdef";
-        out.push_back('"');
-        for (unsigned char c : s)
+        std::vector<NoteAudience> r{ NoteAudience::All };
+        if (!arr.is_array())
         {
-            switch (c)
-            {
-            case '"':
-                out.append("\\\"");
-                break;
-            case '\\':
-                out.append("\\\\");
-                break;
-            case '\n':
-                out.append("\\n");
-                break;
-            case '\r':
-                out.append("\\r");
-                break;
-            case '\t':
-                out.append("\\t");
-                break;
-            default:
-                if (c < 0x20)
-                {
-                    out.append("\\u00");
-                    out.push_back(HEX[c >> 4]);
-                    out.push_back(HEX[c & 0xF]);
-                }
-                else
-                    out.push_back(static_cast<char>(c));
-            }
+            if (rejected != nullptr)
+                (*rejected)++;
+            return r;
         }
-        out.push_back('"');
+        size_t seen = 0;
+        for (const auto& a : arr)
+        {
+            if (++seen > 64)
+                break; // defensive: three audiences exist
+            const auto v = a.is_string() ? ParseNoteAudience(a.get_ref<const std::string&>()) : std::nullopt;
+            if (!v.has_value())
+            {
+                if (rejected != nullptr)
+                    (*rejected)++;
+                continue;
+            }
+            if (std::find(r.begin(), r.end(), *v) == r.end())
+                r.push_back(*v);
+        }
+        return r;
     }
 } // namespace
 
 // ============================================================================ general helpers
+void AppendJsonString(SecureString& out, std::string_view s)
+{
+    static constexpr char HEX[] = "0123456789abcdef";
+    out.push_back('"');
+    for (unsigned char c : s)
+    {
+        switch (c)
+        {
+        case '"':
+            out.append("\\\"");
+            break;
+        case '\\':
+            out.append("\\\\");
+            break;
+        case '\n':
+            out.append("\\n");
+            break;
+        case '\r':
+            out.append("\\r");
+            break;
+        case '\t':
+            out.append("\\t");
+            break;
+        default:
+            if (c < 0x20)
+            {
+                out.append("\\u00");
+                out.push_back(HEX[c >> 4]);
+                out.push_back(HEX[c & 0xF]);
+            }
+            else
+                out.push_back(static_cast<char>(c));
+        }
+    }
+    out.push_back('"');
+}
+
+std::string_view NoteAudienceName(NoteAudience a) noexcept
+{
+    switch (a)
+    {
+    case NoteAudience::All:
+        return "all";
+    case NoteAudience::G1:
+        return "G1";
+    case NoteAudience::G2:
+        return "G2";
+    }
+    return "all";
+}
+
+std::optional<NoteAudience> ParseNoteAudience(std::string_view name) noexcept
+{
+    if (name == "all")
+        return NoteAudience::All;
+    if (name == "G1")
+        return NoteAudience::G1;
+    if (name == "G2")
+        return NoteAudience::G2;
+    return std::nullopt;
+}
+
 std::string_view FindHeader(const HeaderMap& headers, std::string_view lowerName) noexcept
 {
     for (const auto& [k, v] : headers)
@@ -1185,6 +1242,11 @@ Utils::GStatus ParseConnectResponse(BufferView body, ConnectResponse& out)
         {
             r.displayName = GetText(*user, "displayName", 128, false);
             r.score       = GetInt(*user, "score");
+            // additive (spec §10.12); a wrong type is ignored like a missing field (GetWork is authoritative)
+            if (auto c = user->find("canPublishSolutions"); c != user->end() && c->is_boolean())
+                r.canPublishSolutions = c->get<bool>();
+            if (auto a = user->find("audiences"); a != user->end() && a->is_array())
+                r.audiences = ParseAudienceList(*a, nullptr);
         }
         out = std::move(r);
         return Utils::GStatus::Ok();

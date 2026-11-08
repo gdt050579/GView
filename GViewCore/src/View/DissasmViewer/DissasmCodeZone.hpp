@@ -89,6 +89,15 @@ struct DissasmEdit {
 struct DissasmEditHistory {
     std::vector<DissasmEdit> undo, redo;
 };
+struct DissasmCodeZone;
+// Told about every edit of the user of a zone (the replay journal, DissasmReplayRecorder): a new edit (before it enters the history: the lines
+// of a collapsible zone are still decodable), an undo / a redo once it was applied. The replay of a journal applies its edits without it.
+struct DissasmEditObserver {
+    virtual ~DissasmEditObserver() = default;
+    virtual void OnEdit(DissasmCodeZone& zone, const DissasmEdit& edit) = 0;
+    virtual void OnUndo(DissasmCodeZone& zone, const DissasmEdit& edit) = 0;
+    virtual void OnRedo(DissasmCodeZone& zone, const DissasmEdit& edit) = 0;
+};
 struct DissasmReanalysis; // DissasmAnnotations.hpp
 // where an undone / redone edit is (relative address of a line, or a line of the expanded layout): the cursor goes there
 struct DissasmEditPlace {
@@ -470,6 +479,9 @@ struct DissasmCodeZone : public ParseZone {
     // or it can not be applied any more (its place has changed)
     std::optional<DissasmEditPlace> UndoEdit();
     std::optional<DissasmEditPlace> RedoEdit();
+    // told about the edits, the undos and the redos (Instance::InitDissasmCodeZone: the replay recorder of the view); none in the tests and
+    // the headless runs
+    DissasmEditObserver* editObserver = nullptr;
     bool CanUndoEdit() const
     {
         return !undoEdits.empty();
@@ -679,9 +691,18 @@ struct DissasmCodeZone : public ParseZone {
         DissasmCommentAnchor first;
         DissasmCommentAnchor last;
         std::string name;
-        bool isCollapsed;
+        bool isCollapsed = false;
+        bool operator==(const CollapsibleZoneAnchors&) const = default;
     };
     std::vector<CollapsibleZoneAnchors> GetCollapsibleZoneAnchors();
+    // the anchors of one zone (expanded lines); none when its lines can not be decoded
+    std::optional<CollapsibleZoneAnchors> GetAnchorsOfCollapsibleZone(const DissasmCollapsibleZone& zone);
+    // the replay of an edit of a collapsible zone (DissasmReplayController): the zone of the anchors added (placed on the lines of its
+    // anchors) or removed (the zone of these lines); false when this analysis has no such lines / no such zone
+    bool ApplyReplayZoneEdit(const CollapsibleZoneAnchors& anchors, bool add);
+    // the replay of an edit (DissasmReplayController): applied as an undo (forward false) / a redo, without the history of the edits and
+    // without the observer; false for the edits of the collapsible zones (ApplyReplayZoneEdit) and when the edit can not be applied
+    bool ApplyReplayEdit(const DissasmEdit& edit, bool forward);
     // the zones placed on the lines of their anchors (the ones that can not be placed are ignored); true when the shown lines changed
     bool ApplyCollapsibleZoneAnchors(const std::vector<CollapsibleZoneAnchors>& zones);
     // the expanded line of an anchor; none when this analysis has no such line
@@ -696,6 +717,8 @@ struct DissasmCodeZone : public ParseZone {
     bool CanPlaceZone(const DissasmCollapsibleZone& zone) const;
     void InsertZone(DissasmCollapsibleZone zone);
 
+    // the anchors of a zone without the reset of the decoding position (the callers reset it once)
+    CollapsibleZoneAnchors BuildCollapsibleZoneAnchors(const DissasmCollapsibleZone& zone);
     mutable csh decodeHandle = 0; // GetDecodeHandle: opened at the first use
     std::vector<DissasmEdit> undoEdits, redoEdits;
     void RecordEdit(DissasmEdit edit);

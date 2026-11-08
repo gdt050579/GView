@@ -19,7 +19,14 @@ Implements the server side of docs/source/learning_mode_protocol.rst for end-to-
   POST /GView/DeleteNote              unknown id => 404
   POST /GView/SaveTeacherNote         course staff only (--staff), else 403
   POST /GView/DeleteTeacherNote       course staff only
-  OPTIONS *                           CORS preflight for browser clients (--cors-origin)
+  POST /GView/GetWork                 course work (spec §10.12): the caller's own work document of a problem, the
+                                      solutions it may see (metadata), canPublishSolutions, audiences, maxBytes
+  POST /GView/SaveWork                compare-and-set on "revision" (omitted = create; a retried save is answered 200)
+  POST /GView/GetSolution             a solution with its document (students: the enabled one of "all" / their group)
+  POST /GView/PublishSolution         course staff only; one solution per (problem, audience): a second create is a
+                                      409 naming the existing one ("id" / "revision" in the envelope)
+  POST /GView/DeleteSolution          course staff only
+  OPTIONS *                         CORS preflight for browser clients (--cors-origin)
 
 Transport: HTTPS by default, with a self-signed certificate generated at start-up; the printed connection string
 carries it as extra.caPem (the only trust anchor of the desktop client). Browsers can not pin a certificate (the web
@@ -43,6 +50,15 @@ Course notes: --notes on|off|absent (the policy's "notes" object; off = the stud
 a server without notes), --notes-forbidden (the policy says on, the endpoints answer 403: notes turned off after
 connect), --staff (the token is course staff: every teacher note, SaveTeacherNote / DeleteTeacherNote allowed),
 --group G1|G2 (the student's lab group), --notes-max-chars, --notes-rate-limit (requests per minute).
+
+Course work and solutions: --work on|off|absent (the policy's "work" object; off = GetWork / SaveWork answer 403 to
+students, course staff are never gated; absent = a server without them), --work-max-bytes (largest work document,
+default 2 MiB; bodies above it + 64 KiB are a 413), --staff-token (a second access token, course staff, served by the
+same process: the teacher's solutions are then visible to the student of --token). Work documents are validated like
+the course server does (a JSON object, "format": "gview-disassembly-annotations", integer "version" <= 1, no NUL, at
+most --work-max-bytes compact) and kept opaque. The work and the solutions share the rate bucket of the notes.
+
+  python tools/learning_mode_stub_server.py --port 8781 --quiet --staff-token <token>   # work end-to-end (desktop)
 
 Requires: Python 3.9+, cryptography.
 """
@@ -80,6 +96,10 @@ ALLOWED_REQUEST_HEADERS = ("XAppUserID, X-GView-Client, X-GView-Protocol, X-GVie
                            "Accept")
 NOTE_ENDPOINTS = ("/GView/GetNotes", "/GView/SaveNote", "/GView/DeleteNote", "/GView/SaveTeacherNote",
                   "/GView/DeleteTeacherNote")
+WORK_ENDPOINTS = ("/GView/GetWork", "/GView/SaveWork", "/GView/GetSolution", "/GView/PublishSolution",
+                  "/GView/DeleteSolution")
+WORK_DOCUMENT_FORMAT = "gview-disassembly-annotations"
+AUDIENCES = ("all", "G1", "G2")
 EXPOSED_RESPONSE_HEADERS = ("X-GView-Delivery, X-GView-SHA256, X-GView-Encrypted, X-GView-Filename, X-GView-Item-Version, "
                             "Retry-After, Content-Length")
 
@@ -135,6 +155,10 @@ class StubState:
         # the student of --launch-code may be another one (--launch-token): both access tokens are accepted
         self.launch_token = args.launch_token or args.token
         self.tokens = {self.token, self.launch_token}
+        # --staff-token: a course-staff token next to the student's one (the same course state)
+        self.staff_token = args.staff_token
+        if self.staff_token:
+            self.tokens.add(self.staff_token)
         self.launch_used = False     # --launch-code is single use
         self.server_url = args.server_url
         self.ca_pem = None  # set when the server uses its own self-signed certificate
@@ -178,7 +202,16 @@ class StubState:
         for t in self.teacher_notes:
             t.update({"revision": 1, "createdAt": now, "updatedAt": now})
         self.next_teacher_id = 7
-        self.notes_requests = collections.deque()  # timestamps of note requests (rate limit)
+        self.notes_requests = collections.deque()  # timestamps of note / work requests (rate limit, one bucket)
+        # course work and solutions (spec §10.12)
+        self.work = {}                # (subject of the token, problem) -> the caller's own work
+        self.work_last_update = {}    # (subject, problem) -> (base revision, content) of the last applied update
+        self.solutions = {}           # (problem, audience) -> solution
+        self.solution_last_update = {}  # id -> (base revision, content) of the last applied update
+        self.next_solution_id = 1
+
+    def is_staff(self, token: str) -> bool:
+        return self.args.staff or (self.staff_token is not None and token == self.staff_token)
 
     # ------------------------------------------------------------------ policy
     def policy_id(self, token: str) -> str:
@@ -215,6 +248,8 @@ class StubState:
         }
         if self.args.notes != "absent":
             policy["notes"] = {"enabled": self.args.notes == "on", "maxChars": self.args.notes_max_chars}
+        if self.args.work != "absent":
+            policy["work"] = {"enabled": self.args.work == "on", "maxBytes": self.args.work_max_bytes}
         canonical = json.dumps(policy, sort_keys=True, separators=(",", ":")).encode()
         policy["digest"] = hashlib.sha256(canonical).hexdigest()
         return json.dumps(policy, sort_keys=True, separators=(",", ":")).encode()
@@ -224,13 +259,23 @@ class StubState:
         signature = self.key.sign(data)
         if self.args.tamper_policy:
             data = data.replace(b'"stub-course"', b'"stub-coursX"')  # one byte changed after signing
+        user = {"displayName": "Stub Teacher" if self.is_staff(token) else "Stub Student", "score": self.score}
+        if self.args.work != "absent":
+            user.update({"canPublishSolutions": self.is_staff(token), "audiences": list(AUDIENCES)})
         return {"status": "ok", "protocolVersion": 2, "serverVersion": "2.0.0-stub", "serverTime": int(time.time()),
-                "policy": b64(data), "policySignature": b64(signature),
-                "user": {"displayName": "Stub Student", "score": self.score}}
+                "policy": b64(data), "policySignature": b64(signature), "user": user}
+
+    # ------------------------------------------------------------------ course work and solutions (spec §10.12)
+    def visible_solutions(self, problem: str, staff: bool) -> list:
+        """students: the enabled solutions of "all" and of their group; staff: every one"""
+        r = [s for (p, _), s in self.solutions.items() if p == problem and
+             (staff or (s["enabled"] and s["audience"] in ("all", self.args.group)))]
+        return sorted(r, key=lambda s: s["id"])
 
     # ------------------------------------------------------------------ catalogue
-    def weeks(self) -> dict:
+    def weeks(self, token: str) -> dict:
         problems, resources = [], []
+        staff = self.is_staff(token)
         for order, (name, it) in enumerate(self.items.items()):
             entry = {"name": name, "title": it["title"], "order": order, "deliveryMode": it["mode"],
                      "fileName": it["fileName"], "size": len(it["content"]),
@@ -239,6 +284,13 @@ class StubState:
                 entry.update({"pointsMax": it["points"], "pointsCurrent": it["points"],
                               "submission": {"requireExplanation": self.args.require_explanation and it.get("explain", False)},
                               "me": {"solved": name in self.solved, "attempts": self.attempts.get(name, 0)}})
+                if self.args.work != "absent":
+                    work = self.work.get((subject_of(token), name))
+                    entry["me"].update({"workSavedAt": work["updatedAt"] if work else 0,
+                                        "workRevision": work["revision"] if work else 0})
+                    sols = self.visible_solutions(name, staff)
+                    entry["solutionAvailable"] = bool(sols)
+                    entry["solutionHasReplay"] = any(s["hasReplay"] for s in sols)
                 problems.append(entry)
             else:
                 entry["kind"] = it["kind"]
@@ -340,15 +392,19 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         st = self.state
         length = int(self.headers.get("Content-Length") or 0)
-        if length > 2 * 1024 * 1024:
-            self.error(413, "BAD_REQUEST", "body too large")
-            return
+        work_body_cap = st.args.work_max_bytes + 64 * 1024  # a document + the envelope
+        cap = None
         if self.path in NOTE_ENDPOINTS:
             cap = 256 * 1024 if self.path in ("/GView/SaveNote", "/GView/SaveTeacherNote") else 64 * 1024
-            if length > cap:
-                self.rfile.read(length)
-                self.error(413, "PAYLOAD_TOO_LARGE", f"request body above {cap} bytes")
-                return
+        elif self.path in WORK_ENDPOINTS:
+            cap = work_body_cap if self.path in ("/GView/SaveWork", "/GView/PublishSolution") else 64 * 1024
+        if cap is not None and length > cap and length <= 64 * 1024 * 1024:
+            self.rfile.read(length)  # drained: the client gets the answer, not a reset connection
+            self.error(413, "PAYLOAD_TOO_LARGE", f"request body above {cap} bytes")
+            return
+        if length > max(2 * 1024 * 1024, work_body_cap):
+            self.error(413, "BAD_REQUEST", "body too large")
+            return
         raw = self.rfile.read(length) if length else b""
         if st.args.delay_ms > 0:
             time.sleep(st.args.delay_ms / 1000.0)
@@ -359,6 +415,8 @@ class Handler(BaseHTTPRequestHandler):
         if token not in st.tokens:
             self.error(401, "UNAUTHORIZED", "invalid access token")
             return
+        self.staff = st.is_staff(token)  # course staff (--staff, or --staff-token)
+        self.token = token
         platform = self.headers.get("X-GView-Platform", "")
         if platform and platform in st.args.refuse_platform:
             self.error(426, "UNSUPPORTED_CLIENT", f"this course is not available on {platform}")
@@ -375,7 +433,7 @@ class Handler(BaseHTTPRequestHandler):
                           f"subject={subject_of(token)}")
                 self.reply_json(200, st.connect_response(platform, token))
             elif path == "/GView/GetWeeks":
-                self.reply_json(200, st.weeks())
+                self.reply_json(200, st.weeks(token))
             elif path.startswith("/GView/GetProblems/") or path.startswith("/GView/GetResource/"):
                 name = path.rsplit("/", 1)[1]
                 it = st.items.get(name)
@@ -390,30 +448,39 @@ class Handler(BaseHTTPRequestHandler):
                 self.telemetry(body, token)
             elif path in NOTE_ENDPOINTS and st.args.notes != "absent":
                 self.notes_endpoint(path, body)
+            elif path in WORK_ENDPOINTS and st.args.work != "absent":
+                self.work_endpoint(path, body)
             else:
                 self.error(404, "NOT_FOUND", "unknown endpoint")
 
     # ------------------------------------------------------------------ course notes (spec §10.11)
-    def notes_endpoint(self, path, body):
+    def rate_limited(self) -> bool:
+        """the rate bucket of the note and work endpoints (--notes-rate-limit requests per minute); answers the 429"""
         st = self.state
-        args = st.args
         now = time.time()
         while st.notes_requests and now - st.notes_requests[0] >= 60:
             st.notes_requests.popleft()
-        if len(st.notes_requests) >= args.notes_rate_limit:
+        if len(st.notes_requests) >= st.args.notes_rate_limit:
             retry = max(1, int(60 - (now - st.notes_requests[0])) + 1)
-            self.reply_json(429, {"status": "error", "code": "RATE_LIMITED", "details": "too many note requests",
+            self.reply_json(429, {"status": "error", "code": "RATE_LIMITED", "details": "too many requests",
                                   "retryable": True}, extra={"Retry-After": str(retry)})
-            return
+            return True
         st.notes_requests.append(now)
+        return False
+
+    def notes_endpoint(self, path, body):
+        st = self.state
+        args = st.args
+        if self.rate_limited():
+            return
         if not isinstance(body, dict):
             self.error(400, "BAD_REQUEST", "body must be a JSON object")
             return
         teacher_endpoint = path in ("/GView/SaveTeacherNote", "/GView/DeleteTeacherNote")
-        if teacher_endpoint and not args.staff:
+        if teacher_endpoint and not self.staff:
             self.error(403, "FORBIDDEN", "Only course staff can edit course notes.")
             return
-        if not teacher_endpoint and not args.staff and (args.notes == "off" or args.notes_forbidden):
+        if not teacher_endpoint and not self.staff and (args.notes == "off" or args.notes_forbidden):
             self.error(403, "FORBIDDEN", "Course notes are disabled for this week.")
             return
         handler = {"/GView/GetNotes": self.get_notes, "/GView/SaveNote": self.save_note,
@@ -477,7 +544,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def get_notes(self, body):
         st = self.state
-        staff = st.args.staff
+        staff = self.staff
         mine = sorted(st.student_notes.values(), key=lambda n: (n["updatedAt"], n["revision"]), reverse=True)
         teacher = []
         for t in sorted(st.teacher_notes, key=lambda t: (t["order"], t["id"])):
@@ -505,7 +572,7 @@ class Handler(BaseHTTPRequestHandler):
         if err:
             self.error(400, "BAD_REQUEST", err)
             return
-        if not st.args.staff and not self.item_visible(scope):
+        if not self.staff and not self.item_visible(scope):
             self.error(404, "NOT_FOUND", "no such item")  # hidden items can not be probed
             return
         existing = st.student_notes.get(note_id)
@@ -618,6 +685,258 @@ class Handler(BaseHTTPRequestHandler):
             self.error(404, "NOT_FOUND", "no such course note")
             return
         st.teacher_notes.remove(t)
+        self.reply_json(200, {"status": "ok"})
+
+    # ------------------------------------------------------------------ course work and solutions (spec §10.12)
+    def work_endpoint(self, path, body):
+        st = self.state
+        if self.rate_limited():
+            return
+        if not isinstance(body, dict):
+            self.error(400, "BAD_REQUEST", "body must be a JSON object")
+            return
+        staff_endpoint = path in ("/GView/PublishSolution", "/GView/DeleteSolution")
+        if staff_endpoint and not self.staff:
+            self.error(403, "FORBIDDEN", "Only course staff can publish solutions.")
+            return
+        own_work = path in ("/GView/GetWork", "/GView/SaveWork")
+        if own_work and not self.staff and st.args.work == "off":
+            self.error(403, "FORBIDDEN", "Saving course work is disabled for this week.")
+            return
+        handler = {"/GView/GetWork": self.get_work, "/GView/SaveWork": self.save_work,
+                   "/GView/GetSolution": self.get_solution, "/GView/PublishSolution": self.publish_solution,
+                   "/GView/DeleteSolution": self.delete_solution}[path]
+        handler(body)
+
+    def problem_visible(self, name) -> bool:
+        """students: an enabled, visible problem; staff: any problem of the course (hidden ones too)"""
+        st = self.state
+        if not isinstance(name, str):
+            return False
+        it = st.items.get(name)
+        if it is not None and it["problem"] and name not in st.disabled:
+            return True
+        return self.staff and name in st.disabled
+
+    @staticmethod
+    def has_nul(value) -> bool:
+        if isinstance(value, str):
+            return "\x00" in value
+        if isinstance(value, list):
+            return any(Handler.has_nul(v) for v in value)
+        if isinstance(value, dict):
+            return any("\x00" in k or Handler.has_nul(v) for k, v in value.items())
+        return False
+
+    def check_document(self, doc):
+        """the server-side validation of a work document; returns (compact text, error)"""
+        if not isinstance(doc, dict):
+            return None, "document must be a JSON object"
+        if doc.get("format") != WORK_DOCUMENT_FORMAT:
+            return None, f"document format must be {WORK_DOCUMENT_FORMAT}"
+        version = doc.get("version")
+        if not isinstance(version, int) or isinstance(version, bool) or version < 1 or version > 1:
+            return None, "document version must be 1"
+        if self.has_nul(doc):
+            return None, "NUL characters are not allowed"
+        text = json.dumps(doc, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        if len(text.encode("utf-8")) > self.state.args.work_max_bytes:
+            return None, f"document is larger than {self.state.args.work_max_bytes} bytes"
+        return text, None
+
+    @staticmethod
+    def replay_fields(body):
+        """(hasReplay, replaySteps, error)"""
+        has_replay, steps = body.get("hasReplay", False), body.get("replaySteps", 0)
+        if not isinstance(has_replay, bool):
+            return None, None, "hasReplay must be a boolean"
+        if not isinstance(steps, int) or isinstance(steps, bool) or steps < 0:
+            return None, None, "replaySteps must be a non-negative integer"
+        return has_replay, steps if has_replay else 0, None
+
+    @staticmethod
+    def int_field(body, key):
+        """(value or None, error)"""
+        v = body.get(key)
+        if v is not None and (not isinstance(v, int) or isinstance(v, bool)):
+            return None, f"{key} must be an integer"
+        return v, None
+
+    @staticmethod
+    def solution_view(s, with_document):
+        r = {k: s[k] for k in ("id", "audience", "revision", "updatedAt", "enabled", "hasReplay", "replaySteps")}
+        if with_document:
+            r["document"] = s["document"]
+        return r
+
+    def conflict(self, details, existing=None):
+        envelope = {"status": "error", "code": "CONFLICT", "details": details, "retryable": False}
+        if existing is not None:
+            envelope.update({"id": existing["id"], "revision": existing["revision"]})
+        self.reply_json(409, envelope)
+
+    def get_work(self, body):
+        st = self.state
+        problem = body.get("problem")
+        if not self.problem_visible(problem):
+            self.error(404, "NOT_FOUND", "no such problem")
+            return
+        work = st.work.get((subject_of(self.token), problem))
+        mine = None
+        if work is not None:
+            mine = {k: work[k] for k in ("revision", "updatedAt", "clientVersion", "hasReplay", "replaySteps", "document")}
+        self.reply_json(200, {"status": "ok", "serverTime": int(time.time()), "maxBytes": st.args.work_max_bytes,
+                              "canPublishSolutions": self.staff, "audiences": list(AUDIENCES), "work": mine,
+                              "solutions": [self.solution_view(s, False) for s in st.visible_solutions(problem, self.staff)]})
+
+    def save_work(self, body):
+        st = self.state
+        problem = body.get("problem")
+        if not isinstance(problem, str):
+            self.error(400, "BAD_REQUEST", "problem must be a string")
+            return
+        if not self.problem_visible(problem):
+            self.error(404, "NOT_FOUND", "no such problem")  # hidden problems can not be probed
+            return
+        revision, err = self.int_field(body, "revision")
+        text, err2 = self.check_document(body.get("document")) if not err else (None, None)
+        has_replay, steps, err3 = self.replay_fields(body)
+        if err or err2 or err3:
+            self.error(400, "BAD_REQUEST", err or err2 or err3)
+            return
+        key = (subject_of(self.token), problem)
+        content = (text, has_replay, steps)
+        existing = st.work.get(key)
+        now = int(time.time())
+
+        def store(rev):
+            st.work[key] = {"revision": rev, "updatedAt": now, "clientVersion": self.headers.get("X-GView-Client", ""),
+                            "hasReplay": has_replay, "replaySteps": steps, "document": body["document"], "content": content}
+
+        if revision is None:
+            if existing is not None:
+                if existing["content"] == content:  # the same create retried after a lost answer
+                    self.reply_json(200, {"status": "ok", "revision": existing["revision"],
+                                          "updatedAt": existing["updatedAt"], "created": False})
+                else:
+                    self.conflict("work for this problem was saved before (send its revision)")
+                return
+            store(1)
+            self.note(f"work {problem} created ({len(text)} bytes, replay steps {steps})")
+            self.reply_json(200, {"status": "ok", "revision": 1, "updatedAt": now, "created": True})
+            return
+        if existing is None:
+            self.error(404, "NOT_FOUND", "no saved work for this problem")
+            return
+        if existing["revision"] == revision:
+            store(revision + 1)
+            st.work_last_update[key] = (revision, content)
+            self.note(f"work {problem} revision {revision + 1}")
+            self.reply_json(200, {"status": "ok", "revision": revision + 1, "updatedAt": now, "created": False})
+            return
+        if existing["revision"] == revision + 1 and st.work_last_update.get(key) == (revision, content):
+            self.reply_json(200, {"status": "ok", "revision": revision + 1, "updatedAt": existing["updatedAt"],
+                                  "created": False})
+            return
+        self.conflict("the work was saved elsewhere in the meantime")
+
+    def get_solution(self, body):
+        st = self.state
+        problem = body.get("problem")
+        if not self.problem_visible(problem):
+            self.error(404, "NOT_FOUND", "no such problem")
+            return
+        sid, err = self.int_field(body, "id")
+        if err:
+            self.error(400, "BAD_REQUEST", err)
+            return
+        visible = st.visible_solutions(problem, self.staff)
+        if sid is not None:
+            found = next((s for s in visible if s["id"] == sid), None)
+        else:  # the student's group first, then "all"
+            found = next((s for s in visible if s["audience"] == st.args.group), None) or \
+                    next((s for s in visible if s["audience"] == "all"), None)
+        if found is None:
+            self.error(404, "NOT_FOUND", "no solution")
+            return
+        self.reply_json(200, {"status": "ok", "solution": self.solution_view(found, True)})
+
+    def publish_solution(self, body):
+        st = self.state
+        problem = body.get("problem")
+        if not isinstance(problem, str):
+            self.error(400, "BAD_REQUEST", "problem must be a string")
+            return
+        if not self.problem_visible(problem):
+            self.error(404, "NOT_FOUND", "no such problem")
+            return
+        audience = body.get("audience", "all")
+        if audience not in AUDIENCES:
+            self.error(400, "BAD_REQUEST", "audience must be all, G1 or G2")
+            return
+        enabled = body.get("enabled", True)
+        sid, err = self.int_field(body, "id")
+        revision, err2 = self.int_field(body, "revision")
+        text, err3 = self.check_document(body.get("document"))
+        has_replay, steps, err4 = self.replay_fields(body)
+        if not isinstance(enabled, bool):
+            err = err or "enabled must be a boolean"
+        if sid is not None and revision is None:
+            err = err or "revision is required with id"
+        if err or err2 or err3 or err4:
+            self.error(400, "BAD_REQUEST", err or err2 or err3 or err4)
+            return
+        content = (text, has_replay, steps, enabled)
+        now = int(time.time())
+        existing_here = st.solutions.get((problem, audience))
+
+        def store(s, rev):
+            s.update({"audience": audience, "revision": rev, "updatedAt": now, "enabled": enabled,
+                      "hasReplay": has_replay, "replaySteps": steps, "document": body["document"], "content": content})
+            st.solutions[(problem, audience)] = s
+
+        if sid is None:
+            if existing_here is not None:
+                if existing_here["content"] == content:  # the same create retried after a lost answer
+                    self.reply_json(200, {"status": "ok", "id": existing_here["id"], "revision": existing_here["revision"],
+                                          "updatedAt": existing_here["updatedAt"], "created": False})
+                else:
+                    self.conflict("a solution for this problem and audience exists", existing_here)
+                return
+            s = {"id": st.next_solution_id, "problem": problem}
+            st.next_solution_id += 1
+            store(s, 1)
+            self.note(f"solution {s['id']} of {problem} for {audience} published ({len(text)} bytes)")
+            self.reply_json(200, {"status": "ok", "id": s["id"], "revision": 1, "updatedAt": now, "created": True})
+            return
+        current = next((s for s in st.solutions.values() if s["id"] == sid and s["problem"] == problem), None)
+        if current is None:
+            self.error(404, "NOT_FOUND", "no such solution")
+            return
+        if existing_here is not None and existing_here is not current:
+            self.conflict("a solution for this problem and audience exists", existing_here)
+            return
+        if current["revision"] == revision:
+            del st.solutions[(problem, current["audience"])]
+            store(current, revision + 1)
+            st.solution_last_update[sid] = (revision, content)
+            self.reply_json(200, {"status": "ok", "id": sid, "revision": revision + 1, "updatedAt": now, "created": False})
+            return
+        if current["revision"] == revision + 1 and st.solution_last_update.get(sid) == (revision, content):
+            self.reply_json(200, {"status": "ok", "id": sid, "revision": revision + 1, "updatedAt": current["updatedAt"],
+                                  "created": False})
+            return
+        self.conflict("the solution was changed in the meantime", current)
+
+    def delete_solution(self, body):
+        st = self.state
+        sid, err = self.int_field(body, "id")
+        key = next((k for k, s in st.solutions.items() if s["id"] == sid), None) if sid is not None and not err else None
+        if key is None:
+            self.error(404, "NOT_FOUND", "no such solution")
+            return
+        del st.solutions[key]
+        st.solution_last_update.pop(sid, None)
         self.reply_json(200, {"status": "ok"})
 
     def web_launch(self, raw: bytes):
@@ -744,13 +1063,26 @@ def main():
     ap.add_argument("--staff", action="store_true", help="the token is course staff (may edit teacher notes)")
     ap.add_argument("--group", choices=["G1", "G2"], default="G1", help="lab group of the student")
     ap.add_argument("--notes-max-chars", type=int, default=20000)
-    ap.add_argument("--notes-rate-limit", type=int, default=60, help="note requests per minute (429 above)")
+    ap.add_argument("--notes-rate-limit", type=int, default=60,
+                    help="note and work requests per minute, one bucket (429 above)")
+    ap.add_argument("--work", choices=["on", "off", "absent"], default="on",
+                    help="course work and solutions in the policy: on, off (GetWork / SaveWork answer 403 to students) "
+                         "or absent (a server without them)")
+    ap.add_argument("--work-max-bytes", type=int, default=2 * 1024 * 1024,
+                    help="largest work document (compact JSON); bodies above it + 64 KiB answer 413")
+    ap.add_argument("--staff-token", help="a second access token that is course staff, served by the same process "
+                                          "(its connection string is printed too)")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
     if args.launch_code is not None and not re.fullmatch(r"[A-Za-z0-9_-]{32,64}", args.launch_code):
         ap.error("--launch-code must match ^[A-Za-z0-9_-]{32,64}$ (the client ignores any other code)")
     if args.launch_server_url:
         args.launch_server_url = args.launch_server_url.rstrip("/").lower()
+    if args.staff_token is not None and (args.staff_token == args.token or
+                                         not re.fullmatch(r"[A-Za-z0-9_-]{16,256}", args.staff_token)):
+        ap.error("--staff-token must differ from --token and match ^[A-Za-z0-9_-]{16,256}$")
+    if args.work_max_bytes < 1024:
+        ap.error("--work-max-bytes must be at least 1024")
 
     tls = not args.http
     if args.server_url is None:
@@ -779,6 +1111,8 @@ def main():
     print(f"GView learning stub server on {args.server_url} (CORS origins: {', '.join(args.cors_origin) or 'none'})")
     print(f"policy public key : {state.public_hex}")
     print(f"connection string : {state.connection_string()}")
+    if args.staff_token:
+        print(f"staff connection  : {state.connection_string(args.staff_token)}")
     if args.launch_code is not None:
         print(f"web launch        : POST /GView/WebLaunch answers once (student {subject_of(state.launch_token)}"
               f"{', server ' + args.launch_server_url if args.launch_server_url else ''})")

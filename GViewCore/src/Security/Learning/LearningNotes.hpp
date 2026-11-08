@@ -71,8 +71,7 @@ struct StudentNote {
     uint64 updatedAt{ 0 };
 };
 
-enum class NoteAudience : uint8 { All, G1, G2 };
-std::string_view NoteAudienceName(NoteAudience a) noexcept; // "all", "G1", "G2"
+// NoteAudience / NoteAudienceName / ParseNoteAudience: LearningProtocol.hpp (shared with the solutions of §10.12)
 
 struct TeacherNote {
     int64 id{ 0 }; // server generated

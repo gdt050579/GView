@@ -351,6 +351,145 @@ NoteOpOutcome LearningSession::PerformDeleteTeacherNote(IHttpTransport& t, int64
     return PostNoteOperation(t, "/GView/DeleteTeacherNote", BuildDeleteTeacherNoteBody(id), true, false, cancel, REQUEST_TIMEOUT_SECONDS);
 }
 
+// ---------------------------------------------------------------------------- course work and solutions (spec §10.12)
+namespace
+{
+    template <typename Outcome>
+    Outcome RefusedLocally(std::string message)
+    {
+        Outcome o;
+        o.error.code    = ErrorCode::BadRequest;
+        o.error.details = message;
+        o.status        = Utils::GStatus::Error(std::move(message));
+        return o;
+    }
+
+    // one Post; a non-2xx answer fills `error` (409 => Conflict, 413 => PayloadTooLarge) and returns nullopt
+    template <typename Outcome>
+    std::optional<HttpResponse> PostWork(IHttpTransport& t, const char* path, SecureString body, size_t maxResponse, const std::atomic<bool>* cancel, Outcome& o, WorkServerError* fullError = nullptr)
+    {
+        HttpRequest req;
+        req.path             = path;
+        req.body             = std::move(body);
+        req.maxResponseBytes = maxResponse;
+        req.cancel           = cancel;
+        if (req.body.size() > MAX_WORK_REQUEST_BYTES)
+        {
+            o.error.code    = ErrorCode::PayloadTooLarge;
+            o.error.details = "the request exceeds the client limit";
+            o.status        = Utils::GStatus::Error(DescribeError(o.error));
+            return std::nullopt;
+        }
+        auto resp = t.Post(req);
+        if (!resp.IsSuccess())
+        {
+            WorkServerError e = WorkErrorFromResponse(resp);
+            o.error           = e;
+            o.status          = Utils::GStatus::Error(DescribeError(o.error));
+            if (fullError != nullptr)
+                *fullError = std::move(e);
+            return std::nullopt;
+        }
+        return resp;
+    }
+
+    template <typename Outcome>
+    void MarkMalformed(Outcome& o, const HttpResponse& resp)
+    {
+        // a 2xx that does not follow the contract
+        o.error.code       = ErrorCode::Protocol;
+        o.error.httpStatus = resp.status;
+        o.error.details    = o.status.message;
+    }
+} // namespace
+
+WorkResult LearningSession::PerformGetWork(IHttpTransport& t, std::string_view problem, const std::atomic<bool>* cancel)
+{
+    if (!IsValidItemName(problem))
+        return RefusedLocally<WorkResult>("invalid problem name");
+    WorkResult r;
+    auto resp = PostWork(t, "/GView/GetWork", BuildGetWorkBody(problem), MAX_WORK_RESPONSE_BYTES, cancel, r);
+    if (!resp.has_value())
+        return r;
+    r.status = ParseWorkResponse(ToView(resp->body), r.response);
+    if (!r.status.ok)
+        MarkMalformed(r, *resp);
+    return r;
+}
+
+SaveWorkOutcome LearningSession::PerformSaveWork(IHttpTransport& t, const SaveWorkRequest& sr, const std::atomic<bool>* cancel)
+{
+    if (!IsValidItemName(sr.problem) || (sr.revision.has_value() && *sr.revision < 1))
+        return RefusedLocally<SaveWorkOutcome>("invalid problem name or revision");
+    SaveWorkRequest canonical{ sr.problem, {}, sr.hasReplay, sr.hasReplay ? sr.replaySteps : 0, sr.revision };
+    if (auto st = ValidateWorkDocumentText(sr.document, MAX_WORK_DOCUMENT_BYTES, canonical.document); !st.ok)
+        return RefusedLocally<SaveWorkOutcome>(st.message);
+    SaveWorkOutcome o;
+    auto resp = PostWork(t, "/GView/SaveWork", BuildSaveWorkBody(canonical), MAX_WORK_REPLY_BYTES, cancel, o);
+    if (!resp.has_value())
+    {
+        o.conflict = o.error.code == ErrorCode::Conflict;
+        return o;
+    }
+    o.status = ParseSaveWorkResponse(ToView(resp->body), o.result);
+    if (!o.status.ok)
+        MarkMalformed(o, *resp);
+    return o;
+}
+
+SolutionResult LearningSession::PerformGetSolution(IHttpTransport& t, std::string_view problem, std::optional<int64> id, const std::atomic<bool>* cancel)
+{
+    if (!IsValidItemName(problem) || (id.has_value() && *id < 1))
+        return RefusedLocally<SolutionResult>("invalid problem name or solution id");
+    SolutionResult r;
+    auto resp = PostWork(t, "/GView/GetSolution", BuildGetSolutionBody(problem, id), MAX_WORK_RESPONSE_BYTES, cancel, r);
+    if (!resp.has_value())
+        return r;
+    r.status = ParseSolutionResponse(ToView(resp->body), r.solution);
+    if (!r.status.ok)
+        MarkMalformed(r, *resp);
+    return r;
+}
+
+PublishOutcome LearningSession::PerformPublishSolution(IHttpTransport& t, const PublishSolutionRequest& pr, const std::atomic<bool>* cancel)
+{
+    if (!IsValidItemName(pr.problem) || (pr.id.has_value() && (*pr.id < 1 || !pr.revision.has_value() || *pr.revision < 1)))
+        return RefusedLocally<PublishOutcome>("invalid solution request (an update needs its id and revision)");
+    PublishSolutionRequest canonical = pr;
+    canonical.document.clear();
+    if (!canonical.hasReplay)
+        canonical.replaySteps = 0;
+    if (auto st = ValidateWorkDocumentText(pr.document, MAX_WORK_DOCUMENT_BYTES, canonical.document); !st.ok)
+        return RefusedLocally<PublishOutcome>(st.message);
+    PublishOutcome o;
+    WorkServerError full;
+    auto resp = PostWork(t, "/GView/PublishSolution", BuildPublishSolutionBody(canonical), MAX_WORK_REPLY_BYTES, cancel, o, &full);
+    if (!resp.has_value())
+    {
+        o.conflict = o.error.code == ErrorCode::Conflict;
+        if (o.conflict)
+        {
+            o.existingId       = full.existingId;
+            o.existingRevision = full.existingRevision;
+        }
+        return o;
+    }
+    o.status = ParsePublishSolutionResponse(ToView(resp->body), o.result);
+    if (!o.status.ok)
+        MarkMalformed(o, *resp);
+    return o;
+}
+
+DeleteSolutionOutcome LearningSession::PerformDeleteSolution(IHttpTransport& t, int64 id, const std::atomic<bool>* cancel)
+{
+    if (id < 1)
+        return RefusedLocally<DeleteSolutionOutcome>("invalid solution id");
+    DeleteSolutionOutcome o;
+    if (PostWork(t, "/GView/DeleteSolution", BuildDeleteSolutionBody(id), MAX_WORK_REPLY_BYTES, cancel, o).has_value())
+        o.status = Utils::GStatus::Ok();
+    return o;
+}
+
 // ============================================================================ lifecycle
 LearningSession::LearningSession() : LearningSession(Dependencies{})
 {
@@ -624,6 +763,7 @@ Utils::GStatus LearningSession::ApplyConnectResult(ConnectionInfo&& newInfo, std
             return Utils::GStatus::Error(statusMessage);
         }
         ResetNotes(); // a legacy server has no notes; never keep notes of another account in memory
+        ResetWork();
         info        = std::move(newInfo);
         transport   = std::move(newTransport);
         lastConnect = std::move(result.response);
@@ -655,6 +795,7 @@ Utils::GStatus LearningSession::ApplyConnectResult(ConnectionInfo&& newInfo, std
         {
             FinalNoteSaves(); // to the account (and server) the text belongs to, bounded
             ResetNotes();
+            ResetWork(); // revisions and capabilities belong to the previous account
         }
         // the policy reflects the notes switch at connect time; a new connect tries again (spec §2.2)
         notesDisabledByServer = false;
@@ -662,6 +803,14 @@ Utils::GStatus LearningSession::ApplyConnectResult(ConnectionInfo&& newInfo, std
         notesError.clear();
         if (result.policy->notes.present)
             notes.SetMaxChars(result.policy->notes.maxChars);
+        // course work (spec §10.12): the same "try again at every connect"; the capability announced at connect is
+        // replaced by every GetWork answer
+        workDisabledByServer = false;
+        workServerMaxBytes   = 0;
+        if (result.response.canPublishSolutions.has_value())
+            canPublishSolutions = *result.response.canPublishSolutions;
+        if (result.response.audiences.has_value())
+            audiences = *result.response.audiences;
     }
     const bool newPolicyId = !policy.has_value() || policy->id != result.policy->id;
     policy                 = std::move(result.policy);
@@ -853,6 +1002,7 @@ Utils::GStatus LearningSession::EndSession(std::string_view reason)
     StopJobs();
     FinalNoteSaves(); // unsaved note text is sent (bounded) before the transport goes away
     ResetNotes();
+    ResetWork();
     telemetry.Disable();
     if (restrictionsActive)
         deps.deactivate();
@@ -881,6 +1031,7 @@ void LearningSession::Shutdown() noexcept
         StopJobs();
         FinalNoteSaves();
         ResetNotes();
+        ResetWork();
         RecordSessionEnd("exit");
         flusher.StopAndFlush(FINAL_FLUSH_TIMEOUT_S);
         telemetry.Disable();
@@ -990,12 +1141,16 @@ LearningSession::Status LearningSession::GetStatus() const
         s.requireExplanation     = policy->submission.requireExplanation;
         s.explanationMaxChars    = policy->submission.explanationMaxChars;
         s.notesMaxChars          = notes.MaxChars();
+        s.workMaxBytes           = static_cast<uint32>(WorkMaxBytes());
     }
     else
     {
         s.explanationMaxChars = 100000;
     }
-    s.notes             = GetNotesAvailability();
+    s.notes               = GetNotesAvailability();
+    s.work                = GetWorkAvailability();
+    s.canPublishSolutions = CanPublishSolutions();
+    s.audiences           = audiences;
     s.submissionAllowed = CanSubmit();
     return s;
 }
@@ -1009,6 +1164,28 @@ void LearningSession::SetPendingBinding(ItemBinding binding)
 void LearningSession::ClearPendingBinding() noexcept
 {
     pendingBinding.reset();
+}
+
+bool LearningSession::SetPendingWorkDocument(std::string json, WorkspaceRole role)
+{
+    if (!pendingBinding.has_value() || role == WorkspaceRole::Normal)
+        return false;
+    pendingBinding->role        = role;
+    pendingBinding->pendingWork = std::move(json);
+    return true;
+}
+
+std::optional<std::string> LearningSession::TakePendingWork(const void* obj, WorkspaceRole& role)
+{
+    auto it = bindings.find(obj);
+    if (it == bindings.end()) {
+        role = WorkspaceRole::Normal;
+        return std::nullopt;
+    }
+    role = it->second.role;
+    std::optional<std::string> work;
+    work.swap(it->second.pendingWork);
+    return work;
 }
 
 void LearningSession::OnObjectCreated(const void* obj, bool inMemory)
@@ -1037,7 +1214,7 @@ void LearningSession::OnObjectClosed(const void* obj)
     auto it = bindings.find(obj);
     if (it == bindings.end())
         return;
-    if (it->second.problem)
+    if (it->second.problem && it->second.role == WorkspaceRole::Student) // a teacher solution window is not the task
         telemetry.Record(EventType::TaskClose, it->second.item);
     if (focusedObject == obj)
         focusedObject = nullptr;
@@ -1063,7 +1240,7 @@ void LearningSession::OnFrame(const void* obj, std::string_view viewerKind, bool
         return;
     }
     const std::string_view viewer = NormalizeViewerName(viewerKind);
-    if (it->second.lastViewer != viewer)
+    if (it->second.lastViewer != viewer && it->second.role == WorkspaceRole::Student)
     {
         it->second.lastViewer = std::string(viewer);
         telemetry.Record(EventType::ViewerOpen, it->second.item, { FieldValue{ Field::Viewer, std::string(viewer) } });
@@ -1101,12 +1278,16 @@ bool LearningSession::Record(const void* obj, EventType type, std::vector<FieldV
     const auto* b = FindBinding(obj);
     if (b == nullptr)
         return false; // telemetry is only collected for windows opened from the course catalogue
+    if (b->role != WorkspaceRole::Student)
+        return false; // a teacher solution / replay window: what happens there is not the student's work on the task
     return telemetry.Record(type, b->item, std::move(fields));
 }
 
 void LearningSession::RecordFeatureBlocked(Feature feature)
 {
     const auto* b = focusedObject != nullptr ? FindBinding(focusedObject) : nullptr;
+    if (b != nullptr && b->role != WorkspaceRole::Student)
+        b = nullptr; // still recorded, without the item
     telemetry.Record(
           EventType::FeatureBlocked,
           b != nullptr ? std::string_view(b->item) : std::string_view(),
@@ -1118,8 +1299,10 @@ void LearningSession::RecordClientError(std::string_view constantMessage, bool f
     telemetry.Record(EventType::ClientError, "", { FieldValue{ Field::Message, std::string(constantMessage) }, FieldValue{ Field::Fatal, fatal } });
 }
 
-void LearningSession::RecordItemOpened(const CatalogueItem& item, DeliveryMode mode, uint32 version)
+void LearningSession::RecordItemOpened(const CatalogueItem& item, DeliveryMode mode, uint32 version, WorkspaceRole role)
 {
+    if (role == WorkspaceRole::Solution || role == WorkspaceRole::Replay)
+        return;
     telemetry.Record(
           item.IsProblem() ? EventType::TaskOpen : EventType::ResourceOpen,
           item.name,
@@ -1466,6 +1649,283 @@ void LearningSession::ResetNotes() noexcept
     notesError.clear();
     notesNotices.clear();
     teacherNotesVersion++;
+}
+
+// ============================================================================ course work and solutions (spec §10.12)
+namespace
+{
+    // the UI (a progress dialog) always gets an answer, also when a job throws
+    template <typename Result, typename Fn>
+    std::shared_ptr<Result> RunWorkRequest(Fn&& fn)
+    {
+        auto result = std::make_shared<Result>();
+        try
+        {
+            *result = fn();
+        }
+#ifdef BUILD_FOR_WASM
+        catch (const JobReplay::NetworkPending&)
+        {
+            throw; // the job waits for a response and will be run again (JobReplay.hpp)
+        }
+#endif
+        catch (...)
+        {
+            result->error.code = ErrorCode::Transport;
+            result->status     = Utils::GStatus::Error("the course work request failed");
+        }
+        return result;
+    }
+} // namespace
+
+void LearningSession::ResetWork() noexcept
+{
+    workRevisions.clear();
+    canPublishSolutions  = false;
+    audiences.clear();
+    workDisabledByServer = false;
+    workServerMaxBytes   = 0;
+}
+
+WorkAvailability LearningSession::GetWorkAvailability() const noexcept
+{
+    if (!policy.has_value() || !policy->work.present)
+        return WorkAvailability::Absent;
+    if (!canPublishSolutions) // course staff are never gated by the switch (as on the server)
+    {
+        if (!policy->work.enabled)
+            return WorkAvailability::DisabledByPolicy;
+        if (workDisabledByServer)
+            return WorkAvailability::DisabledByServer;
+    }
+    if (state != SessionState::Active || !transport)
+        return WorkAvailability::Unavailable;
+    return WorkAvailability::Available;
+}
+
+Utils::GStatus LearningSession::CheckWorkUsable(bool staffOnly) const
+{
+    if (staffOnly && !canPublishSolutions)
+        return Utils::GStatus::Error("Only course staff can publish or delete solutions.");
+    switch (GetWorkAvailability())
+    {
+    case WorkAvailability::Available:
+        return Utils::GStatus::Ok();
+    case WorkAvailability::Absent:
+        return Utils::GStatus::Error("This course server does not store course work.");
+    case WorkAvailability::DisabledByPolicy:
+    case WorkAvailability::DisabledByServer:
+        return Utils::GStatus::Error("Saving course work is disabled by your teacher.");
+    default:
+        return Utils::GStatus::Error(
+              state == SessionState::Expired ? "The course policy has expired; reconnect first." : "Course work is not available in the current session state.");
+    }
+}
+
+std::vector<NoteAudience> LearningSession::SolutionAudiences() const
+{
+    return audiences.empty() ? std::vector<NoteAudience>{ NoteAudience::All } : audiences;
+}
+
+size_t LearningSession::WorkMaxBytes() const noexcept
+{
+    size_t m = MAX_WORK_DOCUMENT_BYTES;
+    if (policy.has_value() && policy->work.present)
+        m = std::min<size_t>(m, policy->work.maxBytes);
+    if (workServerMaxBytes > 0)
+        m = std::min<size_t>(m, workServerMaxBytes);
+    return m;
+}
+
+std::optional<int64> LearningSession::WorkRevision(std::string_view problem) const
+{
+    auto it = workRevisions.find(std::string(problem));
+    if (it == workRevisions.end())
+        return std::nullopt;
+    return it->second;
+}
+
+void LearningSession::HandleWorkFailure(const ServerError& error, WorkEndpoint endpoint)
+{
+    if (error.code == ErrorCode::PolicyExpired)
+    {
+        ExpireLocally("policy_expired");
+        return;
+    }
+    if (error.code != ErrorCode::Forbidden)
+        return;
+    if (endpoint == WorkEndpoint::Staff)
+        canPublishSolutions = false; // this token is not (any more) course staff
+    else if (endpoint == WorkEndpoint::OwnWork && !canPublishSolutions)
+        workDisabledByServer = true; // hides the Save / Resume UI until the next connect
+}
+
+Utils::GStatus LearningSession::GetWork(std::string_view problem, WorkCallback done)
+{
+    if (auto st = CheckWorkUsable(false); !st.ok)
+        return st;
+    if (!IsValidItemName(problem))
+        return Utils::GStatus::Error("invalid problem");
+    auto t           = transport;
+    const uint64 gen = generation;
+    auto name        = std::make_shared<std::string>(problem);
+    RunJob([this, t, gen, name, done]() -> BackgroundWorker::Completion {
+        auto result = RunWorkRequest<WorkResult>([&]() { return PerformGetWork(*t, *name, &cancelJobs); });
+        return [this, gen, name, result, done]() {
+            if (gen != generation)
+                return;
+            if (result->status.ok)
+            {
+                const auto& r = result->response;
+                if (r.hasWork)
+                    workRevisions[*name] = r.revision;
+                else
+                    workRevisions.erase(*name); // nothing saved (or deleted on the website): the next save creates
+                canPublishSolutions  = r.canPublishSolutions;
+                audiences            = r.audiences;
+                workServerMaxBytes   = r.maxBytes;
+                workDisabledByServer = false;
+            }
+            else
+                HandleWorkFailure(result->error, WorkEndpoint::OwnWork);
+            if (done)
+                done(*result);
+        };
+    });
+    return Utils::GStatus::Ok();
+}
+
+Utils::GStatus LearningSession::SaveWork(std::string_view problem, std::string document, bool hasReplay, uint32 replaySteps, SaveWorkCallback done)
+{
+    if (auto st = CheckWorkUsable(false); !st.ok)
+        return st;
+    if (!IsValidItemName(problem))
+        return Utils::GStatus::Error("invalid problem");
+    auto req     = std::make_shared<SaveWorkRequest>();
+    req->problem = std::string(problem);
+    auto st      = ValidateWorkDocumentText(document, WorkMaxBytes(), req->document);
+    WipeString(document);
+    if (!st.ok)
+        return Utils::GStatus::Error("The work cannot be saved: " + st.message);
+    req->hasReplay   = hasReplay;
+    req->replaySteps = hasReplay ? replaySteps : 0;
+    req->revision    = WorkRevision(problem);
+    auto t           = transport;
+    const uint64 gen = generation;
+    RunJob([this, t, gen, req, done]() -> BackgroundWorker::Completion {
+        auto outcome = RunWorkRequest<SaveWorkOutcome>([&]() { return PerformSaveWork(*t, *req, &cancelJobs); });
+        return [this, gen, req, outcome, done]() {
+            WipeString(req->document);
+            if (gen != generation)
+                return;
+            if (outcome->status.ok)
+            {
+                workRevisions[req->problem] = outcome->result.revision;
+                for (auto& w : catalogue.weeks)
+                {
+                    for (auto& p : w.problems)
+                    {
+                        if (p.name == req->problem)
+                        {
+                            p.hasMe           = true;
+                            p.me.workRevision = outcome->result.revision;
+                            p.me.workSavedAt  = outcome->result.updatedAt != 0 ? outcome->result.updatedAt : Now();
+                        }
+                    }
+                }
+            }
+            else if (!outcome->conflict) // a conflict keeps the cached revision: GetWork, then save again to overwrite
+            {
+                if (outcome->error.code == ErrorCode::NotFound)
+                    workRevisions.erase(req->problem); // the work was deleted on the website: the next save creates
+                HandleWorkFailure(outcome->error, WorkEndpoint::OwnWork);
+            }
+            if (done)
+                done(*outcome);
+        };
+    });
+    return Utils::GStatus::Ok();
+}
+
+Utils::GStatus LearningSession::GetSolution(std::string_view problem, std::optional<int64> id, SolutionCallback done)
+{
+    if (auto st = CheckWorkUsable(false); !st.ok)
+        return st;
+    if (!IsValidItemName(problem) || (id.has_value() && *id < 1))
+        return Utils::GStatus::Error("invalid problem or solution id");
+    auto t           = transport;
+    const uint64 gen = generation;
+    auto name        = std::make_shared<std::string>(problem);
+    RunJob([this, t, gen, name, id, done]() -> BackgroundWorker::Completion {
+        auto result = RunWorkRequest<SolutionResult>([&]() { return PerformGetSolution(*t, *name, id, &cancelJobs); });
+        return [this, gen, result, done]() {
+            if (gen != generation)
+                return;
+            if (!result->status.ok)
+                HandleWorkFailure(result->error, WorkEndpoint::Solution);
+            if (done)
+                done(*result);
+        };
+    });
+    return Utils::GStatus::Ok();
+}
+
+Utils::GStatus LearningSession::PublishSolution(PublishSolutionRequest req, PublishCallback done)
+{
+    if (auto st = CheckWorkUsable(true); !st.ok)
+        return st;
+    if (!IsValidItemName(req.problem))
+        return Utils::GStatus::Error("invalid problem");
+    if (req.id.has_value() && (*req.id < 1 || !req.revision.has_value() || *req.revision < 1))
+        return Utils::GStatus::Error("replacing a solution needs its id and revision");
+    if (const auto known = SolutionAudiences(); std::find(known.begin(), known.end(), req.audience) == known.end())
+        return Utils::GStatus::Error("The course server does not accept solutions for the audience " + std::string(NoteAudienceName(req.audience)) + ".");
+    auto shared = std::make_shared<PublishSolutionRequest>(std::move(req));
+    std::string canonical;
+    auto st = ValidateWorkDocumentText(shared->document, WorkMaxBytes(), canonical);
+    WipeString(shared->document);
+    if (!st.ok)
+        return Utils::GStatus::Error("The solution cannot be published: " + st.message);
+    shared->document = std::move(canonical);
+    if (!shared->hasReplay)
+        shared->replaySteps = 0;
+    auto t           = transport;
+    const uint64 gen = generation;
+    RunJob([this, t, gen, shared, done]() -> BackgroundWorker::Completion {
+        auto outcome = RunWorkRequest<PublishOutcome>([&]() { return PerformPublishSolution(*t, *shared, &cancelJobs); });
+        return [this, gen, shared, outcome, done]() {
+            WipeString(shared->document);
+            if (gen != generation)
+                return;
+            if (!outcome->status.ok && !outcome->conflict)
+                HandleWorkFailure(outcome->error, WorkEndpoint::Staff);
+            if (done)
+                done(*outcome);
+        };
+    });
+    return Utils::GStatus::Ok();
+}
+
+Utils::GStatus LearningSession::DeleteSolution(int64 id, DeleteSolutionCallback done)
+{
+    if (auto st = CheckWorkUsable(true); !st.ok)
+        return st;
+    if (id < 1)
+        return Utils::GStatus::Error("invalid solution id");
+    auto t           = transport;
+    const uint64 gen = generation;
+    RunJob([this, t, gen, id, done]() -> BackgroundWorker::Completion {
+        auto outcome = RunWorkRequest<DeleteSolutionOutcome>([&]() { return PerformDeleteSolution(*t, id, &cancelJobs); });
+        return [this, gen, outcome, done]() {
+            if (gen != generation)
+                return;
+            if (!outcome->status.ok)
+                HandleWorkFailure(outcome->error, WorkEndpoint::Staff);
+            if (done)
+                done(*outcome);
+        };
+    });
+    return Utils::GStatus::Ok();
 }
 
 LearningSession& GetSession()

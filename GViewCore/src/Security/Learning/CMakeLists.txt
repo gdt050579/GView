@@ -6,6 +6,7 @@ target_sources(GViewCore PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/TaskFiles.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Telemetry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/LearningNotes.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/LearningWork.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/LearningSession.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/LearningHooks.cpp
 )

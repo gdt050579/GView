@@ -1094,6 +1094,14 @@ namespace Security
             uint32 maxChars{ 20000 }; // longest note body the server accepts, clamped to [100, 100000]
         };
 
+        // Course work documents and teacher solutions (spec §10.12). Absent object = a server without them: no Save /
+        // Resume / Compare UI. enabled = students may save their work (course staff are never gated).
+        struct WorkSettings {
+            bool present{ false }; // the policy carries a "work" object
+            bool enabled{ false };
+            uint32 maxBytes{ 2 * 1024 * 1024 }; // largest work document the server accepts, clamped to [64 KiB, 16 MiB]
+        };
+
         struct Policy {
             uint32 schema{ 1 };
             std::string id;
@@ -1119,6 +1127,7 @@ namespace Security
             TelemetrySettings telemetry;
             SubmissionSettings submission;
             NotesSettings notes;
+            WorkSettings work;
 
             std::vector<uint8_t> contentKeyId; // 8 bytes when present
             std::string contentEncryption;     // "" or "aes-256-gcm-hkdf-v1"
