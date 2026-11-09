@@ -1368,6 +1368,7 @@ constexpr std::string_view PROTOTYPES[] = {
     "int _snwprintf_s(wchar_t* buffer, size_t sizeOfBuffer, size_t count, const wchar_t* format, ...)",
     "FILE* __acrt_iob_func(unsigned int index)",
     "void _CxxThrowException(void* pExceptionObject, _ThrowInfo* pThrowInfo)",
+    "void __security_check_cookie(uintptr_t StackCookie)",
     "void __std_exception_copy(const __std_exception_data* from, __std_exception_data* to)",
     "void __std_exception_destroy(__std_exception_data* data)",
     // the C run-time: the secure functions (the sizes of the buffers), the paths, the printf / scanf of the UCRT that its inline functions

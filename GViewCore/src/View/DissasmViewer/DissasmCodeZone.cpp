@@ -31,6 +31,13 @@ static const AsmFunctionDetails* FindMethodPrototypeByName(
     return found != prototypes.end() ? &found->second->details : nullptr;
 }
 
+// the pointers of the Control Flow Guard in the load config (the plugin names them: __guard_dispatch_icall_fptr, __guard_xfg_dispatch_icall_fptr,
+// the _x64 ones of the x64 view of an ARM64X image): a jmp through one is a thunk of the run-time
+static bool IsGuardPointerName(std::string_view name)
+{
+    return name.starts_with("__guard_") && (name.ends_with("_fptr") || name.find("_fptr_") != std::string_view::npos);
+}
+
 // The lines of the zone, counted by a linear sweep (DecodeX86Line) that stops at a deadline and continues later: a big zone shows its first
 // lines before the end of its code is read. A cached offset (file offset, line) is kept every DISSASM_INSTRUCTION_OFFSET_MARGIN bytes.
 // The code is decoded from the start of the zone: every decoded address (and every branch target) is relative to it. An undecodable byte
@@ -309,6 +316,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // the results, given to the zone by Commit
     DissasmXrefs xrefs;
     std::unordered_map<uint64, std::string> thunkImports;
+    std::unordered_map<uint64, uint64> otherZoneJumps; // x86 / x64: a jmp to the code of another zone that starts a block (relative) -> its VA
     std::unordered_map<uint64, uint32> switchJumps;
     std::unordered_map<uint64, uint64> resolvedAddresses; // ARM64: the addresses of the adrp pairs
     std::unordered_map<uint64, uint64> adrpPages;         // ARM64: the address of the first pair of each adrp
@@ -552,6 +560,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         thunks.clear();
         xrefs = DissasmXrefs{};
         thunkImports.clear();
+        otherZoneJumps.clear();
         switchJumps.clear();
         resolvedAddresses.clear();
         adrpPages.clear();
@@ -1404,8 +1413,16 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 AddFunctionStart(thunkStart);
                 if (IsNoReturnFunctionName(import->name))
                     noReturnStarts.insert(thunkStart - codeStart);
+            } else if (import && import->type == MemoryMappingType::TextMapping && IsGuardPointerName(import->name)) {
+                // jmp cs:__guard_dispatch_icall_fptr: the dispatch of the Control Flow Guard (the target in rax), called through the
+                // function override thunks of fothk (shell32: 18918 calls): j___guard_dispatch_icall_fptr, as IDA names it
+                thunks.emplace_back(thunkStart, import->name);
+                AddFunctionStart(thunkStart);
             }
         }
+        // jmp to the code of another zone from a block start: a thunk when the zones call it (NameOtherZoneThunks)
+        if (isBlockStart && !isEndbr && flow == X86Flow::Jump && operands.directTarget.has_value() && operands.directTarget.value() >= codeSize)
+            otherZoneJumps[thunkStart - codeStart] = (labelBase + operands.directTarget.value()) & addressMask;
 
         // mov eax, offset X; ret: the catch block of a C++ exception returns where its function continues, not a function
         if (returnedAddress.has_value()) {
@@ -2554,6 +2571,54 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         return true;
     }
 
+    // the direct calls of the other code zones of the file (analyzed before this one) into this code: function starts, as the calls of the
+    // zone are (shell32: the calls of .text to the function override thunk of its fothk section, a zone that calls nothing)
+    void AddOtherZoneCallTargets()
+    {
+        for (const auto* sibling : zone->siblingZones) {
+            if (sibling == zone || sibling->zoneDetails.isData)
+                continue;
+            const auto& byTarget = sibling->xrefs.byTarget; // sorted by target (Finish)
+            auto reference =
+                  std::lower_bound(byTarget.begin(), byTarget.end(), labelBase, [](const DissasmXref& xref, uint64 value) { return xref.to < value; });
+            for (; reference != byTarget.end() && reference->to - labelBase < codeSize; ++reference) {
+                const uint64 target = reference->to - labelBase;
+                if (reference->kind == DissasmXrefKind::Call && target < blockStarts.size() && blockStarts[target])
+                    AddFunctionStart(codeStart + target);
+            }
+        }
+    }
+
+    // a function that is a jmp to a named function of another code zone (the function override thunk of fothk: jmp
+    // j___guard_dispatch_icall_fptr of .text): j_ and that name, as the thunks of the imports (a second one: j_Name_1)
+    void NameOtherZoneThunks()
+    {
+        if (otherZoneJumps.empty())
+            return;
+        std::unordered_set<std::string> usedNames;
+        for (const auto& call : callsFound)
+            if (GetLabelType(call.second) != SUB)
+                usedNames.insert(call.second);
+        for (auto& call : callsFound) {
+            if (call.first < codeStart || GetLabelType(call.second) != SUB)
+                continue;
+            const auto jump = otherZoneJumps.find(call.first - codeStart);
+            if (jump == otherZoneJumps.end())
+                continue;
+            const auto* other = zone->FindCodeZoneOfAddress(jump->second);
+            if (!other || other == zone)
+                continue;
+            const std::string target = other->GetLabelNameAt(jump->second - other->labelAddressBase);
+            if (target.empty() || target == "EntryPoint" || target.starts_with("sub_") || target.starts_with("loc_"))
+                continue;
+            std::string name = "j_" + target;
+            for (uint32 index = 1; usedNames.contains(name) && index < 1000; index++)
+                name = "j_" + target + "_" + std::to_string(index);
+            if (usedNames.insert(name).second)
+                call.second = std::move(name);
+        }
+    }
+
     // the aligned values of the data zones of the file that point into this code (their bytes in the file: the data zones are analyzed
     // after the code)
     void AddDataZonePointerTargets()
@@ -2610,6 +2675,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         // (not a case of a switch, an absolute jump table of GCC in .rodata; not the target of a conditional jump, inside a function; not
         // the anchor of an ARM64 jump table, the target of a veneer)
         AddDataZonePointerTargets();
+        AddOtherZoneCallTargets();
         // the targets of the veneers: jumps, not addresses taken (not the code of the function whose range they are in: ComputeFunctionEnds)
         addressTakenTargets.erase(
               std::remove_if(addressTakenTargets.begin(), addressTakenTargets.end(), [this](uint64 target) { return farJumpTargets.contains(target); }),
@@ -3415,6 +3481,124 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
     }
 
+    // MSVC /GS: the functions of the run-time that check the stack cookie, named by their code (a stripped image has no symbol for them; IDA
+    // names them by its signatures): their first instructions compare the cookie (__security_cookie, the variable of the load config the
+    // plugin names) with the cookie of the frame
+    // - x64: cmp rcx, [__security_cookie]; jne; rol rcx, 0x10; test cx, 0xffff; jne; ret: __security_check_cookie (rcx)
+    // - x86: cmp ecx, [__security_cookie]; jne; ret: @__security_check_cookie@4 (__fastcall: ecx, so no prototype of pushes)
+    // - ARM64: the cookie loaded (adrp; ldr / add, ldr), cmp x0 with it; b.ne; ret: __security_check_cookie (x0); the cookie of the frame read
+    //   at [sp, #8], its difference with sp compared; b.ne; add sp, sp, #0x10; ret: __security_pop_cookie (__security_push_cookie moved sp)
+    // Only a function with an automatic name (sub_), a name not given yet
+    void NameSecurityCookieFunctions()
+    {
+        constexpr uint32 CHECK_BYTES      = 48;
+        constexpr size_t MAX_INSTRUCTIONS = 10;
+        if (!findImport || handle == 0 || zone->IsArm32Code())
+            return;
+        const bool isArm64 = zone->IsArm64Code();
+        std::vector<size_t> candidates; // indexes in callsFound
+        for (size_t index = 0; index < callsFound.size(); index++) {
+            const auto& [fileOffset, name] = callsFound[index];
+            if (fileOffset < codeStart || fileOffset - codeStart >= codeSize || GetLabelType(name) != SUB)
+                continue;
+            const uint64 start = fileOffset - codeStart;
+            if (zone->GetArchAt(start) != arch)
+                continue; // the x64 code of an ARM64X image
+            // the first bytes: cmp rcx, [rip + n] (48 3B 0D), cmp ecx, [n] (3B 0D); ARM64: an adrp
+            const auto head = obj->GetData().Get(fileOffset, 4, false);
+            if (!head.IsValid() || head.GetLength() < 4)
+                continue;
+            const uint8* b     = head.GetData();
+            const bool matches = isArm64 ? (b[3] & 0x9F) == 0x90 : (is64 ? b[0] == 0x48 && b[1] == 0x3B && b[2] == 0x0D : b[0] == 0x3B && b[1] == 0x0D);
+            if (matches)
+                candidates.push_back(index);
+        }
+        if (candidates.empty())
+            return;
+        std::unordered_set<std::string> usedNames;
+        for (const auto& call : callsFound)
+            if (GetLabelType(call.second) != SUB)
+                usedNames.insert(call.second);
+        const auto readsCookie = [this](const cs_insn& insn) {
+            auto operands = GetInstructionOperands(insn, arch, labelBase);
+            if (const auto resolved = resolvedAddresses.find(insn.address); resolved != resolvedAddresses.end())
+                operands.ripTarget = resolved->second; // ARM64: the adrp pair
+            const auto* mapping = findImport(operands);
+            return mapping && std::string_view(mapping->name).starts_with("__security_cookie"); // the x64 view of an ARM64X image: _x64
+        };
+        for (const size_t index : candidates) {
+            const uint64 start = callsFound[index].first - codeStart;
+            const auto data = obj->GetData().CopyToBuffer(callsFound[index].first, static_cast<uint32>(std::min<uint64>(codeSize - start, CHECK_BYTES)), false);
+            if (!data.IsValid())
+                continue;
+            cs_insn* decoded   = nullptr;
+            const size_t count = cs_disasm(handle, data.GetData(), data.GetLength(), start, MAX_INSTRUCTIONS, &decoded);
+            std::string_view name;
+            if (count > 0 && !isArm64) {
+                const auto& first   = *decoded[0].detail;
+                const x86_reg reg   = is64 ? X86_REG_RCX : X86_REG_ECX;
+                const bool compares = decoded[0].id == X86_INS_CMP && first.x86.op_count == 2 && first.x86.operands[0].type == X86_OP_REG &&
+                                      first.x86.operands[0].reg == reg && first.x86.operands[1].type == X86_OP_MEM && readsCookie(decoded[0]);
+                if (compares && count >= 3 && decoded[1].id == X86_INS_JNE) {
+                    if (!is64 && decoded[2].id == X86_INS_RET)
+                        name = "@__security_check_cookie@4";
+                    else if (
+                          is64 && decoded[2].id == X86_INS_ROL && decoded[2].detail->x86.op_count == 2 &&
+                          decoded[2].detail->x86.operands[0].type == X86_OP_REG && decoded[2].detail->x86.operands[0].reg == X86_REG_RCX &&
+                          decoded[2].detail->x86.operands[1].type == X86_OP_IMM && decoded[2].detail->x86.operands[1].imm == 0x10)
+                        for (size_t position = 3; position < count && position < 6; position++) {
+                            if (decoded[position].id == X86_INS_RET) {
+                                name = "__security_check_cookie";
+                                break;
+                            }
+                            if (decoded[position].id != X86_INS_TEST && decoded[position].id != X86_INS_JNE)
+                                break;
+                        }
+                }
+            } else if (count > 0) {
+                // up to the first ret: the cookie read, one b.ne after the cmp, nothing else that branches
+                bool cookie = false, framed = false, valid = true;
+                std::optional<size_t> branch;
+                size_t ret = count;
+                for (size_t position = 0; position < count && valid; position++) {
+                    const cs_insn& insn   = decoded[position];
+                    const cs_arm64& arm64 = insn.detail->arm64;
+                    if (insn.id == ARM64_INS_RET) {
+                        ret = position;
+                        break;
+                    }
+                    if (insn.id == ARM64_INS_B && arm64.cc == ARM64_CC_NE && !branch.has_value() && position > 0 && decoded[position - 1].id == ARM64_INS_CMP)
+                        branch = position;
+                    else if (
+                          insn.id == ARM64_INS_B || insn.id == ARM64_INS_BL || insn.id == ARM64_INS_BR || insn.id == ARM64_INS_BLR ||
+                          insn.id == ARM64_INS_CBZ || insn.id == ARM64_INS_CBNZ || insn.id == ARM64_INS_TBZ || insn.id == ARM64_INS_TBNZ)
+                        valid = false;
+                    cookie = cookie || readsCookie(insn);
+                    // ldr x16, [sp, #8]: the cookie the push stored
+                    framed = framed || (insn.id == ARM64_INS_LDR && arm64.op_count == 2 && arm64.operands[1].type == ARM64_OP_MEM &&
+                                        arm64.operands[1].mem.base == ARM64_REG_SP && arm64.operands[1].mem.disp == 8);
+                }
+                if (valid && cookie && branch.has_value() && ret < count) {
+                    const cs_arm64& compared = decoded[branch.value() - 1].detail->arm64;
+                    const cs_insn& last      = decoded[ret - 1];
+                    const cs_arm64& lastOps  = last.detail->arm64;
+                    if (ret == branch.value() + 1 && compared.op_count == 2 && compared.operands[0].type == ARM64_OP_REG &&
+                        compared.operands[0].reg == ARM64_REG_X0)
+                        name = "__security_check_cookie";
+                    else if (
+                          framed && ret == branch.value() + 2 && last.id == ARM64_INS_ADD && lastOps.op_count == 3 &&
+                          lastOps.operands[0].type == ARM64_OP_REG && lastOps.operands[0].reg == ARM64_REG_SP && lastOps.operands[1].type == ARM64_OP_REG &&
+                          lastOps.operands[1].reg == ARM64_REG_SP && lastOps.operands[2].type == ARM64_OP_IMM && lastOps.operands[2].imm == 0x10)
+                        name = "__security_pop_cookie";
+                }
+            }
+            if (count > 0)
+                cs_free(decoded, count);
+            if (!name.empty() && usedNames.insert(std::string(name)).second)
+                callsFound[index].second = std::string(name);
+        }
+    }
+
     // ARM64: the helpers of the zone that keep the registers of their caller and may move its sp (Arm64HelperStackChange: the cookie helpers
     // of MSVC /GS, __chkstk), the calls to them (stackHelperCalls); read once per callee before the frames (a read through the cache during
     // the walk of a frame would invalidate the bytes of its function)
@@ -3756,6 +3940,28 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
         const auto* import = findImport ? findImport(operands) : nullptr;
         return import && import->type == MemoryMappingType::FunctionMapping ? import->name : std::string();
+    }
+
+    // a direct target in another code zone with a prototype there (OtherZonePrototype), by target: the gates of NameVariablesFromCalls and
+    // CollectArgumentDefinitions ask it for every call out of the zone (the PLT stubs of an ELF file, another section)
+    std::unordered_map<uint64, std::pair<DissasmArch, bool>> otherZoneTargets;
+    bool HasOtherZonePrototype(uint64 target, DissasmArch functionArch)
+    {
+        if (target == NO_TARGET || target < codeSize)
+            return false;
+        const auto known = otherZoneTargets.find(target);
+        if (known != otherZoneTargets.end() && known->second.first == functionArch)
+            return known->second.second;
+        const bool found = OtherZonePrototype(target, functionArch) != nullptr;
+        otherZoneTargets.insert_or_assign(target, std::make_pair(functionArch, found));
+        return found;
+    }
+
+    // a call of the method of a COM interface that has a prototype (TrackComInterfaces: CalleePrototype names its arguments)
+    bool HasComMethodPrototype(uint64 callAddress) const
+    {
+        const auto method = interfaceCalls.find(callAddress);
+        return method != interfaceCalls.end() && FindComMethodPrototype(method->second) != nullptr;
     }
 
     // the prototype of the callee of a call: the one the user gave to a function of the zone (Y), else the one of the API it is (libc's own
@@ -4553,8 +4759,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         const auto hasPrototype = [&](const FlowRecord& record) {
             if (knownPrototypeCalls.contains(record.address) || demangledPrototypeCalls.contains(record.address))
                 return true; // through the slot of an import with a prototype (a demangled C++ name too)
+            if (HasComMethodPrototype(record.address))
+                return true; // the method of a COM interface (call [rax + 0x18], the CFG dispatch of x64)
             if (record.target == NO_TARGET)
                 return false;
+            if (HasOtherZonePrototype(record.target, zone->GetArchAt(record.address)))
+                return true; // a function of another code zone (its inferred prototype, the user's)
             auto known = targetsWithPrototype.find(record.target);
             if (known == targetsWithPrototype.end()) {
                 const std::string name = TargetName(record.target);
@@ -6580,8 +6790,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const auto& record = flowRecords[position];
             if (record.kind != FlowKind::Call)
                 continue;
-            if (knownPrototypeCalls.contains(record.address) || demangledPrototypeCalls.contains(record.address)) {
-                callsKnownApi = true;
+            if (knownPrototypeCalls.contains(record.address) || demangledPrototypeCalls.contains(record.address) || HasComMethodPrototype(record.address) ||
+                HasOtherZonePrototype(record.target, functionArch)) {
+                callsKnownApi = true; // an API, a COM method, a function of another code zone (CalleePrototype)
                 break;
             }
             if (record.target == NO_TARGET)
@@ -7288,6 +7499,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             instructionSet.reachablePadding = reachedBefore;
         }
         FinishSweep();
+        NameSecurityCookieFunctions();
+        NameOtherZoneThunks();
         switchCaseTargets = SwitchCases();
         ComputeFunctionEnds();
         DetectFunctionChunks();

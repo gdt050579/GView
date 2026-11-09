@@ -15760,3 +15760,165 @@ TEST_CASE("X86JumpedFormatConversions", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x00000004  push   5").ends_with("; %d"));
     REQUIRE(FindListingLine(listing, "0x00000006  push   esi").ends_with("; %s"));
 }
+
+TEST_CASE("SecurityCookieCheckFunctions", "[Dissasm]Help")
+{
+    // MSVC /GS: the function of the run-time that compares the cookie of the frame with __security_cookie (the variable of the load config)
+    // is __security_check_cookie (x64: rcx, its argument named StackCookie); the same code comparing another variable keeps its sub_ name
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,                   // 0x00: sub rsp, 0x28
+        0xE8, 0x57, 0x00, 0x00, 0x00,             // 0x04: call 0x60
+        0x48, 0x8B, 0x4C, 0x24, 0x20,             // 0x09: mov rcx, qword ptr [rsp + 0x20]
+        0x48, 0x31, 0xE1,                         // 0x0e: xor rcx, rsp
+        0xE8, 0x2A, 0x00, 0x00, 0x00,             // 0x11: call 0x40
+        0x48, 0x83, 0xC4, 0x28,                   // 0x16: add rsp, 0x28
+        0xC3,                                     // 0x1a: ret
+    };
+    file.resize(0x40, 0xCC);
+    const unsigned char check[] = {
+        0x48, 0x3B, 0x0D, 0x39, 0x00, 0x00, 0x00, // 0x40: cmp rcx, qword ptr [rip + 0x39] (0x80: __security_cookie)
+        0x75, 0x10,                               // 0x47: jne 0x59
+        0x48, 0xC1, 0xC1, 0x10,                   // 0x49: rol rcx, 0x10
+        0x66, 0xF7, 0xC1, 0xFF, 0xFF,             // 0x4d: test cx, 0xffff
+        0x75, 0x01,                               // 0x52: jne 0x55
+        0xC3,                                     // 0x54: ret
+        0x48, 0xC1, 0xC9, 0x10,                   // 0x55: ror rcx, 0x10
+        0xE9, 0x1D, 0x00, 0x00, 0x00,             // 0x59: jmp 0x7b (__report_gsfailure)
+        0xCC, 0xCC,                               // 0x5e: int3
+        0x48, 0x3B, 0x0D, 0x21, 0x00, 0x00, 0x00, // 0x60: cmp rcx, qword ptr [rip + 0x21] (0x88: another variable)
+        0x75, 0x0C,                               // 0x67: jne 0x75
+        0x48, 0xC1, 0xC1, 0x10,                   // 0x69: rol rcx, 0x10
+        0x66, 0xF7, 0xC1, 0xFF, 0xFF,             // 0x6d: test cx, 0xffff
+        0x75, 0x01,                               // 0x72: jne 0x75
+        0xC3,                                     // 0x74: ret
+        0x48, 0xC1, 0xC9, 0x10,                   // 0x75: ror rcx, 0x10
+        0xC3,                                     // 0x79: ret
+        0xCC,                                     // 0x7a: int3
+        0xC3,                                     // 0x7b: ret
+    };
+    file.insert(file.end(), std::begin(check), std::end(check));
+    file.resize(0x90, 0x00);
+    ZoneLayout layout;
+    layout.size             = 0x80; // the code; the variables follow it
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = {
+        { 0x80, { "__security_cookie", MemoryMappingType::TextMapping } },
+        { 0x88, { "g_value", MemoryMappingType::TextMapping } },
+    };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone                = *dissasmInstance.zone;
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(zone.GetLabelNameAt(0x40) == "__security_check_cookie");
+    REQUIRE(zone.GetLabelNameAt(0x60) == "sub_60");
+    REQUIRE(FindListingLine(listing, "0x00000011  call   __security_check_cookie").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000000e  xor    rcx, rsp").ends_with("; StackCookie"));
+
+    // 32 bit x86: cmp ecx, [__security_cookie]; jne; ret is @__security_check_cookie@4 (__fastcall: no argument of pushes)
+    std::vector<unsigned char> file32 = {
+        0x8B, 0x4D, 0xFC,                   // 0x00: mov ecx, dword ptr [ebp - 4]
+        0x33, 0xCD,                         // 0x03: xor ecx, ebp
+        0xE8, 0x16, 0x00, 0x00, 0x00,       // 0x05: call 0x20
+        0xC3,                               // 0x0a: ret
+    };
+    file32.resize(0x20, 0xCC);
+    const unsigned char check32[] = {
+        0x3B, 0x0D, 0x40, 0x00, 0x00, 0x00, // 0x20: cmp ecx, dword ptr [0x40] (__security_cookie)
+        0x75, 0x01,                         // 0x26: jne 0x29
+        0xC3,                               // 0x28: ret
+        0xE9, 0x02, 0x00, 0x00, 0x00,       // 0x29: jmp 0x30 (__report_gsfailure)
+        0xCC, 0xCC,                         // 0x2e: int3
+        0xC3,                               // 0x30: ret
+    };
+    file32.insert(file32.end(), std::begin(check32), std::end(check32));
+    file32.resize(0x48, 0x00);
+    ZoneLayout layout32;
+    layout32.size       = 0x40;
+    layout32.entryPoint = 0;
+    layout32.language   = DisassemblyLanguage::x86;
+    layout32.imports    = { { 0x40, { "__security_cookie", MemoryMappingType::TextMapping } } };
+    DissasmTestInstance instance32(file32.data(), file32.size(), true, layout32);
+    const std::string listing32 = instance32.GetListing();
+    INFO(listing32);
+    REQUIRE(instance32.zone->GetLabelNameAt(0x20) == "@__security_check_cookie@4");
+    REQUIRE(FindListingLine(listing32, "0x00000005  call   @__security_check_cookie@4").size() > 0);
+    REQUIRE(FindListingLine(listing32, "0x00000003  xor    ecx, ebp").find(';') == std::string_view::npos);
+}
+
+TEST_CASE("VariablesNamedAfterAnotherZone", "[Dissasm]Zones")
+{
+    // the variables of a PAGE function are named after the prototype of the .text function it calls (the user's there): it calls no API of
+    // its own, the prototype of another zone is enough to read its frame (lea rcx, [rsp + 0x20] passed as the count of fill -> count)
+    std::vector<unsigned char> file = {
+        0x31, 0xC0, // 0x00: xor eax, eax   fill (.text)
+        0xC3,       // 0x02: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), {
+                                  0x48, 0x83, 0xEC, 0x38,       // 0x40: sub rsp, 0x38   (PAGE)
+                                  0x48, 0x8D, 0x4C, 0x24, 0x20, // 0x44: lea rcx, [rsp + 0x20]
+                                  0xE8, 0xB2, 0xFF, 0xFF, 0xFF, // 0x49: call 0x00       fill
+                                  0x8B, 0x44, 0x24, 0x20,       // 0x4e: mov eax, dword ptr [rsp + 0x20]
+                                  0x48, 0x83, 0xC4, 0x38,       // 0x52: add rsp, 0x38
+                                  0xC3,                         // 0x56: ret
+                            });
+    file.resize(0x60, 0xCC);
+    ZoneLayout layout;
+    layout.size       = 0x40;
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance text(file.data(), file.size(), true, layout);
+    text.zone->userPrototypes[0x00] = "void fill(DWORD* count)";
+    layout.start      = 0x40;
+    layout.size       = 0x20;
+    layout.entryPoint = 0x40;
+    layout.siblings   = { text.zone.get() };
+    DissasmTestInstance page(file.data(), file.size(), true, layout);
+    const std::string listing = page.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000044  lea    rcx, [rsp + 0x38 + count]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000004e  mov    eax, dword ptr [rsp + 0x38 + count]").size() > 0);
+}
+
+TEST_CASE("GuardDispatchThunksOfOtherZones", "[Dissasm]Zones")
+{
+    // the CFG dispatch of x64 through the function override thunk of fothk (shell32): .text calls fothk+0x10 (a zone that calls nothing),
+    // which jumps to the jmp cs:__guard_dispatch_icall_fptr of .text: that one is j___guard_dispatch_icall_fptr, the fothk one a function
+    // (the call of .text) named j_j___guard_dispatch_icall_fptr
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,       // 0x00: sub rsp, 0x28   (.text)
+        0x48, 0x8B, 0x01,             // 0x04: mov rax, qword ptr [rcx]
+        0x48, 0x8B, 0x40, 0x10,       // 0x07: mov rax, qword ptr [rax + 0x10]
+        0xE8, 0x40, 0x00, 0x00, 0x00, // 0x0b: call 0x50       (fothk)
+        0x48, 0x83, 0xC4, 0x28,       // 0x10: add rsp, 0x28
+        0xC3,                         // 0x14: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xFF, 0x25, 0x5A, 0x00, 0x00, 0x00 }); // 0x20: jmp qword ptr [rip + 0x5a] (0x80: __guard_dispatch_icall_fptr)
+    file.resize(0x50, 0xCC);
+    file.insert(file.end(), { 0xE9, 0xCB, 0xFF, 0xFF, 0xFF }); // 0x50: jmp 0x20   (fothk)
+    file.resize(0x88, 0x00);
+    ZoneLayout layout;
+    layout.size             = 0x40;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x80, { "__guard_dispatch_icall_fptr", MemoryMappingType::TextMapping } } };
+    DissasmTestInstance text(file.data(), file.size(), true, layout);
+    REQUIRE(text.zone->GetLabelNameAt(0x20) == "j___guard_dispatch_icall_fptr");
+    layout.start      = 0x40;
+    layout.size       = 0x40;
+    layout.entryPoint = NO_ENTRY_POINT; // fothk has none
+    layout.siblings   = { text.zone.get() };
+    DissasmTestInstance fothk(file.data(), file.size(), true, layout);
+    const std::string listing = fothk.GetListing();
+    INFO(listing);
+    REQUIRE(fothk.zone->GetLabelNameAt(0x10) == "j_j___guard_dispatch_icall_fptr");
+    REQUIRE(FindListingLine(listing, "0x00000050  jmp    j___guard_dispatch_icall_fptr").size() > 0);
+    text.zone->siblingZones = { fothk.zone.get() };
+    const std::string textListing = text.GetListing();
+    INFO(textListing);
+    REQUIRE(FindListingLine(textListing, "0x0000000b  call   j_j___guard_dispatch_icall_fptr").size() > 0);
+}
