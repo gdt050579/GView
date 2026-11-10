@@ -3487,7 +3487,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // - x64: cmp rcx, [__security_cookie]; jne; rol rcx, 0x10; test cx, 0xffff; jne; ret: __security_check_cookie (rcx)
     // - x86: cmp ecx, [__security_cookie]; jne; ret: @__security_check_cookie@4 (__fastcall: ecx, so no prototype of pushes)
     // - ARM64: the cookie loaded (adrp; ldr / add, ldr), cmp x0 with it; b.ne; ret: __security_check_cookie (x0); the cookie of the frame read
-    //   at [sp, #8], its difference with sp compared; b.ne; add sp, sp, #0x10; ret: __security_pop_cookie (__security_push_cookie moved sp)
+    //   at [sp, #8], its difference with sp compared; b.ne; add sp, sp, #0x10; ret: __security_pop_cookie; sub sp, sp, #0x10, the cookie loaded,
+    //   its difference with sp stored at [sp, #8]; ret (no branch): __security_push_cookie (DbgHelp 1046 calls, d3dcompiler 1405)
     // Only a function with an automatic name (sub_), a name not given yet
     void NameSecurityCookieFunctions()
     {
@@ -3504,12 +3505,14 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const uint64 start = fileOffset - codeStart;
             if (zone->GetArchAt(start) != arch)
                 continue; // the x64 code of an ARM64X image
-            // the first bytes: cmp rcx, [rip + n] (48 3B 0D), cmp ecx, [n] (3B 0D); ARM64: an adrp
+            // the first bytes: cmp rcx, [rip + n] (48 3B 0D), cmp ecx, [n] (3B 0D); ARM64: an adrp, sub sp, sp, #0x10 (FF 43 00 D1: the push)
             const auto head = obj->GetData().Get(fileOffset, 4, false);
             if (!head.IsValid() || head.GetLength() < 4)
                 continue;
-            const uint8* b     = head.GetData();
-            const bool matches = isArm64 ? (b[3] & 0x9F) == 0x90 : (is64 ? b[0] == 0x48 && b[1] == 0x3B && b[2] == 0x0D : b[0] == 0x3B && b[1] == 0x0D);
+            const uint8* b      = head.GetData();
+            const bool subsSp16 = b[0] == 0xFF && b[1] == 0x43 && b[2] == 0x00 && b[3] == 0xD1;
+            const bool matches =
+                  isArm64 ? (b[3] & 0x9F) == 0x90 || subsSp16 : (is64 ? b[0] == 0x48 && b[1] == 0x3B && b[2] == 0x0D : b[0] == 0x3B && b[1] == 0x0D);
             if (matches)
                 candidates.push_back(index);
         }
@@ -3557,7 +3560,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 }
             } else if (count > 0) {
                 // up to the first ret: the cookie read, one b.ne after the cmp, nothing else that branches
-                bool cookie = false, framed = false, valid = true;
+                bool cookie = false, framed = false, stored = false, valid = true;
                 std::optional<size_t> branch;
                 size_t ret = count;
                 for (size_t position = 0; position < count && valid; position++) {
@@ -3574,10 +3577,18 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                           insn.id == ARM64_INS_CBZ || insn.id == ARM64_INS_CBNZ || insn.id == ARM64_INS_TBZ || insn.id == ARM64_INS_TBNZ)
                         valid = false;
                     cookie = cookie || readsCookie(insn);
-                    // ldr x16, [sp, #8]: the cookie the push stored
+                    // ldr x16, [sp, #8]: the cookie the push stored; str x17, [sp, #8]: the push
                     framed = framed || (insn.id == ARM64_INS_LDR && arm64.op_count == 2 && arm64.operands[1].type == ARM64_OP_MEM &&
                                         arm64.operands[1].mem.base == ARM64_REG_SP && arm64.operands[1].mem.disp == 8);
+                    stored = stored || (insn.id == ARM64_INS_STR && arm64.op_count == 2 && arm64.operands[1].type == ARM64_OP_MEM &&
+                                        arm64.operands[1].mem.base == ARM64_REG_SP && arm64.operands[1].mem.disp == 8);
                 }
+                const cs_arm64& firstOps = decoded[0].detail->arm64;
+                const bool movesSp       = decoded[0].id == ARM64_INS_SUB && firstOps.op_count == 3 && firstOps.operands[0].type == ARM64_OP_REG &&
+                                     firstOps.operands[0].reg == ARM64_REG_SP && firstOps.operands[1].type == ARM64_OP_REG &&
+                                     firstOps.operands[1].reg == ARM64_REG_SP && firstOps.operands[2].type == ARM64_OP_IMM && firstOps.operands[2].imm == 0x10;
+                if (valid && cookie && movesSp && stored && !branch.has_value() && ret < count)
+                    name = "__security_push_cookie";
                 if (valid && cookie && branch.has_value() && ret < count) {
                     const cs_arm64& compared = decoded[branch.value() - 1].detail->arm64;
                     const cs_insn& last      = decoded[ret - 1];
@@ -3596,6 +3607,69 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 cs_free(decoded, count);
             if (!name.empty() && usedNames.insert(std::string(name)).second)
                 callsFound[index].second = std::string(name);
+        }
+    }
+
+    // the functions of the run-time linked statically, named by the first bytes of their code (a driver has no symbol for its memset; IDA names
+    // them by its signatures): the bytes are those of the run-time itself, exact (a start with an automatic name only, a name given once)
+    // - x64 memset of the CRT of the WDK: mov rax, rcx; movzx edx, dl; mov r9, 0x0101010101010101; imul rdx, r9 (405 of the 495 drivers of a
+    //   Windows 11; ntfs 1004 calls)
+    // - x64 memcpy (memmove, the same code): mov rax, rcx; cmp r8, 8; jb; cmp r8, 0x10; ja; mov r11, [rdx]; mov rdx, [rdx + r8 - 8]; mov [rcx],
+    //   r11; mov [rcx + r8 - 8], rdx; ret (410 drivers, 28 DLLs; ntfs 629 calls)
+    // - x64 RtlULongAdd / RtlULongLongAdd of ntintsafe.h (a function when not inlined; the ULONG / UINT / DWORD ones fold into one): lea eax,
+    //   [rcx + rdx]; mov edx, -1; cmp eax, ecx; cmovae edx, eax; sbb eax, eax; and eax, STATUS_INTEGER_OVERFLOW; mov [r8], edx; ret (shell32
+    //   2509 + 1910 calls, 17 other DLLs)
+    void NameRunTimeFunctionsByCode()
+    {
+        struct RunTimeCode {
+            DissasmArch arch;
+            std::string_view name;
+            std::span<const uint8> bytes;
+        };
+        static constexpr uint8 MEMSET_X64[]        = { 0x48, 0x8B, 0xC1, 0x0F, 0xB6, 0xD2, 0x49, 0xB9, 0x01, 0x01,
+                                                       0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x49, 0x0F, 0xAF, 0xD1 };
+        static constexpr uint8 MEMCPY_X64[]        = { 0x48, 0x8B, 0xC1, 0x49, 0x83, 0xF8, 0x08, 0x72, 0x37, 0x49, 0x83, 0xF8, 0x10, 0x77, 0x11, 0x4C,
+                                                       0x8B, 0x1A, 0x4A, 0x8B, 0x54, 0x02, 0xF8, 0x4C, 0x89, 0x19, 0x4A, 0x89, 0x54, 0x01, 0xF8, 0xC3 };
+        static constexpr uint8 ULONG_ADD_X64[]     = { 0x8D, 0x04, 0x11, 0xBA, 0xFF, 0xFF, 0xFF, 0xFF, 0x3B, 0xC1, 0x0F, 0x43,
+                                                       0xD0, 0x1B, 0xC0, 0x25, 0x95, 0x00, 0x00, 0xC0, 0x41, 0x89, 0x10, 0xC3 };
+        static constexpr uint8 ULONGLONG_ADD_X64[] = { 0x48, 0x8D, 0x04, 0x11, 0x48, 0xC7, 0xC2, 0xFF, 0xFF, 0xFF, 0xFF, 0x48, 0x3B, 0xC1, 0x48,
+                                                       0x0F, 0x43, 0xD0, 0x1B, 0xC0, 0x25, 0x95, 0x00, 0x00, 0xC0, 0x49, 0x89, 0x10, 0xC3 };
+
+        static const RunTimeCode codes[] = {
+            { DissasmArch::X64, "memset", MEMSET_X64 },
+            { DissasmArch::X64, "memcpy", MEMCPY_X64 },
+            { DissasmArch::X64, "RtlULongAdd", ULONG_ADD_X64 },
+            { DissasmArch::X64, "RtlULongLongAdd", ULONGLONG_ADD_X64 },
+        };
+        constexpr uint32 MAX_BYTES = 32;
+        if (arch != DissasmArch::X64 && !zone->IsArm64Code())
+            return; // the table has x64 code only (an ARM64X zone has x64 ranges)
+        std::unordered_set<std::string> usedNames;
+        bool namesRead = false;
+        for (auto& call : callsFound) {
+            if (call.first < codeStart || call.first - codeStart >= codeSize || GetLabelType(call.second) != SUB)
+                continue;
+            const uint64 start          = call.first - codeStart;
+            const DissasmArch startArch = zone->GetArchAt(start);
+            const uint32 length         = static_cast<uint32>(std::min<uint64>(codeSize - start, MAX_BYTES));
+            std::optional<BufferView> view;
+            for (const auto& code : codes) {
+                if (code.arch != startArch || code.bytes.size() > length)
+                    continue;
+                if (!view.has_value())
+                    view = obj->GetData().Get(call.first, length, false);
+                if (!view->IsValid() || view->GetLength() < code.bytes.size() || memcmp(view->GetData(), code.bytes.data(), code.bytes.size()) != 0)
+                    continue;
+                if (!namesRead) {
+                    for (const auto& other : callsFound)
+                        if (GetLabelType(other.second) != SUB)
+                            usedNames.insert(other.second);
+                    namesRead = true;
+                }
+                if (usedNames.insert(std::string(code.name)).second)
+                    call.second = std::string(code.name);
+                break;
+            }
         }
     }
 
@@ -7501,6 +7575,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         FinishSweep();
         NameSecurityCookieFunctions();
         NameOtherZoneThunks();
+        NameRunTimeFunctionsByCode();
         switchCaseTargets = SwitchCases();
         ComputeFunctionEnds();
         DetectFunctionChunks();

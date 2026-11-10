@@ -15922,3 +15922,123 @@ TEST_CASE("GuardDispatchThunksOfOtherZones", "[Dissasm]Zones")
     INFO(textListing);
     REQUIRE(FindListingLine(textListing, "0x0000000b  call   j_j___guard_dispatch_icall_fptr").size() > 0);
 }
+
+TEST_CASE("RunTimeFunctionsByCode", "[Dissasm]Help")
+{
+    // the memset / memcpy of the CRT of the WDK linked into a driver: named by the first bytes of their code, their arguments then named
+    // (memset(dest, c, count) of a buffer of the frame); the same bytes but one keep the sub_ name
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x48,       // 0x00: sub rsp, 0x48
+        0x48, 0x8D, 0x4C, 0x24, 0x20, // 0x04: lea rcx, [rsp + 0x20]
+        0x33, 0xD2,                   // 0x09: xor edx, edx
+        0x41, 0xB8, 0x10, 0x00, 0x00, 0x00, // 0x0b: mov r8d, 0x10
+        0xE8, 0x2A, 0x00, 0x00, 0x00, // 0x11: call 0x40   memset
+        0xE8, 0x65, 0x00, 0x00, 0x00, // 0x16: call 0x80   memcpy
+        0xE8, 0xE0, 0x00, 0x00, 0x00, // 0x1b: call 0x100  (not memcpy: one byte differs)
+        0x48, 0x83, 0xC4, 0x48,       // 0x20: add rsp, 0x48
+        0xC3,                         // 0x24: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x48, 0x8B, 0xC1, 0x0F, 0xB6, 0xD2, 0x49, 0xB9, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, // 0x40: memset
+                              0x49, 0x0F, 0xAF, 0xD1, 0xC3 });
+    file.resize(0x80, 0xCC);
+    const std::vector<unsigned char> memcpyCode = { 0x48, 0x8B, 0xC1, 0x49, 0x83, 0xF8, 0x08, 0x72, 0x37, 0x49, 0x83, 0xF8, 0x10, 0x77, 0x11, 0x4C,
+                                                    0x8B, 0x1A, 0x4A, 0x8B, 0x54, 0x02, 0xF8, 0x4C, 0x89, 0x19, 0x4A, 0x89, 0x54, 0x01, 0xF8, 0xC3 };
+    file.insert(file.end(), memcpyCode.begin(), memcpyCode.end()); // 0x80: memcpy (its jumps go past the end: a test of the bytes only)
+    file.resize(0x100, 0xCC); // the targets of its jumps: padding
+    file.insert(file.end(), memcpyCode.begin(), memcpyCode.end()); // 0x100: the same with cmp r8, 9
+    file[0x100 + 6] = 0x09;
+    file.resize(0x160, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(dissasmInstance.zone->GetLabelNameAt(0x40) == "memset");
+    REQUIRE(dissasmInstance.zone->GetLabelNameAt(0x80) == "memcpy");
+    REQUIRE(dissasmInstance.zone->GetLabelNameAt(0x100) == "sub_100");
+    REQUIRE(FindListingLine(listing, "0x00000009  xor    edx, edx").ends_with("; c"));
+    REQUIRE(FindListingLine(listing, "0x0000000b  mov    r8d, 0x10").ends_with("; count"));
+    REQUIRE(FindListingLine(listing, "0x00000004  lea    rcx, [rsp + 0x48 + dest]").size() > 0);
+}
+
+TEST_CASE("IntsafeAdditionsByCode", "[Dissasm]Help")
+{
+    // RtlULongAdd / RtlULongLongAdd of ntintsafe.h, not inlined (shell32): named by their code, their arguments and the slot of the result
+    // named after their prototype
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x48,             // 0x00: sub rsp, 0x48
+        0x4C, 0x8D, 0x44, 0x24, 0x20,       // 0x04: lea r8, [rsp + 0x20]
+        0xBA, 0x05, 0x00, 0x00, 0x00,       // 0x09: mov edx, 5
+        0x8B, 0xC8,                         // 0x0e: mov ecx, eax
+        0xE8, 0x2B, 0x00, 0x00, 0x00,       // 0x10: call 0x40   RtlULongAdd
+        0x4C, 0x8D, 0x44, 0x24, 0x28,       // 0x15: lea r8, [rsp + 0x28]
+        0xE8, 0x41, 0x00, 0x00, 0x00,       // 0x1a: call 0x60   RtlULongLongAdd
+        0x48, 0x83, 0xC4, 0x48,             // 0x1f: add rsp, 0x48
+        0xC3,                               // 0x23: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x8D, 0x04, 0x11, 0xBA, 0xFF, 0xFF, 0xFF, 0xFF, 0x3B, 0xC1, 0x0F, 0x43, // 0x40: RtlULongAdd
+                              0xD0, 0x1B, 0xC0, 0x25, 0x95, 0x00, 0x00, 0xC0, 0x41, 0x89, 0x10, 0xC3 });
+    file.resize(0x60, 0xCC);
+    file.insert(file.end(), { 0x48, 0x8D, 0x04, 0x11, 0x48, 0xC7, 0xC2, 0xFF, 0xFF, 0xFF, 0xFF, 0x48, 0x3B, 0xC1, 0x48, // 0x60: RtlULongLongAdd
+                              0x0F, 0x43, 0xD0, 0x1B, 0xC0, 0x25, 0x95, 0x00, 0x00, 0xC0, 0x49, 0x89, 0x10, 0xC3 });
+    file.resize(0x80, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(dissasmInstance.zone->GetLabelNameAt(0x40) == "RtlULongAdd");
+    REQUIRE(dissasmInstance.zone->GetLabelNameAt(0x60) == "RtlULongLongAdd");
+    REQUIRE(FindListingLine(listing, "0x00000009  mov    edx, 5").ends_with("; ulAddend"));
+    REQUIRE(FindListingLine(listing, "0x0000000e  mov    ecx, eax").ends_with("; ulAugend"));
+    const auto result = FindListingLine(listing, "0x00000004  lea    r8, [rsp + 0x48 + ");
+    REQUIRE(result.size() > 0);
+    REQUIRE(result.find("var_") == std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000015  lea    r8, [rsp + 0x48 + ").find("var_") == std::string_view::npos);
+}
+
+TEST_CASE("Arm64SecurityPushCookie", "[Dissasm]Arm64")
+{
+    // MSVC /GS on ARM64: __security_push_cookie moves sp by 0x10 and stores the cookie (__security_cookie) minus sp at [sp, #8]: named by
+    // its code; the same code that reads another variable keeps its sub_ name
+    std::vector<unsigned char> file = {
+        0xFD, 0x7B, 0xBF, 0xA9, // 0x00: stp x29, x30, [sp, #-0x10]!
+        0xFD, 0x03, 0x00, 0x91, // 0x04: mov x29, sp
+        0x0E, 0x00, 0x00, 0x94, // 0x08: bl 0x40       __security_push_cookie
+        0x16, 0x00, 0x00, 0x94, // 0x0c: bl 0x64       (another variable)
+        0xFD, 0x7B, 0xC1, 0xA8, // 0x10: ldp x29, x30, [sp], #0x10
+        0xC0, 0x03, 0x5F, 0xD6, // 0x14: ret
+    };
+    file.resize(0x40, 0x00);
+    const std::vector<unsigned char> push = {
+        0xFF, 0x43, 0x00, 0xD1, // sub sp, sp, #0x10
+        0x11, 0x00, 0x00, 0xB0, // adrp x17, 0x1000
+        0x31, 0x0A, 0x40, 0xF9, // ldr x17, [x17, #0x10]    (0x1010: __security_cookie)
+        0xF1, 0x63, 0x31, 0xCB, // sub x17, sp, x17
+        0xF1, 0x07, 0x00, 0xF9, // str x17, [sp, #8]
+        0xC0, 0x03, 0x5F, 0xD6, // ret
+    };
+    file.insert(file.end(), push.begin(), push.end()); // 0x40
+    file.resize(0x64, 0x00);
+    file.insert(file.end(), push.begin(), push.end()); // 0x64: the same reading 0x1018
+    file[0x64 + 9] = 0x0E;                             // ldr x17, [x17, #0x18]
+    file.resize(0x1020, 0x00);
+    ZoneLayout layout;
+    layout.size             = 0x80;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::ARM64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x1010, { "__security_cookie", MemoryMappingType::TextMapping } }, { 0x1018, { "g_value", MemoryMappingType::TextMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(dissasmInstance.zone->GetLabelNameAt(0x40) == "__security_push_cookie");
+    REQUIRE(dissasmInstance.zone->GetLabelNameAt(0x64) == "sub_64");
+    REQUIRE(FindListingLine(listing, "0x00000008  bl     __security_push_cookie").size() > 0);
+}
