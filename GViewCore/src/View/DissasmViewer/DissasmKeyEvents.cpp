@@ -1,4 +1,7 @@
 #include "DissasmViewer.hpp"
+#include "DissasmReplayRecorder.hpp"
+#include "DissasmReplayController.hpp"
+#include <chrono>
 #include <cmath>
 
 using namespace GView::View::DissasmViewer;
@@ -113,6 +116,8 @@ void Instance::MoveScrollTo(int32 offset, int32 lines)
             Cursor.hasMovedView = true;
         }
     }
+    // the replay journal: a click is a visit, a keyboard move once the cursor rests on the line
+    replay->NoteCursorMoved(mouseClickInProgress);
     /*if (this->Cursor.startViewLine > old)
         MoveTo(offset, 0, false);
     else
@@ -136,7 +141,9 @@ void Instance::OnMousePressed(int x, int y, Input::MouseButton button, Input::Ke
         if (button == MouseButton::Left && (mpInfo.lines != Cursor.lineInView || mpInfo.offset != Cursor.offset)) {
             const int32 linesDiff  = static_cast<int32>(mpInfo.lines) - Cursor.lineInView;
             const int32 offsetDiff = static_cast<int32>(mpInfo.offset) - Cursor.offset;
+            mouseClickInProgress   = true;
             MoveTo(offsetDiff, linesDiff, keyCode, false);
+            mouseClickInProgress = false;
         } else if (button == MouseButton::Right) {
             // the menu acts on the clicked line (it acted on the line of the cursor); a click inside the selection keeps it (the selection
             // based actions: collapsible zones, assistant)
@@ -146,9 +153,12 @@ void Instance::OnMousePressed(int x, int y, Input::MouseButton button, Input::Ke
             if (!insideSelection && (mpInfo.lines != Cursor.lineInView || mpInfo.offset != Cursor.offset)) {
                 const int32 linesDiff  = static_cast<int32>(mpInfo.lines) - Cursor.lineInView;
                 const int32 offsetDiff = static_cast<int32>(mpInfo.offset) - Cursor.offset;
+                mouseClickInProgress = true; // a visit of the replay journal at once, as a left click
                 MoveTo(offsetDiff, linesDiff, Key::None, false);
+                mouseClickInProgress = false;
             }
-            rightClickMenu.Show(this, x, y);
+            // a window of a teacher's solution: the menu without the edits
+            (IsReadOnlyRole() ? readOnlyRightClickMenu : rightClickMenu).Show(this, x, y);
         }
     } else if (mpInfo.location == MouseLocation::Outside) {
         // the buttons of the zones and the bullets of the collapsible zones inside the code zones; they are placed on screen rows (1 for the
@@ -195,8 +205,67 @@ bool Instance::OnMouseWheel(int, int, Input::MouseWheel direction, Input::Key)
     return false;
 }
 
+bool Instance::IsAnnotationEditCommand(uint32 commandId)
+{
+    // what a window of a teacher's solution allows: the moves, following the code, the lists and the searches, the view settings,
+    // the jumps history and the replay; everything else changes (or exports / imports) the annotations
+    if (commandId >= COMMAND_NAV_DOWN && commandId <= COMMAND_NAV_SCROLL_RIGHT)
+        return false;
+    switch (commandId) {
+    case COMMAND_NAV_SPACE:
+    case COMMAND_NAV_OPEN:
+    case COMMAND_CHANGE_ADDRESS_MODE:
+    case COMMAND_SHOW_XREFS:
+    case COMMAND_SHOW_FUNCTIONS:
+    case COMMAND_SHOW_IMPORTS:
+    case COMMAND_SHOW_STRINGS:
+    case COMMAND_FIND_NEXT:
+    case COMMAND_COMMAND_PALETTE:
+    case COMMAND_SHOW_CALL_TREE:
+    case COMMAND_SHOW_GRAPH:
+    case COMMAND_GOTO_ADDRESS:
+    case COMMAND_FIND:
+    case COMMAND_TOGGLE_KEY_PROFILE:
+    case COMMAND_SHOW_ONLY_DISSASM:
+    case COMMAND_ADD_SHOW_FILE_CONTENT:
+    case COMMAND_JUMP_BACK:
+    case COMMAND_JUMP_FORWARD:
+    case COMMAND_DISSAM_GOTO_ENTRYPOINT:
+    case COMMAND_SHOW_BOOKMARKS:
+    case COMMAND_REPLAY_BACK:
+    case COMMAND_REPLAY_FORWARD:
+    case COMMAND_REPLAY_TO_START:
+    case COMMAND_REPLAY_TO_END:
+    case RIGHT_CLICK_CLEAR_SELECTION:
+    case RIGHT_CLICK_DISSASM_COLLAPSE_ZONE:
+    case RIGHT_CLICK_DISSASM_EXPAND_ZONE:
+        return false;
+    default:
+        return true;
+    }
+}
+
+bool Instance::RefuseInReadOnly(uint32 commandId)
+{
+    if (!IsReadOnlyRole() || !IsAnnotationEditCommand(commandId))
+        return false;
+    // one notification for a burst of refused keys (a key held down)
+    constexpr uint64 READ_ONLY_NOTICE_MS = 3000;
+    const uint64 now = static_cast<uint64>(
+          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+    if (readOnlyNoticeMs == 0 || now - readOnlyNoticeMs >= READ_ONLY_NOTICE_MS) {
+        Dialogs::MessageBox::ShowNotification(
+              "Teacher solution", "This window shows the teacher's solution: it is read only. Make your changes in your own task window.");
+        readOnlyNoticeMs = static_cast<uint64>(
+              std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+    }
+    return true;
+}
+
 bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
 {
+    if (RefuseInReadOnly(commandId)) // a teacher's solution: only the moves and following the code
+        return true;
     switch (commandId) {
     case COMMAND_NAV_DOWN:
         if (Cursor.startViewLine + Cursor.lineInView + 1 <= Layout.totalLinesSize)
@@ -330,6 +399,7 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
 
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
 {
+    ApplyPendingWorkDocument(); // the frontends without frame updates: the first key applies the document the window was opened with
     const auto action = Config::Map.Resolve(keyCode);
     if (keyCode == Key::Escape && aiNaming.zone) {
         StopAINaming(); // the names received so far stay
@@ -353,6 +423,8 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
     // the IDA profile: : adds a comment, ; a repeatable one (they are characters, not keys of AppCUI)
     if (Config::ActiveKeyProfile == Config::KeyProfile::IDA && (charCode == ';' || charCode == ':') &&
         (keyCode & (Key::Ctrl | Key::Alt)) == Key::None) {
+        if (RefuseInReadOnly(COMMAND_ADD_OR_EDIT_COMMENT))
+            return true;
         FinishDeepScans();
         if (charCode == ';')
             AddRepeatableComment();
@@ -374,16 +446,73 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
 
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
+    // a window of a teacher's solution: no edit, no undo / redo, no assistant
+    const bool readOnly = IsReadOnlyRole();
     for (const auto& cmd : config.CommandBarCommands)
-        commandBar.SetCommand(cmd.get().Key, cmd.get().Caption, cmd.get().CommandId);
+        if (!readOnly || !IsAnnotationEditCommand(cmd.get().CommandId))
+            commandBar.SetCommand(cmd.get().Key, cmd.get().Caption, cmd.get().CommandId);
     commandBar.SetCommand(config.OpenSelectionCommand.Key, config.OpenSelectionCommand.Caption, COMMAND_NAV_OPEN);
+    // the replay buttons only while the view plays a journal back
+    if (replayController) {
+        constexpr std::string_view captions[] = { "Back", "Forward", "To start", "To end" };
+        for (size_t index = 0; index < config.ReplayCommands.size(); index++) {
+            const auto& cmd = config.ReplayCommands[index].get();
+            if (cmd.Key != Key::None)
+                commandBar.SetCommand(cmd.Key, captions[index], cmd.CommandId);
+        }
+    }
 
     return false;
+}
+
+void Instance::RunReplayCommand(uint32 commandId)
+{
+    auto* controller = replayController.get();
+    if (!controller) {
+        Dialogs::MessageBox::ShowNotification("Replay", "This window does not play a replay journal back.");
+        return;
+    }
+    // the edits of the journal need the labels of the analysis, and its places may be in zones never drawn: every code zone is prepared
+    // and every pending scan ends first (as the other commands do)
+    FinishDeepScans();
+    replayWaitingForAnalysis = false;
+    switch (commandId) {
+    case COMMAND_REPLAY_BACK:
+        controller->StepBack();
+        break;
+    case COMMAND_REPLAY_FORWARD:
+        controller->StepForward();
+        break;
+    case COMMAND_REPLAY_TO_START:
+        controller->GoToStart();
+        break;
+    case COMMAND_REPLAY_TO_END:
+        controller->GoToEnd();
+        break;
+    default:
+        return;
+    }
+    RefreshDrawnLines(); // the edits / the zones changed (ZoneLinesChanged did the zones), the cursor moved
 }
 
 bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 {
     if (eventType == Event::Command) {
+        if (RefuseInReadOnly(static_cast<uint32>(ID))) // a teacher's solution: no edit, no import / export
+            return true;
+        switch (ID) { // the replay: no analysis to finish (the steps wait for it), the editor of the journal
+        case COMMAND_REPLAY_BACK:
+        case COMMAND_REPLAY_FORWARD:
+        case COMMAND_REPLAY_TO_START:
+        case COMMAND_REPLAY_TO_END:
+            RunReplayCommand(static_cast<uint32>(ID));
+            return true;
+        case COMMAND_EDIT_REPLAY_JOURNAL:
+            ShowReplayJournalEditor();
+            return true;
+        default:
+            break;
+        }
         FinishDeepScans(); // every command uses the analysis (labels, cross references, the cache, the export)
         switch (ID) {
         case COMMAND_ADD_NEW_TYPE:

@@ -10067,6 +10067,8 @@ std::string GView::View::DissasmViewer::ParseAssistantSuggestedName(std::string_
 
 void DissasmCodeZone::RecordEdit(DissasmEdit edit)
 {
+    if (editObserver)
+        editObserver->OnEdit(*this, edit); // before the history: the lines of a collapsible zone are still decodable
     constexpr size_t MAX_EDITS = 256;
     if (undoEdits.size() == MAX_EDITS)
         undoEdits.erase(undoEdits.begin());
@@ -10424,6 +10426,8 @@ std::optional<DissasmEditPlace> DissasmCodeZone::UndoEdit()
     undoEdits.pop_back();
     if (!ApplyEdit(edit, false))
         return {}; // its place has changed: it is dropped
+    if (editObserver)
+        editObserver->OnUndo(*this, edit);
     const auto place = GetEditPlace(edit);
     redoEdits.push_back(std::move(edit));
     return place;
@@ -10437,9 +10441,19 @@ std::optional<DissasmEditPlace> DissasmCodeZone::RedoEdit()
     redoEdits.pop_back();
     if (!ApplyEdit(edit, true))
         return {};
+    if (editObserver)
+        editObserver->OnRedo(*this, edit);
     const auto place = GetEditPlace(edit);
     undoEdits.push_back(std::move(edit));
     return place;
+}
+
+bool DissasmCodeZone::ApplyReplayEdit(const DissasmEdit& edit, bool forward)
+{
+    // the zones are kept by their lines in an edit: the replay places them by their anchors (ApplyReplayZoneEdit)
+    if (edit.kind == DissasmEdit::Kind::AddZone || edit.kind == DissasmEdit::Kind::RemoveZone)
+        return false;
+    return ApplyEdit(edit, forward);
 }
 
 bool DissasmCodeZone::AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd)
@@ -10627,14 +10641,52 @@ std::vector<DissasmCodeZone::CollapsibleZoneAnchors> DissasmCodeZone::GetCollaps
         return result;
     result.reserve(collapsibleZones.size());
     const auto zones = collapsibleZones; // building the lines does not change the zones, a copy keeps it obvious
-    for (const auto& zone : zones) {
-        const auto first = BuildExpandedLine(zone.start, 0, zoneObject, nullptr);
-        const auto last  = BuildExpandedLine(zone.end - 1u, 0, zoneObject, nullptr);
-        result.push_back({ GetLineAnchor(first), GetLineAnchor(last), zone.name, zone.isCollapsed });
-    }
+    for (const auto& zone : zones)
+        result.push_back(BuildCollapsibleZoneAnchors(zone));
     offsetCacheMaxLine = 0; // the decoding position moved
     ResetZoneCaching();
     return result;
+}
+
+DissasmCodeZone::CollapsibleZoneAnchors DissasmCodeZone::BuildCollapsibleZoneAnchors(const DissasmCollapsibleZone& zone)
+{
+    const auto first = BuildExpandedLine(zone.start, 0, zoneObject, nullptr);
+    const auto last  = BuildExpandedLine(zone.end - 1u, 0, zoneObject, nullptr);
+    return { GetLineAnchor(first), GetLineAnchor(last), zone.name, zone.isCollapsed };
+}
+
+std::optional<DissasmCodeZone::CollapsibleZoneAnchors> DissasmCodeZone::GetAnchorsOfCollapsibleZone(const DissasmCollapsibleZone& zone)
+{
+    if (!CanReachAsmLines() || !zoneObject.IsValid() || zone.start >= zone.end || zone.end > GetExpandedLinesCount())
+        return {};
+    auto anchors       = BuildCollapsibleZoneAnchors(zone);
+    offsetCacheMaxLine = 0; // the decoding position moved
+    ResetZoneCaching();
+    return anchors;
+}
+
+bool DissasmCodeZone::ApplyReplayZoneEdit(const CollapsibleZoneAnchors& anchors, bool add)
+{
+    const auto first = GetExpandedLineOfAnchor(anchors.first);
+    const auto last  = GetExpandedLineOfAnchor(anchors.last);
+    offsetCacheMaxLine = 0; // the decoding position moved
+    ResetZoneCaching();
+    if (!first.has_value() || !last.has_value() || first.value() > last.value())
+        return false; // this analysis does not have its lines
+    DissasmCollapsibleZone zone{ first.value(), last.value() + 1u, anchors.name, anchors.isCollapsed };
+    if (add) {
+        if (!CanPlaceZone(zone))
+            return false;
+        InsertZone(std::move(zone));
+        return true;
+    }
+    const auto found = std::find_if(collapsibleZones.begin(), collapsibleZones.end(), [&zone](const DissasmCollapsibleZone& item) {
+        return item.start == zone.start && item.end == zone.end;
+    });
+    if (found == collapsibleZones.end())
+        return false;
+    collapsibleZones.erase(found);
+    return true;
 }
 
 std::optional<uint32> DissasmCodeZone::GetExpandedLineOfAnchor(const DissasmCommentAnchor& anchor)

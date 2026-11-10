@@ -5,6 +5,8 @@
 #include "DissasmChainedFixups.hpp"
 #include "DissasmObjC.hpp"
 #include "DissasmRtti.hpp"
+#include "DissasmReplayRecorder.hpp"
+#include "DissasmReplayController.hpp"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -70,6 +72,22 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     for (auto& menu_command : RIGHT_CLICK_MENU_COMMANDS) {
         rightClickMenu.AddCommandItem(menu_command.text, menu_command.commandID);
     }
+    // the windows of a teacher's solution (read only): the collapsible zones can be opened / closed, nothing is edited
+    readOnlyRightClickMenu.AddCommandItem("Expand zone", RIGHT_CLICK_DISSASM_EXPAND_ZONE);
+    readOnlyRightClickMenu.AddCommandItem("Collapse zone", RIGHT_CLICK_DISSASM_COLLAPSE_ZONE);
+    readOnlyRightClickMenu.AddCommandItem("Clear selections", RIGHT_CLICK_CLEAR_SELECTION);
+
+    // the replay journal: the places are the lines of the code zones of this view
+    DissasmReplayRecorder::Resolver resolver;
+    resolver.cursorPlace = [this]() -> std::optional<DissasmReplayRecorder::ResolvedPlace> {
+        const auto place = ResolveCursorPlace();
+        return place.has_value() ? std::optional<DissasmReplayRecorder::ResolvedPlace>({ place->first, place->second }) : std::nullopt;
+    };
+    resolver.placeOf = [this](const CursorState& state) -> std::optional<DissasmReplayRecorder::ResolvedPlace> {
+        const auto place = ResolvePlace(state);
+        return place.has_value() ? std::optional<DissasmReplayRecorder::ResolvedPlace>({ place->first, place->second }) : std::nullopt;
+    };
+    replay = std::make_unique<DissasmReplayRecorder>(std::move(resolver));
     // rightClickOffset = 0;
 
     // the colors of the instructions: GetX86MnemonicColor / GetX86TokenColor (x86_x64/DissasmX86.cpp)
@@ -189,6 +207,18 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint
         return;
 
     int x = 0;
+    // a replay: its step on the first row (the only row when there is one), the cursor information below it
+    if (const auto replayStatus = ReplayStatusText(); !replayStatus.empty() && height >= 1) {
+        renderer.WriteSingleLineText(0, 0, replayStatus, this->ColorMan.Colors.CursorHighlighted);
+        if (height == 1)
+            return;
+        x = PrintCursorPosInfo(x, 1, 16, false, renderer);
+        x = PrintCursorLineInfo(x, 1, 16, false, renderer);
+        x = PrintCursorValueInfo(x, 1, renderer);
+        x = PrintCursorLocationInfo(x, 1, renderer);
+        PrintCursorInstructionInfo(x, 1, renderer);
+        return;
+    }
     switch (height) {
     case 0:
         break;
@@ -1576,6 +1606,7 @@ bool Instance::ShowNavigationBandRow(int x, int y, bool recordJump)
     const uint64 line = std::min<uint64>(total - 1, (row * total + rows - 1) / rows);
     if (line == static_cast<uint64>(Cursor.startViewLine) + Cursor.lineInView)
         return true;
+    DissasmReplayJumpScope jumpScope(recordJump ? replay.get() : nullptr, DissasmReplayJumpKind::Band);
     const auto from      = SaveCursorState();
     Cursor.lineInView    = static_cast<uint32>(std::min<uint64>(std::min<uint32>(5, rows / 2), line));
     Cursor.startViewLine = static_cast<uint32>(line - Cursor.lineInView);
@@ -1605,6 +1636,7 @@ bool Instance::ShowGoToDialog()
     std::string error;
     std::optional<uint32> line;
     const auto fileOffset = ResolveGoToText(dlg.GetResultText(), error, line);
+    DissasmReplayJumpScope jumpScope(replay.get(), DissasmReplayJumpKind::GoTo);
     if (line.has_value()) {
         const uint32 currentLine = Cursor.lineInView + Cursor.startViewLine;
         if (line.value() != currentLine) {
@@ -1689,6 +1721,12 @@ void Instance::OnStart()
     if (settings->defaultLanguage == DisassemblyLanguage::Default)
         settings->defaultLanguage = DisassemblyLanguage::x86;
 
+    // the role of the window in a course (before the cache: a solution window never reads nor writes it) and the work document it was
+    // opened with (applied once the zones are analysed)
+    pendingWorkDocument = GView::Security::Learning::Hooks::TakePendingWorkDocument(obj, role);
+    if (IsReadOnlyRole())
+        replay->Suspend(true); // nothing of a solution window is recorded
+
     this->RecomputeDissasmLayout();
     this->RecomputeDissasmZones();
 
@@ -1768,6 +1806,11 @@ void Instance::RefreshDrawnLines()
 
 Instance::~Instance()
 {
+    replayController.reset(); // it refers to this view
+    // the zones belong to the settings (destroyed after the recorder): they must not tell a destroyed recorder about an edit
+    for (const auto& zone : settings->parseZones)
+        if (zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone)
+            static_cast<DissasmCodeZone*>(zone.get())->editObserver = nullptr;
     while (!settings->buffersToDelete.empty()) {
         char* bufferToDelete = settings->buffersToDelete.back();
         settings->buffersToDelete.pop_back();
@@ -2205,6 +2248,7 @@ void Instance::ProcessSpaceKey(bool goToEntryPoint)
             for (const auto& other : settings->parseZones) {
                 if (!isEntryZone(other))
                     continue;
+                DissasmReplayJumpScope jumpScope(replay.get(), DissasmReplayJumpKind::Entry);
                 if (GoToFileOffset(static_cast<DissasmCodeZone*>(other.get())->zoneDetails.entryPoint))
                     GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::GotoEntrypoint);
                 return;
@@ -2295,6 +2339,8 @@ void Instance::RestoreCursorState(const CursorState& state)
 void Instance::RecordJump(const CursorState& from)
 {
     jumps_holder.Record(from, SaveCursorState());
+    // pendingGoTo: the cursor reaches the destination once its zone is prepared (the next jump)
+    replay->OnJumpRecorded(from, pendingGoTo.has_value());
 }
 
 bool Instance::JumpInHistory(bool back)
@@ -2303,6 +2349,65 @@ bool Instance::JumpInHistory(bool back)
     if (!target.has_value())
         return false;
     RestoreCursorState(target.value());
+    replay->OnHistoryJump(back);
+    return true;
+}
+
+std::optional<std::pair<DissasmCodeZone*, DissasmCommentAnchor>> Instance::ResolvePlace(const CursorState& state) const
+{
+    // a line of an analysed code zone, below its title and its columns header
+    if (state.zoneIndex == CursorState::NO_ZONE || state.zoneIndex >= settings->parseZones.size() || state.lineInZone < 2)
+        return {};
+    const auto& parseZone = settings->parseZones[state.zoneIndex];
+    if (parseZone->zoneType != DissasmParseZoneType::DissasmCodeParseZone || parseZone->isCollapsed)
+        return {};
+    auto* zone = static_cast<DissasmCodeZone*>(parseZone.get());
+    if (!zone->isInit || zone->IsDeepScanPending() || !zone->CanReachAsmLines())
+        return {};
+    const auto anchor = zone->GetAnchorOfLine(state.lineInZone - 2u);
+    if (!anchor.has_value())
+        return {};
+    return std::make_pair(zone, anchor.value());
+}
+
+std::optional<std::pair<DissasmCodeZone*, DissasmCommentAnchor>> Instance::ResolveCursorPlace() const
+{
+    return ResolvePlace(SaveCursorState());
+}
+
+bool Instance::HasUnsavedCourseChanges() const
+{
+    return replay->IsDirty();
+}
+
+void Instance::MarkCourseWorkSaved(uint64 revision)
+{
+    courseWorkRevision = revision;
+    replay->ClearDirty();
+}
+
+std::string Instance::ReplayStatusText() const
+{
+    if (!replayController)
+        return {};
+    const size_t position = replayController->Position();
+    const size_t count    = replayController->Count();
+    std::string text      = "Replay: step " + std::to_string(position) + "/" + std::to_string(count) + " - ";
+    if (replayWaitingForAnalysis && HasPendingDeepScans())
+        return text + "wait, the analysis of the code is still running";
+    if (position == 0)
+        return text + (count == 0 ? "the journal is empty" : "at the start (Alt+Right: the first step)");
+    // without the time of the step: the step number says where the replay is
+    return text + replayController->Describe(position - 1, false);
+}
+
+bool Instance::IsCourseStateEmpty() const
+{
+    if (cacheData.hasCache || !replay->Journal().events.empty())
+        return false;
+    for (const auto& zone : settings->parseZones)
+        if (zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone && static_cast<const DissasmCodeZone*>(zone.get())->CanUndoEdit())
+            return false;
     return true;
 }
 

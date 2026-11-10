@@ -6,6 +6,9 @@
 #include "X86InstructionInfo.hpp"
 #include "DissasmAnnotations.hpp"
 #include "DissasmSignatures.hpp"
+#include "DissasmReplayRecorder.hpp"
+#include "DissasmReplayController.hpp"
+#include "DissasmWorkDocument.hpp"
 #include <capstone/capstone.h>
 #include <cassert>
 #include <ranges>
@@ -1729,6 +1732,7 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo* dli, DissasmCodeZone* zone)
 
     if (!zone->InitZone(initData))
         return false;
+    zone->editObserver = replay.get(); // the edits of the user go to the replay journal
     if (initData.hasAdjustedSize)
         AdjustZoneExtendedSize(zone, initData.adjustedZoneSize);
     if (zone->IsDeepScanPending())
@@ -1822,8 +1826,10 @@ void Instance::EndDeepScan(DissasmCodeZone* zone, bool cancel)
         zone->pendingReanalysisAddress.reset();
         AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // +1 for the title
         zone->asmPreCacheData.Clear();
-        if (address.has_value())
+        if (address.has_value()) {
+            DissasmReplaySuspendScope suspendRecording(replay.get()); // the cursor goes back to the edit: not a jump of the user
             MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + address.value(), false);
+        }
         if (!zone->zoneDetails.isData)
             RefreshDataZones(); // their labels are the places this code refers to
         ForgetLinesReferringTo(zone);
@@ -1962,6 +1968,9 @@ bool Instance::OnFrameUpdate()
     frameUpdatesSeen   = true;
     bool repaintAsked  = repaintRequested;
     repaintRequested   = false;
+    replay->Poll(); // a keyboard move that rested: a visit of the replay journal
+    if (ApplyPendingWorkDocument()) // the work document the window was opened with, once its zones are analysed
+        repaintAsked = true;
     if (aiNaming.zone && !HasPendingDeepScans()) { // the requests of the assistant (the labels must be known)
         const uint32 answered = aiNaming.answered;
         if (!RunAINamingStep(false) || aiNaming.answered != answered) {
@@ -2200,11 +2209,16 @@ void Instance::ImportAnnotations()
     DissasmAnnotationsImport result;
     std::string error;
     FinishDeepScans(); // the labels of the analysis receive the names
-    // the zones whose data (D / A) changed are analyzed again (at once: the names of the document go to the new labels)
-    if (!ImportAnnotationsDocument(document, zones, result, error, [this](DissasmCodeZone& zone) { return ReanalyzeZone(&zone, std::nullopt, false); })) {
-        Dialogs::MessageBox::ShowError("Error", error);
-        return;
+    {
+        // the replay journal: one Import event (not the new analyses of the zones it causes)
+        DissasmReplaySuspendScope suspendRecording(replay.get());
+        // the zones whose data (D / A) changed are analyzed again (at once: the names of the document go to the new labels)
+        if (!ImportAnnotationsDocument(document, zones, result, error, [this](DissasmCodeZone& zone) { return ReanalyzeZone(&zone, std::nullopt, false); })) {
+            Dialogs::MessageBox::ShowError("Error", error);
+            return;
+        }
     }
+    replay->OnImport(DissasmReplayImportSource::File);
     for (auto* zone : result.zonesWithNewLines) // a collapsed zone was placed
         AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u);
     RefreshDrawnLines();
@@ -2224,6 +2238,164 @@ void Instance::ImportAnnotations()
           result.suggestedNames + result.aiComments,
           result.skipped > 0 ? " (some entries do not match this analysis: skipped)" : "");
     Dialogs::MessageBox::ShowNotification("Annotations", summary.GetText());
+}
+
+std::string Instance::BuildWorkDocumentText(const DissasmWorkMeta& meta, bool includeReplay)
+{
+    FinishDeepScans(); // the names are the labels of the analysis
+    const auto zones = GetAnalysedCodeZones(settings.get());
+    if (zones.empty())
+        return {};
+    const std::filesystem::path filePath = obj->GetPath();
+    const auto fileName                  = filePath.filename().u8string();
+    const DissasmReplayJournal noJournal;
+    const auto document = BuildWorkDocument(
+          zones, std::string_view(reinterpret_cast<const char*>(fileName.data()), fileName.size()), includeReplay ? replay->Journal() : noJournal, meta);
+    return document.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace); // compact: it is sent to the course server
+}
+
+bool Instance::ApplyWorkDocument(std::string_view json, DissasmReplayImportSource source, std::string* summary)
+{
+    const auto fail = [summary](std::string reason) {
+        if (summary)
+            *summary = std::move(reason);
+        return false;
+    };
+    const auto document = nlohmann::json::parse(json.begin(), json.end(), nullptr, false);
+    if (document.is_discarded())
+        return fail("The work document is not a valid JSON document!");
+    DissasmWorkDocument work;
+    std::string error;
+    if (!ParseWorkDocument(document, work, error))
+        return fail(error);
+    const size_t steps = work.journal.events.size();
+    if (role == GView::Security::Learning::WorkspaceRole::Replay) {
+        // the window of a replay starts empty: the journal is played back step by step (CreateReplayController)
+        replay->ReplaceJournal(std::move(work.journal));
+        if (summary)
+            *summary = "Replay: " + std::to_string(steps) + " steps" + (work.skipped > 0 ? " (" + std::to_string(work.skipped) + " skipped)" : "");
+        return true;
+    }
+    FinishDeepScans(); // the labels of the analysis receive the names
+    const auto zones = GetAnalysedCodeZones(settings.get());
+    if (zones.empty())
+        return fail("The dissasm zones are not analysed yet!");
+    DissasmAnnotationsImport result;
+    {
+        DissasmReplaySuspendScope suspendRecording(replay.get()); // one Import event below, not the new analyses it causes
+        if (!ImportAnnotationsDocument(document, zones, result, error, [this](DissasmCodeZone& zone) { return ReanalyzeZone(&zone, std::nullopt, false); }))
+            return fail(error);
+    }
+    for (auto* zone : result.zonesWithNewLines) // a collapsed zone was placed
+        AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u);
+    RefreshDrawnLines();
+    navigationBandKey = 0; // the bookmarks of the document
+    // the journal of the document goes on in this window (the work of the student continues where it was saved); a document saved
+    // without its replay keeps the journal of this window
+    if (work.hasReplay && !work.journal.events.empty())
+        replay->ReplaceJournal(std::move(work.journal));
+    replay->OnImport(source);
+    if (summary) {
+        LocalString<256> text;
+        text.SetFormat(
+              "Imported: %u names, %u comments, %u variables, %u zones, %u bookmarks; replay: %u steps%s",
+              result.names,
+              result.comments + result.repeatableComments,
+              result.variables,
+              result.collapsibleZones,
+              result.bookmarks,
+              static_cast<uint32>(steps),
+              result.skipped + work.skipped > 0 ? " (some entries do not match this analysis: skipped)" : "");
+        *summary = text.GetText();
+    }
+    return true;
+}
+
+bool Instance::HasAnalysedCodeZones() const
+{
+    return !GetAnalysedCodeZones(settings.get()).empty();
+}
+
+void Instance::QueueWorkDocument(std::string json)
+{
+    pendingWorkDocument = std::move(json);
+    workDocumentError.clear();
+}
+
+bool Instance::ApplyPendingWorkDocument()
+{
+    if (!pendingWorkDocument.has_value())
+        return false;
+    // the zones are analysed when they are drawn: the document waits for the first paint
+    if (GetAnalysedCodeZones(settings.get()).empty())
+        return false;
+    const std::string text = std::move(pendingWorkDocument.value());
+    pendingWorkDocument.reset();
+    const bool solution = role == GView::Security::Learning::WorkspaceRole::Solution || role == GView::Security::Learning::WorkspaceRole::Replay;
+    workDocumentError.clear();
+    if (!ApplyWorkDocument(text, solution ? DissasmReplayImportSource::ServerSolution : DissasmReplayImportSource::ServerWork, &workDocumentError))
+        return false;
+    workDocumentError.clear();
+    replay->ClearDirty(); // the window shows what the server has: nothing to save yet
+    return true;
+}
+
+DissasmCodeZone* Instance::FindZone(uint64 fileOffset)
+{
+    for (const auto& zone : settings->parseZones) {
+        if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        auto* codeZone = static_cast<DissasmCodeZone*>(zone.get());
+        if (codeZone->zoneDetails.startingZonePoint == fileOffset && codeZone->CanReachAsmLines())
+            return codeZone;
+    }
+    return nullptr;
+}
+
+bool Instance::MoveCursor(DissasmCodeZone& zone, const DissasmCommentAnchor& anchor)
+{
+    const auto expandedLine = zone.GetExpandedLineOfAnchor(anchor);
+    if (!expandedLine.has_value())
+        return false;
+    // the line of the anchor, a few lines below the top of the view (a hidden line: the line of the collapsed zone that hides it)
+    const uint32 zoneLine = zone.ExpandedToDisplay(expandedLine.value()) + 2u; // +1 for the title, +1 for the columns header
+    Cursor.lineInView     = std::min<uint32>(5, zoneLine);
+    Cursor.startViewLine  = zoneLine + zone.startLineIndex - Cursor.lineInView;
+    Cursor.hasMovedView   = true;
+    return true;
+}
+
+void Instance::ZoneLinesChanged(DissasmCodeZone& zone)
+{
+    // as UndoOrRedo after an edit: the size of the zone (a collapsible zone added / removed), its prepared lines and what shows them
+    AdjustZoneExtendedSize(&zone, zone.GetDisplayLinesCount() + 1u); // +1 for the title
+    zone.asmPreCacheData.Clear();
+    ForgetLinesReferringTo(&zone); // the other zones name its labels
+    drawnLinesGeneration++;
+    cursorLineNumbers.computed = false;
+    navigationBandKey          = 0;
+}
+
+void Instance::Reanalyze(DissasmCodeZone& zone, std::optional<uint64> keepAddress)
+{
+    ReanalyzeZone(&zone, keepAddress, true); // as UndoOrRedo: a big zone continues in the frame updates
+    navigationBandKey = 0;
+}
+
+DissasmReplayController* Instance::CreateReplayController(DissasmReplayJournal journal)
+{
+    if (!replayController)
+        replay->Suspend(true); // the playback is not recorded
+    replayController = std::make_unique<DissasmReplayController>(std::move(journal), static_cast<DissasmReplayHost&>(*this));
+    return replayController.get();
+}
+
+void Instance::CloseReplayController()
+{
+    if (!replayController)
+        return;
+    replayController.reset();
+    replay->Suspend(false);
 }
 
 void Instance::CreateSignatures()
@@ -2346,6 +2518,8 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     // learning telemetry: source address + mnemonic of a followed jump/call (never operands or bytes)
     uint64 jumpFromAddress = 0;
     char jumpMnemonic[16]  = {};
+    // the replay journal: what makes the jump (the mnemonic is given once the instruction is decoded)
+    DissasmReplayJumpScope jumpScope(replay.get(), offsetToReach ? DissasmReplayJumpKind::Entry : DissasmReplayJumpKind::Follow);
     if (!zone->CanReachAsmLines()) {
         Dialogs::MessageBox::ShowNotification("Warning", "This dissasm zone is not an initialized code zone!");
         return;
@@ -2384,6 +2558,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
         jumpFromAddress = zone->GetFileOffsetOfAddress(insn->address).value_or(0);
         for (size_t i = 0; i + 1 < sizeof(jumpMnemonic) && insn->mnemonic[i] != 0; i++)
             jumpMnemonic[i] = insn->mnemonic[i];
+        replay->BeginJump(DissasmReplayJumpKind::Follow, jumpMnemonic);
         const auto operands     = zone->GetOperandsInfo(*insn);
         const auto target       = operands.directTarget;
         const auto targetOffset = target.has_value() ? zone->GetFileOffsetOfAddress(target.value()) : std::nullopt;
@@ -3144,6 +3319,7 @@ class BookmarksWindow : public AppCUI::Controls::Window
     }
 
   public:
+    // onDelete empty: read only (a window of a teacher's solution), no Delete button
     BookmarksWindow(const std::vector<std::array<std::string, 3>>& rows, std::function<void(size_t)> onDelete)
         : Window("Bookmarks", "d:c,w:90%,h:60%", WindowFlags::Sizeable), deleteRow(std::move(onDelete)), rows(rows), deleted(rows.size(), false)
     {
@@ -3151,7 +3327,8 @@ class BookmarksWindow : public AppCUI::Controls::Window
               this, "l:1,t:1,r:1,b:3", { "n:Description,w:50", "n:Address,w:20", "n:Location,w:40" }, ListViewFlags::PopupSearchBar | ListViewFlags::Sortable);
         FillList();
         Factory::Button::Create(this, "&Go", "l:1,b:0,w:10", BTN_GO);
-        Factory::Button::Create(this, "&Delete", "l:13,b:0,w:12", BTN_DELETE);
+        if (deleteRow)
+            Factory::Button::Create(this, "&Delete", "l:13,b:0,w:12", BTN_DELETE);
         Factory::Button::Create(this, "&Close", "r:1,b:0,w:10", BTN_CLOSE);
         list->SetFocus();
     }
@@ -3167,7 +3344,7 @@ class BookmarksWindow : public AppCUI::Controls::Window
             Exit(selectedRow.has_value() ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
             return true;
         }
-        if (eventType == Event::ButtonClicked && ID == BTN_DELETE) {
+        if (eventType == Event::ButtonClicked && ID == BTN_DELETE && deleteRow) {
             auto item = list->GetCurrentItem();
             if (const size_t row = item.IsValid() ? static_cast<size_t>(item.GetData(UINT64_MAX)) : rows.size(); row < rows.size()) {
                 deleteRow(row);
@@ -3213,15 +3390,19 @@ void Instance::ShowBookmarks()
         Dialogs::MessageBox::ShowNotification("Bookmarks", "There is no bookmark: Alt+M bookmarks the line of the cursor!");
         return;
     }
-    BookmarksWindow window(rows, [&places](size_t row) {
-        if (row < places.size())
-            places[row].zone->bookmarks.erase(places[row].address);
-    });
+    std::function<void(size_t)> onDelete;
+    if (!IsReadOnlyRole()) // a teacher's solution: the bookmarks are only listed
+        onDelete = [&places](size_t row) {
+            if (row < places.size())
+                places[row].zone->bookmarks.erase(places[row].address);
+        };
+    BookmarksWindow window(rows, std::move(onDelete));
     const bool go = window.Show() == Dialogs::Result::Ok && window.GetSelectedRow().has_value();
     navigationBandKey = 0; // the dots of the band
     if (!go || window.GetSelectedRow().value() >= places.size())
         return;
     const auto& place = places[window.GetSelectedRow().value()];
+    DissasmReplayJumpScope jumpScope(replay.get(), DissasmReplayJumpKind::Bookmark);
     if (place.zone->CanReachAsmLines())
         MoveCursorToZoneFileOffset(place.zone, place.zone->cachedCodeOffsets[0].offset + place.address, true);
 }
@@ -3308,6 +3489,8 @@ bool Instance::ReanalyzeZone(DissasmCodeZone* zone, std::optional<uint64> keepAd
         Dialogs::MessageBox::ShowError("Error", "The dissasm zone could not be analyzed again!");
         return false;
     }
+    if (!zone->zoneDetails.isData)
+        replay->OnReanalysis(*zone); // a marker of the journal (the data zones follow their code zones: RefreshDataZones)
     AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // +1 for the title
     zone->asmPreCacheData.Clear();
     drawnLinesGeneration++;
@@ -3323,8 +3506,10 @@ bool Instance::ReanalyzeZone(DissasmCodeZone* zone, std::optional<uint64> keepAd
             RefreshDataZones(); // their labels are the places this code refers to
         ForgetLinesReferringTo(zone);
     }
-    if (keepAddress.has_value())
+    if (keepAddress.has_value()) {
+        DissasmReplaySuspendScope suspendRecording(replay.get()); // the cursor stays on the edit: not a jump of the user
         MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + keepAddress.value(), false);
+    }
     return true;
 }
 
@@ -3697,6 +3882,7 @@ void Instance::ShowXrefsTo(
     const auto selected = dlg.GetSelectedRow();
     if (selected.has_value() && selected.value() < rows.size()) {
         const auto& row = rows[selected.value()];
+        DissasmReplayJumpScope jumpScope(replay.get(), DissasmReplayJumpKind::Xref);
         MoveCursorToZoneFileOffset(row.zone, row.zone->cachedCodeOffsets[0].offset + row.from, false);
     }
 }
@@ -4073,6 +4259,7 @@ bool Instance::RunSearch(const DissasmSearch& search, bool showErrors)
         return &params;
     });
     bool found = false;
+    DissasmReplayJumpScope jumpScope(replay.get(), DissasmReplayJumpKind::Search);
     if (hit.has_value() && search.kind == DissasmSearchKind::Text) {
         // the found line gets the cursor, a few lines below the top of the view
         const uint32 zoneLine = static_cast<uint32>(hit->position) + 2u;
@@ -4211,7 +4398,8 @@ void Instance::UndoOrRedo(bool redo)
     AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // +1 for the title: a zone added / removed changes the lines
     zone->asmPreCacheData.Clear();
 
-    // the cursor goes to the edit
+    // the cursor goes to the edit (the undo / redo is in the replay journal: the move is not a jump of the user)
+    DissasmReplaySuspendScope suspendRecording(replay.get());
     if (place->address.has_value()) {
         MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + place->address.value(), place->onLabel);
     } else if (place->expandedLine.has_value()) {

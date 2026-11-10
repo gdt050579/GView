@@ -17,6 +17,7 @@
 #include "DissasmDataTypes.hpp"
 #include "Config.hpp"
 #include "DissasmCache.hpp"
+#include "DissasmReplayHost.hpp"
 
 class DissasmTestInstance;
 
@@ -945,7 +946,16 @@ namespace View
 
         enum class CollapsibleZoneOperation : uint8 { Add, Expand, Collapse, Remove };
 
-        class Instance : public View::ViewControl
+        // the replay journal (DissasmReplay.hpp, DissasmReplayRecorder.hpp, DissasmReplayController.hpp, DissasmWorkDocument.hpp): they need
+        // the zones, which need this header
+        class DissasmReplayRecorder;
+        class DissasmReplayController;
+        struct DissasmReplayJournal;
+        struct DissasmWorkMeta;
+        enum class DissasmReplayImportSource : uint8;
+
+        // DissasmReplayHost: the playback of a replay journal in this view (CreateReplayController)
+        class Instance : public View::ViewControl, private DissasmReplayHost
         {
             enum class MouseLocation : uint8 { OnView, OnHeader, Outside };
             struct MousePositionInfo {
@@ -1163,8 +1173,8 @@ namespace View
             bool RunSearch(const DissasmSearch& search, bool showErrors);
             // moves the cursor to the instruction at the file offset (and to the labels above it); recorded in the jumps history
             bool MoveCursorToZoneFileOffset(DissasmCodeZone* zone, uint64 fileOffset, bool landOnLabels);
-            // the deep scans that did not end in InitZone continue in the frame updates; their end adds the labels (the lines change)
-            bool HasPendingDeepScans() const;
+            // the deep scans that did not end in InitZone continue in the frame updates; their end adds the labels (the lines change):
+            // HasPendingDeepScans (public)
             void EndDeepScan(DissasmCodeZone* zone, bool cancel);
             void FinishDeepScans(); // the actions that need the labels (rename, comments, cache, export) end the pending scans first
             void CancelDeepScans();
@@ -1222,9 +1232,107 @@ namespace View
             void LoadCacheData();
             void SaveCacheData();
 
+            // the replay journal of the file: recorded while the user works (the observer of the edits of the zones), saved in the cache
+            // file; muted in the windows of a solution (Solution / Replay roles)
+            std::unique_ptr<DissasmReplayRecorder> replay;
+            // the playback of a journal in this view (CreateReplayController)
+            std::unique_ptr<DissasmReplayController> replayController;
+            // the role of the window in a course (OnStart: the binding of the object); Solution / Replay never read nor write the cache
+            GView::Security::Learning::WorkspaceRole role = GView::Security::Learning::WorkspaceRole::Normal;
+            // a work document handed to the window (Hooks::TakePendingWorkDocument): applied once the zones are analysed
+            std::optional<std::string> pendingWorkDocument;
+            std::string workDocumentError; // why the pending work document could not be applied (empty: it was applied / there was none)
+            uint64 courseWorkRevision  = 0; // the revision of the course server the work was last saved as / loaded from (0: none)
+            bool mouseClickInProgress  = false; // a click moves the cursor (MoveScrollTo): a visit at once
+            uint64 readOnlyNoticeMs    = 0;     // the last "read only" notification (one per READ_ONLY_NOTICE_MS)
+            bool replayWaitingForAnalysis = false; // a replay step was asked while the analysis runs (the status line says so)
+            // "Replay: step 12/57 - comment added at 0x401040" (empty without a replay)
+            std::string ReplayStatusText() const;
+            // the read-only menu of the windows of a solution (selections, collapsible zones: no edit)
+            Menu readOnlyRightClickMenu;
+            // a command / key that changes the annotations (or exports / imports them): refused in the windows of a solution
+            static bool IsAnnotationEditCommand(uint32 commandId);
+            // read-only window and an edit command: one throttled notification, true (the command is refused)
+            bool RefuseInReadOnly(uint32 commandId);
+            // the replay journal editor of the window (DissasmReplayEditor.cpp): refused in the windows of a solution, and in a student's task
+            // window unless the token is course staff
+            void ShowReplayJournalEditor();
+            // the replay buttons (Back / Forward / To start / To end): one step, then the view is drawn again
+            void RunReplayCommand(uint32 commandId);
+            // the code zone and the anchor of the line of the cursor / of a saved cursor; none for a line that is not a line of an analysed code
+            // zone (a title, a structure, a text zone)
+            std::optional<std::pair<DissasmCodeZone*, DissasmCommentAnchor>> ResolveCursorPlace() const;
+            std::optional<std::pair<DissasmCodeZone*, DissasmCommentAnchor>> ResolvePlace(const CursorState& state) const;
+            // DissasmReplayHost
+            DissasmCodeZone* FindZone(uint64 fileOffset) override;
+            bool MoveCursor(DissasmCodeZone& zone, const DissasmCommentAnchor& anchor) override;
+            void ZoneLinesChanged(DissasmCodeZone& zone) override;
+            void Reanalyze(DissasmCodeZone& zone, std::optional<uint64> keepAddress) override;
+
           public:
             Instance(Reference<GView::Object> obj, Settings* settings);
             virtual ~Instance() override;
+
+            // the course work of the window (Learning mode): an edit / an event of the journal since the last MarkCourseWorkSaved
+            bool HasUnsavedCourseChanges() const;
+            void MarkCourseWorkSaved(uint64 revision);
+            uint64 GetCourseWorkRevision() const
+            {
+                return courseWorkRevision;
+            }
+            // nothing to lose when a saved work is loaded into the window: no cache file was loaded, the journal is empty, no edit was made
+            bool IsCourseStateEmpty() const;
+            DissasmReplayRecorder* GetReplayRecorder()
+            {
+                return replay.get();
+            }
+            GView::Security::Learning::WorkspaceRole GetWorkspaceRole() const
+            {
+                return role;
+            }
+            // a window of a teacher's solution (Solution / Replay): the annotations are read only, nothing is written to a cache
+            bool IsReadOnlyRole() const
+            {
+                return role == GView::Security::Learning::WorkspaceRole::Solution || role == GView::Security::Learning::WorkspaceRole::Replay;
+            }
+            // the analysis of a zone runs in the frame updates (the replay buttons wait for it)
+            bool HasPendingDeepScans() const;
+            // at least one code zone is analysed (its lines were drawn once): a work document can be built / applied now
+            bool HasAnalysedCodeZones() const;
+            // a work document applied once the zones are analysed (as the one handed to the window when it was opened: ApplyPendingWorkDocument,
+            // the window is clean afterwards); it replaces a document that was waiting
+            void QueueWorkDocument(std::string json);
+            bool HasQueuedWorkDocument() const
+            {
+                return pendingWorkDocument.has_value();
+            }
+            // the replay journal editor (the course menu runs it as the viewer command does)
+            void EditReplayJournal()
+            {
+                ShowReplayJournalEditor();
+            }
+            // the work document of the analysed zones (DissasmWorkDocument.hpp) with the journal of the recorder (includeReplay), compact JSON;
+            // empty when no zone is analysed yet (the pending deep scans end first)
+            std::string BuildWorkDocumentText(const DissasmWorkMeta& meta, bool includeReplay = true);
+            // a work document applied as ImportAnnotations does (the document wins, nothing is deleted), then its journal replaces the journal
+            // of the recorder and an Import event is recorded; the Replay role keeps only the journal. False and the reason in `summary` when it
+            // is not a work document / no zone is analysed; `summary`: what was imported
+            bool ApplyWorkDocument(std::string_view json, DissasmReplayImportSource source, std::string* summary = nullptr);
+            // the document handed to the window when it was opened, once the zones are analysed; true when it was applied now (the window
+            // is then clean: it shows what the server has). No dialog from here (it runs in the frame updates): GetWorkDocumentError
+            bool ApplyPendingWorkDocument();
+            const std::string& GetWorkDocumentError() const
+            {
+                return workDocumentError;
+            }
+            // the playback of a journal in this view (owned by the view, it replaces the previous one): the recorder is suspended while it
+            // exists; CloseReplayController ends it
+            DissasmReplayController* CreateReplayController(DissasmReplayJournal journal);
+            DissasmReplayController* GetReplayController()
+            {
+                return replayController.get();
+            }
+            void CloseReplayController();
 
             virtual void Paint(AppCUI::Graphics::Renderer& renderer) override;
             // IDA's navigation band in the last column of the view (the functions colored by what their APIs do, the shown lines marked); a
