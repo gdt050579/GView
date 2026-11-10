@@ -38,6 +38,13 @@ static bool IsGuardPointerName(std::string_view name)
     return name.starts_with("__guard_") && (name.ends_with("_fptr") || name.find("_fptr_") != std::string_view::npos);
 }
 
+// the pointers to the functions of the emulator in the CHPE metadata of an ARM64X image (the plugin names them, AddDissasmArm64ECMetadata):
+// __os_arm64x_check_icall_cfg (the check of an indirect call of ARM64EC code), __os_arm64x_dispatch_call_no_redirect (an exit thunk), ...
+static bool IsArm64ECPointerName(std::string_view name)
+{
+    return name.starts_with("__os_arm64x_");
+}
+
 // The lines of the zone, counted by a linear sweep (DecodeX86Line) that stops at a deadline and continues later: a big zone shows its first
 // lines before the end of its code is read. A cached offset (file offset, line) is kept every DISSASM_INSTRUCTION_OFFSET_MARGIN bytes.
 // The code is decoded from the start of the zone: every decoded address (and every branch target) is relative to it. An undecodable byte
@@ -312,11 +319,14 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::vector<std::pair<uint64, std::string>> callsFound; // file offset of a label, its name
     std::unordered_map<uint64, bool> callsMap;              // true for loc, false for sub
     std::vector<std::pair<uint64, std::string>> thunks;     // file offset of an import thunk, the import
+    // ARM64EC: the calls through __os_arm64x_dispatch_call_no_redirect (an exit thunk: true) and the jumps through __os_arm64x_dispatch_ret
+    // (the end of an entry thunk: false), relative addresses (NameArm64ECThunks)
+    std::vector<std::pair<uint64, bool>> arm64ECThunkCalls;
 
     // the results, given to the zone by Commit
     DissasmXrefs xrefs;
     std::unordered_map<uint64, std::string> thunkImports;
-    std::unordered_map<uint64, uint64> otherZoneJumps; // x86 / x64: a jmp to the code of another zone that starts a block (relative) -> its VA
+    std::unordered_map<uint64, uint64> otherZoneJumps; // a jmp / b to the code of another zone that starts a block (relative) -> its VA
     std::unordered_map<uint64, uint32> switchJumps;
     std::unordered_map<uint64, uint64> resolvedAddresses; // ARM64: the addresses of the adrp pairs
     std::unordered_map<uint64, uint64> adrpPages;         // ARM64: the address of the first pair of each adrp
@@ -558,6 +568,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         callsFound.clear();
         callsMap.clear();
         thunks.clear();
+        arm64ECThunkCalls.clear();
         xrefs = DissasmXrefs{};
         thunkImports.clear();
         otherZoneJumps.clear();
@@ -1287,16 +1298,30 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     adrpPages.emplace(pair->sequenceStart, pair->address); // the first pair names the adrp
                 pairOperands.ripTarget           = pair->address;
                 pairOperands.memoryAccess        = pair->memoryAccess;
+                const auto* import = pair->throughSlot && (flow == X86Flow::Jump || flow == X86Flow::Call) && findImport ? findImport(pairOperands) : nullptr;
                 // an import stub (j_Name): adrp x16, page; ldr x16, [x16, #off]; br x16 from a block start
-                if (pair->throughSlot && flow == X86Flow::Jump && pair->sequenceAtBlockStart && findImport) {
-                    const auto import = findImport(pairOperands);
-                    if (import && import->type == MemoryMappingType::FunctionMapping && !import->name.empty()) {
+                if (import && flow == X86Flow::Jump && pair->sequenceAtBlockStart) {
+                    if (import->type == MemoryMappingType::FunctionMapping && !import->name.empty()) {
                         thunks.emplace_back(codeStart + pair->sequenceStart, import->name);
                         thunkImports[pair->sequenceStart] = import->name;
                         AddFunctionStart(codeStart + pair->sequenceStart);
                         if (IsNoReturnFunctionName(import->name))
                             noReturnStarts.insert(pair->sequenceStart);
+                    } else if (
+                          import->type == MemoryMappingType::TextMapping && (IsGuardPointerName(import->name) || IsArm64ECPointerName(import->name)) &&
+                          insn->address == pair->sequenceStart + 8) {
+                        // the same through a pointer of the guard / of the emulator: j___os_arm64x_check_icall_cfg (the check of the
+                        // indirect calls of d3dcompiler: 1638 calls through a veneer of another zone, NameOtherZoneThunks); only the three
+                        // instructions (__os_arm64x_check_icall_thunk moves x0 to x11 before its br: a function of its own)
+                        thunks.emplace_back(codeStart + pair->sequenceStart, import->name);
+                        AddFunctionStart(codeStart + pair->sequenceStart);
                     }
+                }
+                if (import && import->type == MemoryMappingType::TextMapping) {
+                    if (flow == X86Flow::Call && import->name == "__os_arm64x_dispatch_call_no_redirect")
+                        arm64ECThunkCalls.emplace_back(insn->address, true);
+                    else if (flow == X86Flow::Jump && import->name == "__os_arm64x_dispatch_ret")
+                        arm64ECThunkCalls.emplace_back(insn->address, false);
                 }
             }
             // the jump table of a switch (br x10): the cases are read from the table
@@ -1352,6 +1377,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 farJumpTargets.insert(farJump.value());
                 pairOperands.directTarget = farJump.value();
             }
+            // b to the code of another zone from a block start (the veneers of an ARM64X image: b j___os_arm64x_check_icall_cfg of the
+            // ARM64EC code): a thunk when the zones call it (NameOtherZoneThunks)
+            if (isArm64 && isBlockStart && flow == X86Flow::Jump && operands.directTarget.has_value() && operands.directTarget.value() >= codeSize)
+                otherZoneJumps[insn->address] = (labelBase + operands.directTarget.value()) & addressMask;
             // a prologue at a block start: a function (a candidate until the end of the sweep: a shrink wrapped prologue is reached by a
             // conditional branch of its own function)
             if (isBlockStart && insn->address < blockStarts.size() && insn->id != 0 && GetInstructionKind(insn->id, insn->mnemonic, insnArch) != X86InstructionKind::Padding)
@@ -3478,6 +3507,44 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (bytes.IsValid() &&
                 !GView::View::DissasmViewer::AddArm64ChunkSlots(detailHandle, bytes.GetData(), bytes.GetLength(), chunk.start, frame, movesStack))
                 return;
+        }
+    }
+
+    // ARM64EC: the thunks between the ARM64EC code and the x64 code, named by the pointer of the emulator they go through (a stripped image
+    // has no name for them; MSVC's are $iexit_thunk$cdecl$<signature> / $ientry_thunk$cdecl$<signature>):
+    // - an exit thunk (exit_thunk_N): the call of x64 code, blr __os_arm64x_dispatch_call_no_redirect after the arguments moved to the x64
+    //   convention; its address goes in x10 to every check of an indirect call (DbgHelp sub_1803447B0: 5862 checks, d3dcompiler 1414)
+    // - an entry thunk (entry_thunk_N): the call of an ARM64EC function by x64 code, br __os_arm64x_dispatch_ret at its end
+    // The function is the start before the call (a few instructions: the thunks are short), with an automatic name (sub_)
+    void NameArm64ECThunks()
+    {
+        constexpr uint64 MAX_THUNK_BYTES = 0x100;
+        if (arm64ECThunkCalls.empty())
+            return;
+        std::unordered_set<std::string> usedNames;
+        for (const auto& call : callsFound)
+            if (GetLabelType(call.second) != SUB)
+                usedNames.insert(call.second);
+        std::unordered_set<uint64> named;
+        uint32 exits = 0, entries = 0;
+        for (const auto& [address, isExit] : arm64ECThunkCalls) {
+            // the last start before the call, past the labels inside the function
+            auto call = std::upper_bound(
+                  callsFound.begin(), callsFound.end(), codeStart + address, [](uint64 value, const auto& item) { return value < item.first; });
+            while (call != callsFound.begin() && GetLabelType(std::prev(call)->second) == OFFSET)
+                --call;
+            if (call == callsFound.begin())
+                continue;
+            --call;
+            if (GetLabelType(call->second) != SUB || codeStart + address - call->first > MAX_THUNK_BYTES || call->first == zone->zoneDetails.entryPoint ||
+                !named.insert(call->first).second)
+                continue;
+            std::string name;
+            do
+                name = std::string(isExit ? "exit_thunk_" : "entry_thunk_") + std::to_string(isExit ? ++exits : ++entries);
+            while (usedNames.contains(name) && (isExit ? exits : entries) < 100000);
+            if (usedNames.insert(name).second)
+                call->second = std::move(name);
         }
     }
 
@@ -7662,6 +7729,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
         FinishSweep();
         NameSecurityCookieFunctions();
+        NameArm64ECThunks();
         NameOtherZoneThunks();
         NameRunTimeFunctionsByCode();
         switchCaseTargets = SwitchCases();
