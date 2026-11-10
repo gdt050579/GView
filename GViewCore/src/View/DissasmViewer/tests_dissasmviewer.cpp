@@ -16042,3 +16042,87 @@ TEST_CASE("Arm64SecurityPushCookie", "[Dissasm]Arm64")
     REQUIRE(dissasmInstance.zone->GetLabelNameAt(0x64) == "sub_64");
     REQUIRE(FindListingLine(listing, "0x00000008  bl     __security_push_cookie").size() > 0);
 }
+
+TEST_CASE("Arm64ECEmulatorThunks", "[Dissasm]Zones")
+{
+    // ARM64X (DbgHelp, d3dcompiler): the ARM64EC code checks an indirect call through __os_arm64x_check_icall_cfg (a pointer of the CHPE
+    // metadata the plugin names), the address of an exit thunk in x10; the exit thunk calls x64 code through
+    // __os_arm64x_dispatch_call_no_redirect, an entry thunk returns through __os_arm64x_dispatch_ret; the check is also reached through a stub
+    // (adrp x16; ldr x16; br x16: j___os_arm64x_check_icall_cfg) and a veneer of another zone (b to that stub: j_j___os_arm64x_check_icall_cfg)
+    std::vector<unsigned char> file;
+    const auto word = [&file](uint32 value) {
+        for (uint32 index = 0; index < 4; index++)
+            file.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    };
+    word(0xA9BF7BFD); // 0x00: stp x29, x30, [sp, #-0x10]!   (a function with two checked indirect calls)
+    word(0x910003FD); // 0x04: mov x29, sp
+    word(0xF9400008); // 0x08: ldr x8, [x0]
+    word(0xF940090B); // 0x0c: ldr x11, [x8, #0x10]         (the target: a method)
+    word(0xB0000009); // 0x10: adrp x9, 0x1000
+    word(0xF9401129); // 0x14: ldr x9, [x9, #0x20]          (0x1020: __os_arm64x_check_icall_cfg)
+    word(0x9000000A); // 0x18: adrp x10, 0
+    word(0x9101014A); // 0x1c: add x10, x10, #0x40          (the exit thunk)
+    word(0xD63F0120); // 0x20: blr x9                       (the check)
+    word(0xD63F0160); // 0x24: blr x11                      (the call)
+    word(0x9000000A); // 0x28: adrp x10, 0
+    word(0x9101014A); // 0x2c: add x10, x10, #0x40
+    word(0x9400001C); // 0x30: bl 0xa0                      (the check through the veneer of the other zone)
+    word(0xD63F0160); // 0x34: blr x11
+    word(0xA8C17BFD); // 0x38: ldp x29, x30, [sp], #0x10
+    word(0xD65F03C0); // 0x3c: ret
+    word(0xA9BF7BFD); // 0x40: stp x29, x30, [sp, #-0x10]!   (the exit thunk)
+    word(0x910003FD); // 0x44: mov x29, sp
+    word(0xB0000008); // 0x48: adrp x8, 0x1000
+    word(0xF9400110); // 0x4c: ldr x16, [x8]                (0x1000: __os_arm64x_dispatch_call_no_redirect)
+    word(0xD63F0200); // 0x50: blr x16
+    word(0xAA0803E0); // 0x54: mov x0, x8
+    word(0xA8C17BFD); // 0x58: ldp x29, x30, [sp], #0x10
+    word(0xD65F03C0); // 0x5c: ret
+    word(0xB0000010); // 0x60: adrp x16, 0x1000             (the stub of the check)
+    word(0xF9401210); // 0x64: ldr x16, [x16, #0x20]
+    word(0xD61F0200); // 0x68: br x16
+    word(0x00000000); // 0x6c: udf #0
+    word(0xA9BF7BFD); // 0x70: stp x29, x30, [sp, #-0x10]!   (the entry thunk)
+    word(0x910003FD); // 0x74: mov x29, sp
+    word(0xD63F0120); // 0x78: blr x9                       (the ARM64EC function)
+    word(0xA8C17BFD); // 0x7c: ldp x29, x30, [sp], #0x10
+    word(0xB0000010); // 0x80: adrp x16, 0x1000
+    word(0xF9400610); // 0x84: ldr x16, [x16, #8]           (0x1008: __os_arm64x_dispatch_ret)
+    word(0xD61F0200); // 0x88: br x16
+    file.resize(0xA0, 0x00);
+    word(0x17FFFFF0); // 0xa0: b 0x60                       (the veneer: another zone)
+    file.resize(0x1040, 0x00);
+    ZoneLayout layout;
+    layout.size             = 0xA0;
+    layout.entryPoint       = NO_ENTRY_POINT;
+    layout.language         = DisassemblyLanguage::ARM64;
+    layout.translateOffsets = true; // the RVA is the file offset
+    layout.imports          = { { 0x1000, { "__os_arm64x_dispatch_call_no_redirect", MemoryMappingType::TextMapping } },
+                                { 0x1008, { "__os_arm64x_dispatch_ret", MemoryMappingType::TextMapping } },
+                                { 0x1020, { "__os_arm64x_check_icall_cfg", MemoryMappingType::TextMapping } } };
+    layout.functionEntries[0x00].size = 0x40; // .pdata
+    layout.functionEntries[0x40].size = 0x20;
+    layout.functionEntries[0x70].size = 0x1C;
+    DissasmTestInstance code(file.data(), file.size(), true, layout);
+    REQUIRE(code.zone->GetLabelNameAt(0x40) == "exit_thunk_1");
+    REQUIRE(code.zone->GetLabelNameAt(0x60) == "j___os_arm64x_check_icall_cfg");
+    REQUIRE(code.zone->GetLabelNameAt(0x70) == "entry_thunk_1");
+    REQUIRE(code.zone->GetLabelNameAt(0x00).starts_with("sub_")); // a function that checks its calls is no thunk
+    layout.start           = 0xA0;
+    layout.size            = 0x20;
+    layout.functionEntries = {};
+    layout.siblings        = { code.zone.get() };
+    DissasmTestInstance veneers(file.data(), file.size(), true, layout);
+    const std::string veneerListing = veneers.GetListing();
+    INFO(veneerListing);
+    REQUIRE(veneers.zone->GetLabelNameAt(0x00) == "j_j___os_arm64x_check_icall_cfg");
+    REQUIRE(FindListingLine(veneerListing, "0x000000a0  b      j___os_arm64x_check_icall_cfg").size() > 0);
+    code.zone->siblingZones = { veneers.zone.get() };
+    const std::string listing = code.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x0000001c  add    x10, x10, #exit_thunk_1@PAGEOFF").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000020  blr    __os_arm64x_check_icall_cfg").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000030  bl     j_j___os_arm64x_check_icall_cfg").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000050  blr    __os_arm64x_dispatch_call_no_redirect").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000088  br     __os_arm64x_dispatch_ret").size() > 0);
+}

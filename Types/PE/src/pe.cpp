@@ -1073,6 +1073,67 @@ uint32 ReadArm64XLoadConfig(Reference<PE::PEFile> pe, GView::Utils::DataCache& d
     return 0;
 }
 
+// The CHPE metadata of an ARM64X image (IMAGE_ARM64EC_METADATA of ntimage.h, `metadataVA`: __chpe_metadata): its fields (RVAs, counts), the
+// tables it points to (the code map, the auxiliary IATs), and the pointers to the functions of the emulator that the loader fills in, named as
+// the compilers name them (mingw-w64 chpe.S, MSVC): the ARM64EC code calls through them, an indirect call is checked by
+//   adrp x9, __os_arm64x_check_icall_cfg; ldr x9, [x9, #...]; adrp x10, exit_thunk; add x10, ...; mov x11, target; blr x9; blr x11
+// and an exit thunk (an ARM64EC call of x64 code) calls __os_arm64x_dispatch_call_no_redirect
+void AddDissasmArm64ECMetadata(
+      DissasmViewer::Settings& settings, Reference<PE::PEFile> pe, GView::Utils::DataCache& data, uint64 metadataVA, std::unordered_set<uint64>& named)
+{
+    if (static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine) != PE::MachineType::ARM64)
+        return;
+    const auto start = pe->VAtoFA(metadataVA);
+    uint32 version   = 0;
+    if (start == PE_INVALID_ADDRESS || !data.Copy<uint32>(start, version) || version == 0)
+        return;
+    using Type = DissasmViewer::DataFieldType;
+    // the fields (4 bytes each) and, for the RVAs, the name of what they point to (a table, a pointer of the emulator)
+    struct Field {
+        Type type;
+        std::string_view name;
+        std::string_view target;
+    };
+    constexpr Field fields[] = {
+        { Type::Value, "Version", {} },
+        { Type::RVA, "CodeMap", "__hybrid_code_map" },
+        { Type::Value, "CodeMapCount", {} },
+        { Type::RVA, "CodeRangesToEntryPoints", "__x64_code_ranges_to_entry_points" },
+        { Type::RVA, "RedirectionMetadata", "__arm64x_redirection_metadata" },
+        { Type::RVA, "DispatchCallNoRedirect", "__os_arm64x_dispatch_call_no_redirect" },
+        { Type::RVA, "DispatchRet", "__os_arm64x_dispatch_ret" },
+        { Type::RVA, "DispatchCall", "__os_arm64x_check_call" },
+        { Type::RVA, "DispatchIcall", "__os_arm64x_check_icall" },
+        { Type::RVA, "DispatchIcallCfg", "__os_arm64x_check_icall_cfg" },
+        { Type::RVA, "AlternateEntryPoint", {} },
+        { Type::RVA, "AuxiliaryIAT", "__hybrid_auxiliary_iat" },
+        { Type::Value, "CodeRangesToEntryPointsCount", {} },
+        { Type::Value, "RedirectionMetadataCount", {} },
+        { Type::RVA, "GetX64InformationFunctionPointer", "__os_arm64x_get_x64_information" },
+        { Type::RVA, "SetX64InformationFunctionPointer", "__os_arm64x_set_x64_information" },
+        { Type::RVA, "ExtraRFETable", "__arm64x_extra_rfe_table" },
+        { Type::Value, "ExtraRFETableSize", {} },
+        { Type::RVA, "DispatchFptr", "__os_arm64x_dispatch_fptr" },
+        { Type::RVA, "AuxiliaryIATCopy", "__hybrid_auxiliary_iat_copy" },
+        // version 2
+        { Type::RVA, "AuxDelayloadIAT", "__hybrid_auxiliary_delayload_iat" },
+        { Type::RVA, "AuxDelayloadIATCopy", "__hybrid_auxiliary_delayload_iat_copy" },
+        { Type::Value, "ReservedBitField", {} },
+    };
+    constexpr uint32 VERSION1_FIELDS = 20;
+    const uint32 count               = version >= 2 ? static_cast<uint32>(std::size(fields)) : VERSION1_FIELDS;
+    for (uint32 index = 0; index < count; index++) {
+        const auto& field = fields[index];
+        uint32 value      = 0;
+        if (!data.Copy<uint32>(start + 4ull * index, value))
+            return;
+        settings.AddDataField(metadataVA + 4ull * index, 4, field.type, field.name);
+        // a target in the image, not named before (the load config's own names win)
+        if (!field.target.empty() && value != 0 && pe->RVAToFA(value) != PE_INVALID_ADDRESS && named.insert(pe->imageBase + value).second)
+            settings.AddMemoryMapping(value, field.target, DissasmViewer::MemoryMappingType::TextMapping);
+    }
+}
+
 // The load config directory (_load_config_used), named like IDA:
 // - the variables it points to: the security cookie of /GS (mov rax, cs:__security_cookie in every protected function), the pointers of
 //   the Control Flow Guard that the indirect calls go through (call cs:__guard_dispatch_icall_fptr), the tables (__guard_fids_table, ...)
@@ -1209,6 +1270,9 @@ void AddDissasmLoadConfig(
         if (va > pe->imageBase && named.insert(va).second)
             settings.AddMemoryMapping(va - pe->imageBase, std::string(field.name) + std::string(suffix), DissasmViewer::MemoryMappingType::TextMapping);
     }
+    // ARM64X: the CHPE metadata (named once, by the load config of the ARM64 view)
+    if (const uint64 metadata = is64 ? readField(124, 200) : 0; metadata > pe->imageBase && !before.contains(metadata))
+        AddDissasmArm64ECMetadata(settings, pe, data, metadata, named);
     // the CFG function table: an RVA for every valid target of an indirect call, followed by the flag bytes of GuardFlags (bits 28..31)
     constexpr uint32 MAX_TABLE_ENTRIES = 0x100000;
     uint32 guardFlags                  = 0;
