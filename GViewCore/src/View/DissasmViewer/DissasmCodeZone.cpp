@@ -3619,12 +3619,20 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // - x64 RtlULongAdd / RtlULongLongAdd of ntintsafe.h (a function when not inlined; the ULONG / UINT / DWORD ones fold into one): lea eax,
     //   [rcx + rdx]; mov edx, -1; cmp eax, ecx; cmovae edx, eax; sbb eax, eax; and eax, STATUS_INTEGER_OVERFLOW; mov [r8], edx; ret (shell32
     //   2509 + 1910 calls, 17 other DLLs)
+    // - x86 the frame helpers of the exception handling of MSVC (ehprolg3.c, sehprolg4.asm; certutil32 503 calls, __EH_prolog3 in 1199 of the
+    //   2737 files of SysWOW64): __EH_prolog3 (push eax; push fs:[0]; lea eax, [esp + 0xc]; sub esp, [esp + 0xc]; ...; the cookie xor ebp
+    //   pushed; mov fs:[0], eax; ret), its _GS (the cookie kept at [ebp - 0x10]), _catch (esp kept at [ebp - 0x10]), _catch_GS ([ebp - 0x14],
+    //   [ebp - 0x10]) and __SEH_prolog4 (push offset _except_handler4; ...), the address of the cookie / the handler any (4 bytes: anyAt);
+    //   __EH_epilog3 (fs:[0] restored, the registers popped, ret to the caller of the caller) and its _GS / _catch_GS (mov ecx, [ebp - 0x10] /
+    //   [ebp - 0x14]; xor ecx, ebp; call __security_check_cookie; jmp __EH_epilog3: named when the jump goes to the __EH_epilog3 named here)
     void NameRunTimeFunctionsByCode()
     {
         struct RunTimeCode {
             DissasmArch arch;
             std::string_view name;
             std::span<const uint8> bytes;
+            std::span<const uint8> anyAt = {}; // the offsets of the addresses (4 bytes) the code has: any value
+            std::string_view jumpsTo     = {}; // the function its last instruction (jmp rel32, the 4 last bytes) jumps to
         };
         static constexpr uint8 MEMSET_X64[]        = { 0x48, 0x8B, 0xC1, 0x0F, 0xB6, 0xD2, 0x49, 0xB9, 0x01, 0x01,
                                                        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x49, 0x0F, 0xAF, 0xD1 };
@@ -3634,19 +3642,62 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                                                        0xD0, 0x1B, 0xC0, 0x25, 0x95, 0x00, 0x00, 0xC0, 0x41, 0x89, 0x10, 0xC3 };
         static constexpr uint8 ULONGLONG_ADD_X64[] = { 0x48, 0x8D, 0x04, 0x11, 0x48, 0xC7, 0xC2, 0xFF, 0xFF, 0xFF, 0xFF, 0x48, 0x3B, 0xC1, 0x48,
                                                        0x0F, 0x43, 0xD0, 0x1B, 0xC0, 0x25, 0x95, 0x00, 0x00, 0xC0, 0x49, 0x89, 0x10, 0xC3 };
+        static constexpr uint8 EH_PROLOG3_X86[]       = { 0x50, 0x64, 0xFF, 0x35, 0x00, 0x00, 0x00, 0x00, 0x8D, 0x44, 0x24, 0x0C, 0x2B, 0x64, 0x24, 0x0C, 0x53,
+                                                          0x56, 0x57, 0x89, 0x28, 0x8B, 0xE8, 0xA1, 0x00, 0x00, 0x00, 0x00, 0x33, 0xC5, 0x50, 0xFF, 0x75, 0xFC,
+                                                          0xC7, 0x45, 0xFC, 0xFF, 0xFF, 0xFF, 0xFF, 0x8D, 0x45, 0xF4, 0x64, 0xA3, 0x00, 0x00, 0x00, 0x00, 0xC3 };
+        static constexpr uint8 EH_PROLOG3_GS_X86[]    = { 0x50, 0x64, 0xFF, 0x35, 0x00, 0x00, 0x00, 0x00, 0x8D, 0x44, 0x24, 0x0C, 0x2B, 0x64,
+                                                          0x24, 0x0C, 0x53, 0x56, 0x57, 0x89, 0x28, 0x8B, 0xE8, 0xA1, 0x00, 0x00, 0x00, 0x00,
+                                                          0x33, 0xC5, 0x50, 0x89, 0x45, 0xF0, 0xFF, 0x75, 0xFC, 0xC7, 0x45, 0xFC, 0xFF, 0xFF,
+                                                          0xFF, 0xFF, 0x8D, 0x45, 0xF4, 0x64, 0xA3, 0x00, 0x00, 0x00, 0x00, 0xC3 }; // mov [ebp - 0x10], eax
+        static constexpr uint8 EH_PROLOG3_CATCH_X86[] = { 0x50, 0x64, 0xFF, 0x35, 0x00, 0x00, 0x00, 0x00, 0x8D, 0x44, 0x24, 0x0C, 0x2B, 0x64,
+                                                          0x24, 0x0C, 0x53, 0x56, 0x57, 0x89, 0x28, 0x8B, 0xE8, 0xA1, 0x00, 0x00, 0x00, 0x00,
+                                                          0x33, 0xC5, 0x50, 0x89, 0x65, 0xF0, 0xFF, 0x75, 0xFC, 0xC7, 0x45, 0xFC, 0xFF, 0xFF,
+                                                          0xFF, 0xFF, 0x8D, 0x45, 0xF4, 0x64, 0xA3, 0x00, 0x00, 0x00, 0x00, 0xC3 }; // mov [ebp - 0x10], esp
+        static constexpr uint8 EH_PROLOG3_CATCH_GS_X86[] = { 0x50, 0x64, 0xFF, 0x35, 0x00, 0x00, 0x00, 0x00, 0x8D, 0x44, 0x24, 0x0C, 0x2B, 0x64, 0x24,
+                                                             0x0C, 0x53, 0x56, 0x57, 0x89, 0x28, 0x8B, 0xE8, 0xA1, 0x00, 0x00, 0x00, 0x00, 0x33, 0xC5,
+                                                             0x50, 0x89, 0x45, 0xEC, 0x89, 0x65, 0xF0, 0xFF, 0x75, 0xFC, 0xC7, 0x45, 0xFC, 0xFF, 0xFF,
+                                                             0xFF, 0xFF, 0x8D, 0x45, 0xF4, 0x64, 0xA3, 0x00, 0x00, 0x00, 0x00, 0xC3 }; // both
+        static constexpr uint8 EH_EPILOG3_X86[]          = { 0x8B, 0x4D, 0xF4, 0x64, 0x89, 0x0D, 0x00, 0x00, 0x00, 0x00,
+                                                             0x59, 0x5F, 0x5F, 0x5E, 0x5B, 0x8B, 0xE5, 0x5D, 0x51, 0xC3 };
+        static constexpr uint8 EH_EPILOG3_GS_X86[]       = { 0x8B, 0x4D, 0xF0, 0x33, 0xCD, 0xE8, 0x00, 0x00, 0x00, 0x00, 0xE9, 0x00, 0x00, 0x00, 0x00 };
+        static constexpr uint8 EH_EPILOG3_CATCH_GS_X86[] = { 0x8B, 0x4D, 0xEC, 0x33, 0xCD, 0xE8, 0x00, 0x00, 0x00, 0x00, 0xE9, 0x00, 0x00, 0x00, 0x00 };
+        static constexpr uint8 SEH_PROLOG4_X86[] = { 0x68, 0x00, 0x00, 0x00, 0x00, 0x64, 0xFF, 0x35, 0x00, 0x00, 0x00, 0x00, 0x8B, 0x44, 0x24, 0x10, 0x89, 0x6C,
+                                                     0x24, 0x10, 0x8D, 0x6C, 0x24, 0x10, 0x2B, 0xE0, 0x53, 0x56, 0x57, 0xA1, 0x00, 0x00, 0x00, 0x00, 0x31, 0x45,
+                                                     0xFC, 0x33, 0xC5, 0x50, 0x89, 0x65, 0xE8, 0xFF, 0x75, 0xF8, 0x8B, 0x45, 0xFC, 0xC7, 0x45, 0xFC, 0xFE, 0xFF,
+                                                     0xFF, 0xFF, 0x89, 0x45, 0xF8, 0x8D, 0x45, 0xF0, 0x64, 0xA3, 0x00, 0x00, 0x00, 0x00, 0xC3 };
+        static constexpr uint8 COOKIE_AT[]       = { 24 };      // mov eax, ds:__security_cookie
+        static constexpr uint8 CALL_JUMP_AT[]    = { 6, 11 };   // call __security_check_cookie; jmp __EH_epilog3
+        static constexpr uint8 HANDLER_COOKIE_AT[] = { 1, 30 }; // push offset _except_handler4; mov eax, ds:__security_cookie
 
         static const RunTimeCode codes[] = {
             { DissasmArch::X64, "memset", MEMSET_X64 },
             { DissasmArch::X64, "memcpy", MEMCPY_X64 },
             { DissasmArch::X64, "RtlULongAdd", ULONG_ADD_X64 },
             { DissasmArch::X64, "RtlULongLongAdd", ULONGLONG_ADD_X64 },
+            { DissasmArch::X86, "__EH_prolog3", EH_PROLOG3_X86, COOKIE_AT },
+            { DissasmArch::X86, "__EH_prolog3_GS", EH_PROLOG3_GS_X86, COOKIE_AT },
+            { DissasmArch::X86, "__EH_prolog3_catch", EH_PROLOG3_CATCH_X86, COOKIE_AT },
+            { DissasmArch::X86, "__EH_prolog3_catch_GS", EH_PROLOG3_CATCH_GS_X86, COOKIE_AT },
+            { DissasmArch::X86, "__EH_epilog3", EH_EPILOG3_X86 },
+            { DissasmArch::X86, "__EH_epilog3_GS", EH_EPILOG3_GS_X86, CALL_JUMP_AT, "__EH_epilog3" },
+            { DissasmArch::X86, "__EH_epilog3_catch_GS", EH_EPILOG3_CATCH_GS_X86, CALL_JUMP_AT, "__EH_epilog3" },
+            { DissasmArch::X86, "__SEH_prolog4", SEH_PROLOG4_X86, HANDLER_COOKIE_AT },
         };
-        constexpr uint32 MAX_BYTES = 32;
-        if (arch != DissasmArch::X64 && !zone->IsArm64Code())
-            return; // the table has x64 code only (an ARM64X zone has x64 ranges)
+        constexpr uint32 MAX_BYTES = 72;
+        if (arch != DissasmArch::X64 && arch != DissasmArch::X86 && !zone->IsArm64Code())
+            return; // the table has x64 / x86 code only (an ARM64X zone has x64 ranges)
+        const auto matches = [](const RunTimeCode& code, const uint8* data) {
+            for (size_t offset = 0; offset < code.bytes.size(); offset++)
+                if (data[offset] != code.bytes[offset] &&
+                    std::none_of(code.anyAt.begin(), code.anyAt.end(), [offset](uint8 at) { return offset >= at && offset < at + 4u; }))
+                    return false;
+            return true;
+        };
         std::unordered_set<std::string> usedNames;
         bool namesRead = false;
-        for (auto& call : callsFound) {
+        std::vector<std::pair<size_t, const RunTimeCode*>> jumps; // named when the function they jump to has its name
+        for (size_t index = 0; index < callsFound.size(); index++) {
+            auto& call = callsFound[index];
             if (call.first < codeStart || call.first - codeStart >= codeSize || GetLabelType(call.second) != SUB)
                 continue;
             const uint64 start          = call.first - codeStart;
@@ -3658,7 +3709,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     continue;
                 if (!view.has_value())
                     view = obj->GetData().Get(call.first, length, false);
-                if (!view->IsValid() || view->GetLength() < code.bytes.size() || memcmp(view->GetData(), code.bytes.data(), code.bytes.size()) != 0)
+                if (!view->IsValid() || view->GetLength() < code.bytes.size() || !matches(code, view->GetData()))
                     continue;
                 if (!namesRead) {
                     for (const auto& other : callsFound)
@@ -3666,10 +3717,25 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                             usedNames.insert(other.second);
                     namesRead = true;
                 }
-                if (usedNames.insert(std::string(code.name)).second)
+                if (!code.jumpsTo.empty())
+                    jumps.emplace_back(index, &code);
+                else if (usedNames.insert(std::string(code.name)).second)
                     call.second = std::string(code.name);
                 break;
             }
+        }
+        for (const auto& [index, code] : jumps) {
+            const uint64 jump = callsFound[index].first + code->bytes.size(); // after the jmp rel32
+            const auto bytes  = obj->GetData().Get(jump - 4, 4, false);
+            if (!bytes.IsValid() || bytes.GetLength() < 4)
+                continue;
+            int32 displacement = 0;
+            memcpy(&displacement, bytes.GetData(), sizeof(displacement));
+            const uint64 target = (jump + static_cast<int64>(displacement)) & addressMask;
+            const auto label =
+                  std::lower_bound(callsFound.begin(), callsFound.end(), target, [](const auto& item, uint64 value) { return item.first < value; });
+            if (label != callsFound.end() && label->first == target && label->second == code->jumpsTo && usedNames.insert(std::string(code->name)).second)
+                callsFound[index].second = std::string(code->name);
         }
     }
 
@@ -6855,7 +6921,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // names it, a name after the API (mov [rbp + var_8], rax after CreateFileW -> File). The first use of a slot in the code (passed or
     // stored) gives its type, as the first call gives its name: a slot the compiler reuses for other values keeps one meaning. A slot
     // whose address is passed loses the lp of the argument (IDA: lpNumberOfBytesRead -> NumberOfBytesRead); when the argument points to a
-    // structure (FindApiStructure: lpStartupInfo -> STARTUPINFOW), the slot is that structure and the slots inside it are its fields
+    // structure (FindApiStructure: lpStartupInfo -> STARTUPINFOW), the slot is that structure and the slots inside it are its fields. An
+    // argument whose name another variable of the frame has names the slot after the end with a number (a second buffer: dest_2), as the
+    // return values (File_2), when no other call or return named it
     void NameVariablesFromCalls(DissasmFunctionFrame& frame, const uint8* code, size_t codeLength, uint64 start, uint64 limit, DissasmArch functionArch)
     {
         // only a function that calls a known API is decoded again (its calls: the flow records of the sweep)
@@ -6913,6 +6981,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         std::array<std::optional<SlotValue>, MAX_SLOTS> stackArgs{}; // the arguments stored in the stack, by argument index
         std::vector<std::optional<SlotValue>> pushes;                // x86, System V x64: the pushed arguments, in their order
         std::vector<std::pair<int32, const AsmFunctionDetails*>> returnStores; // the slots whose first use is a return value stored there
+        std::vector<std::pair<int32, std::string>> takenNames;                 // the slots passed as an argument whose name the frame has (numbered at the end)
         const auto slotValue = [](std::optional<int32> offset, bool isAddress) {
             return offset.has_value() ? std::optional<SlotValue>(SlotValue{ offset.value(), isAddress }) : std::nullopt;
         };
@@ -7075,9 +7144,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     if (source->isAddress)
                         ApplyStructure(*variable);
                 }
-                if (!variable || (!renamed && !(variable->name.starts_with("var_") || variable->name.starts_with("arg_"))) || !IsValidLocalVariableName(name) ||
-                    frame.HasVariableNamed(name))
+                if (!variable || (!renamed && !(variable->name.starts_with("var_") || variable->name.starts_with("arg_"))) || !IsValidLocalVariableName(name))
                     continue;
+                if (frame.HasVariableNamed(name)) { // another slot has it (the first buffer, the result of the first addition): numbered at the end
+                    takenNames.emplace_back(variable->frameOffset, std::string(name));
+                    continue;
+                }
                 variable->name = std::string(name);
                 if (formatted)
                     formattedBuffers.insert(variable->frameOffset);
@@ -7273,6 +7345,22 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const std::string name = GetReturnValueName(*function);
             for (uint32 copy = 1; copy <= 9; copy++) {
                 const std::string candidate = copy == 1 ? name : name + "_" + std::to_string(copy);
+                if (!IsValidLocalVariableName(candidate))
+                    break;
+                if (!frame.HasVariableNamed(candidate)) {
+                    variable->name = candidate;
+                    break;
+                }
+            }
+        }
+        // the variables passed as an argument whose name another variable has, that no other call or return named: the first such
+        // argument, numbered (dest_2: memcpy(dest, ...) then memcpy(dest_2, ...) with two buffers; pulResult_2 of a second RtlULongAdd)
+        for (const auto& [offset, name] : takenNames) {
+            auto* variable = frame.FindVariable(offset);
+            if (!variable || !(variable->name.starts_with("var_") || variable->name.starts_with("arg_")))
+                continue;
+            for (uint32 copy = 2; copy <= 9; copy++) {
+                const std::string candidate = name + "_" + std::to_string(copy);
                 if (!IsValidLocalVariableName(candidate))
                     break;
                 if (!frame.HasVariableNamed(candidate)) {

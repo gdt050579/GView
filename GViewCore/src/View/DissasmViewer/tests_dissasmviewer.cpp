@@ -16003,6 +16003,124 @@ TEST_CASE("IntsafeAdditionsByCode", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x00000015  lea    r8, [rsp + 0x48 + ").find("var_") == std::string_view::npos);
 }
 
+TEST_CASE("NumberedArgumentNames", "[Dissasm]Help")
+{
+    // x64 Windows. Two slots passed as the hObject of CloseHandle: hObject, hObject_2 (the name is taken: numbered at the end, as the
+    // return values); a slot passed as hObject (taken) then as the hEvent of SetEvent: hEvent (a free name of a later call first); a slot
+    // whose first use is the return of CreateFileW, then passed as hObject: File (the return names it first)
+    std::vector<unsigned char> file;
+    const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    file.insert(file.end(), { 0x55, 0x48, 0x89, 0xE5, 0x48, 0x83, 0xEC, 0x40 }); // 0x00: push rbp; mov rbp, rsp; sub rsp, 0x40
+    file.insert(file.end(), { 0x48, 0x8B, 0x4D, 0xF8 });                         // 0x08: mov rcx, qword ptr [rbp - 8]
+    call(0x200);                                                                 // 0x0c: call CloseHandle
+    file.insert(file.end(), { 0x48, 0x8B, 0x4D, 0xF0 });                         // 0x12: mov rcx, qword ptr [rbp - 0x10]
+    call(0x200);                                                                 // 0x16: call CloseHandle
+    file.insert(file.end(), { 0x48, 0x8B, 0x4D, 0xE8 });                         // 0x1c: mov rcx, qword ptr [rbp - 0x18]
+    call(0x200);                                                                 // 0x20: call CloseHandle
+    file.insert(file.end(), { 0x48, 0x8B, 0x4D, 0xE8 });                         // 0x26: mov rcx, qword ptr [rbp - 0x18]
+    call(0x208);                                                                 // 0x2a: call SetEvent
+    call(0x210);                                                                 // 0x30: call CreateFileW
+    file.insert(file.end(), { 0x48, 0x89, 0x45, 0xE0 });                         // 0x36: mov qword ptr [rbp - 0x20], rax
+    file.insert(file.end(), { 0x48, 0x8B, 0x4D, 0xE0 });                         // 0x3a: mov rcx, qword ptr [rbp - 0x20]
+    call(0x200);                                                                 // 0x3e: call CloseHandle
+    file.insert(file.end(), { 0x48, 0x89, 0xEC, 0x5D, 0xC3 });                   // 0x44: mov rsp, rbp; pop rbp; ret
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "CloseHandle", MemoryMappingType::FunctionMapping } },
+                                { 0x208, { "SetEvent", MemoryMappingType::FunctionMapping } },
+                                { 0x210, { "CreateFileW", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone                = *dissasmInstance.zone;
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    const auto check = [frame](int32 offset, std::string_view name, std::string_view type, std::string_view origin) {
+        const auto* variable = frame->FindVariable(offset);
+        REQUIRE(variable != nullptr);
+        CHECK(variable->name == name);
+        CHECK(variable->type == type);
+        CHECK(variable->origin == origin);
+    };
+    check(-8, "hObject", "HANDLE", "hObject of CloseHandle");
+    check(-0x10, "hObject_2", "HANDLE", "hObject of CloseHandle");
+    check(-0x18, "hEvent", "HANDLE", "hObject of CloseHandle");
+    check(-0x20, "File", "HANDLE", "returned by CreateFileW");
+    REQUIRE(FindListingLine(listing, "0x00000012  mov    rcx, ").find("hObject_2") != std::string_view::npos);
+}
+
+TEST_CASE("X86ExceptionFrameHelpersByCode", "[Dissasm]Help")
+{
+    // x86 MSVC: the frame helpers of the exception handling linked from the CRT (ehprolg3.c, sehprolg4.asm), named by their code; the address
+    // of the cookie / of _except_handler4 inside them is any. The epilog with the cookie check is named only when it jumps to __EH_epilog3
+    std::vector<unsigned char> file = {
+        0x6A, 0x10,                   // 0x00: push 0x10
+        0xB8, 0x00, 0x02, 0x00, 0x00, // 0x02: mov eax, 0x200 (the handler)
+        0xE8, 0x34, 0x00, 0x00, 0x00, // 0x07: call 0x40   __EH_prolog3
+        0xE8, 0x8F, 0x00, 0x00, 0x00, // 0x0c: call 0xa0   __EH_epilog3_GS
+        0xE8, 0x6A, 0x00, 0x00, 0x00, // 0x11: call 0x80   __EH_epilog3
+        0xE8, 0xA5, 0x00, 0x00, 0x00, // 0x16: call 0xc0   the same code jumping to __EH_prolog3: not named
+        0xE8, 0xE0, 0x00, 0x00, 0x00, // 0x1b: call 0x100  __SEH_prolog4
+        0xC3,                         // 0x20: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x50, 0x64, 0xFF, 0x35, 0x00, 0x00, 0x00, 0x00,   // 0x40: push eax; push dword ptr fs:[0]
+                              0x8D, 0x44, 0x24, 0x0C, 0x2B, 0x64, 0x24, 0x0C,   //       lea eax, [esp + 0xc]; sub esp, [esp + 0xc]
+                              0x53, 0x56, 0x57, 0x89, 0x28, 0x8B, 0xE8,         //       push ebx; push esi; push edi; mov [eax], ebp; mov ebp, eax
+                              0xA1, 0x78, 0x56, 0x34, 0x12, 0x33, 0xC5, 0x50,   //       mov eax, [0x12345678] (the cookie); xor eax, ebp; push eax
+                              0xFF, 0x75, 0xFC, 0xC7, 0x45, 0xFC, 0xFF, 0xFF,   //       push [ebp - 4]; mov dword ptr [ebp - 4], -1
+                              0xFF, 0xFF, 0x8D, 0x45, 0xF4, 0x64, 0xA3, 0x00,   //       lea eax, [ebp - 0xc]; mov fs:[0], eax
+                              0x00, 0x00, 0x00, 0xC3 });                        //       ret
+    file.resize(0x80, 0xCC);
+    file.insert(file.end(), { 0x8B, 0x4D, 0xF4, 0x64, 0x89, 0x0D, 0x00, 0x00, 0x00, 0x00, // 0x80: mov ecx, [ebp - 0xc]; mov fs:[0], ecx
+                              0x59, 0x5F, 0x5F, 0x5E, 0x5B, 0x8B, 0xE5, 0x5D, 0x51, 0xC3 }); //    pop ecx; pop edi; pop edi; pop esi; pop ebx; mov esp, ebp; pop ebp; push ecx; ret
+    file.resize(0xA0, 0xCC);
+    file.insert(file.end(), { 0x8B, 0x4D, 0xF0, 0x33, 0xCD,         // 0xa0: mov ecx, [ebp - 0x10]; xor ecx, ebp
+                              0xE8, 0x36, 0x00, 0x00, 0x00,         // 0xa5: call 0xe0   the cookie check
+                              0xE9, 0xD1, 0xFF, 0xFF, 0xFF });      // 0xaa: jmp 0x80    __EH_epilog3
+    file.resize(0xC0, 0xCC);
+    file.insert(file.end(), { 0x8B, 0x4D, 0xF0, 0x33, 0xCD,         // 0xc0: mov ecx, [ebp - 0x10]; xor ecx, ebp
+                              0xE8, 0x16, 0x00, 0x00, 0x00,         // 0xc5: call 0xe0
+                              0xE9, 0x71, 0xFF, 0xFF, 0xFF });      // 0xca: jmp 0x40    __EH_prolog3: no epilog
+    file.resize(0xE0, 0xCC);
+    file.push_back(0xC3); // 0xe0: ret (the cookie check)
+    file.resize(0x100, 0xCC);
+    file.insert(file.end(), { 0x68, 0x00, 0x03, 0x00, 0x00,                         // 0x100: push 0x300 (_except_handler4)
+                              0x64, 0xFF, 0x35, 0x00, 0x00, 0x00, 0x00,             //        push dword ptr fs:[0]
+                              0x8B, 0x44, 0x24, 0x10, 0x89, 0x6C, 0x24, 0x10,       //        mov eax, [esp + 0x10]; mov [esp + 0x10], ebp
+                              0x8D, 0x6C, 0x24, 0x10, 0x2B, 0xE0, 0x53, 0x56, 0x57, //        lea ebp, [esp + 0x10]; sub esp, eax; push ebx; push esi; push edi
+                              0xA1, 0x78, 0x56, 0x34, 0x12, 0x31, 0x45, 0xFC,       //        mov eax, [0x12345678]; xor [ebp - 4], eax
+                              0x33, 0xC5, 0x50, 0x89, 0x65, 0xE8, 0xFF, 0x75, 0xF8, //        xor eax, ebp; push eax; mov [ebp - 0x18], esp; push [ebp - 8]
+                              0x8B, 0x45, 0xFC, 0xC7, 0x45, 0xFC, 0xFE, 0xFF, 0xFF, 0xFF, //    mov eax, [ebp - 4]; mov dword ptr [ebp - 4], -2
+                              0x89, 0x45, 0xF8, 0x8D, 0x45, 0xF0,                   //        mov [ebp - 8], eax; lea eax, [ebp - 0x10]
+                              0x64, 0xA3, 0x00, 0x00, 0x00, 0x00, 0xC3 });          //        mov fs:[0], eax; ret
+    file.resize(0x160, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x86;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    auto& zone = *dissasmInstance.zone;
+    CHECK(zone.GetLabelNameAt(0x40) == "__EH_prolog3");
+    CHECK(zone.GetLabelNameAt(0x80) == "__EH_epilog3");
+    CHECK(zone.GetLabelNameAt(0xA0) == "__EH_epilog3_GS");
+    CHECK(zone.GetLabelNameAt(0xC0) == "sub_C0");
+    CHECK(zone.GetLabelNameAt(0x100) == "__SEH_prolog4");
+    REQUIRE(FindListingLine(listing, "0x00000007  call   __EH_prolog3").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000000c  call   __EH_epilog3_GS").size() > 0);
+}
+
 TEST_CASE("Arm64SecurityPushCookie", "[Dissasm]Arm64")
 {
     // MSVC /GS on ARM64: __security_push_cookie moves sp by 0x10 and stores the cookie (__security_cookie) minus sp at [sp, #8]: named by
