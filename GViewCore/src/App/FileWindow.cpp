@@ -442,11 +442,6 @@ bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     if (INSTANCE_KEY_CONFIGURATOR.Key != Key::None)
         commandBar.SetCommand(INSTANCE_KEY_CONFIGURATOR.Key, "Keys", CMD_SHOW_KEY_CONFIGURATOR);
     commandBar.SetCommand(INSTANCE_OPEN_ADD_NOTE, CMD_OPEN_ADD_NOTE);
-    if (GView::Security::Learning::Hooks::IsCourseWorkWindow(this->obj.get()) && INSTANCE_LEARNING_SUBMIT_FLAG.Key != Key::None)
-        commandBar.SetCommand(INSTANCE_LEARNING_SUBMIT_FLAG.Key, "SubmitFlag", CMD_LEARNING_SUBMIT_FLAG);
-    // every window of a problem of the course (a solution window too: "Close solution window")
-    if (GView::Security::Learning::Hooks::IsLearningProblem(this->obj.get()) && INSTANCE_LEARNING_COURSE.Key != Key::None)
-        commandBar.SetCommand(INSTANCE_LEARNING_COURSE.Key, "Course", CMD_LEARNING_COURSE_MENU);
     // add commands from type plugin
     if (this->typePlugin.IsValid())
     {
@@ -460,6 +455,12 @@ bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     }
     // add all generic plugins
     this->gviewApp->UpdateCommandBar(commandBar);
+    // the course keys last: they win over a type plugin command on the same key, as in OnKeyEvent
+    if (GView::Security::Learning::Hooks::IsCourseWorkWindow(this->obj.get()) && INSTANCE_LEARNING_SUBMIT_FLAG.Key != Key::None)
+        commandBar.SetCommand(INSTANCE_LEARNING_SUBMIT_FLAG.Key, "SubmitFlag", CMD_LEARNING_SUBMIT_FLAG);
+    // every window of a problem of the course (a solution window too: "Close solution window")
+    if (GView::Security::Learning::Hooks::IsLearningProblem(this->obj.get()) && INSTANCE_LEARNING_COURSE.Key != Key::None)
+        commandBar.SetCommand(INSTANCE_LEARNING_COURSE.Key, "Course", CMD_LEARNING_COURSE_MENU);
     return true;
 }
 void FileWindow::Start()

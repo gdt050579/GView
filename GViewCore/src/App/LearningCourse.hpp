@@ -1,7 +1,7 @@
 #pragma once
 
 // Course work and teacher solutions of Learning and Evaluation Mode, the UI side (LearningCourseDialogs.cpp, spec §10.12).
-// The "Course" menu of a task window (Ctrl+Alt+L) is built from a pure model (BuildCourseMenuRows) so that it can be unit
+// The "Course" menu of a task window (F12) is built from a pure model (BuildCourseMenuRows) so that it can be unit
 // tested; the dialogs and the window handling live in LearningCourseDialogs.cpp.
 
 #include "Internal.hpp"

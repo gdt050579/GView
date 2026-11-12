@@ -1,5 +1,5 @@
 // Course work and teacher solutions of Learning and Evaluation Mode (spec §10.12): the "Course" menu of a task window
-// (Ctrl+Alt+L), saving / resuming the student's work, the close prompt, publishing a solution (course staff), and the
+// (F12), saving / resuming the student's work, the close prompt, publishing a solution (course staff), and the
 // windows of a teacher's solution (compare side by side, replay).
 //
 // Every request is started from a modal LearningJobDialog that pumps the session itself (task windows only Tick the session;

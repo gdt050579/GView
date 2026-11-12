@@ -44,7 +44,8 @@ PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> objec
 
 PLUGIN_EXPORT void UpdateSettings(IniSection sect)
 {
-    sect["Command.Dropper"] = Input::Key::F10;
+    // was F10 (an older GView.ini keeps it: Instance::Init (MoveRetiredPluginKeys) moves it to the new default)
+    sect["Command.Dropper"] = Input::Key::Ctrl | Input::Key::F10;
 }
 }
 

@@ -1039,8 +1039,15 @@ class LearningModeWindow : public Window,
                 if (item->hasMe && item->me.workSavedAt != 0)
                     text += "\nYour course work: saved " + Learning::FormatLocalTime(item->me.workSavedAt) + " (revision " +
                             std::to_string(item->me.workRevision) + "); Open with work loads it";
-                else
-                    text += "\nYour course work: not saved on the course server (Course menu of the task window: Ctrl+Alt+L)";
+                else {
+                    LocalString<64> courseKey;
+                    if (InstanceCommands::INSTANCE_LEARNING_COURSE.Key == Key::None ||
+                        !AppCUI::Utils::KeyUtils::ToDisplayString(InstanceCommands::INSTANCE_LEARNING_COURSE.Key, courseKey))
+                        courseKey.Set("no key assigned");
+                    text += "\nYour course work: not saved on the course server (Course menu of the task window: ";
+                    text += courseKey.ToStringView();
+                    text += ")";
+                }
                 if (item->solutionAvailable)
                     text += std::string("\nTeacher solution: published") + (item->solutionHasReplay ? ", with a replay of the teacher's steps" : "");
             }

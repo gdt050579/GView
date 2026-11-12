@@ -628,12 +628,19 @@ namespace App
         inline GView::KeyboardControl INSTANCE_PREVIOUS_WINDOW   = { Input::Key::Shift | Input::Key::Tab, "PreviousWindow", "Switch to the previous window (when the viewer has the focus)", 0 };
         inline GView::KeyboardControl INSTANCE_FOCUS_VIEWER      = { Input::Key::Escape, "FocusViewer", "Move the focus from a panel back to the viewer", 0 };
         inline GView::KeyboardControl INSTANCE_WINDOWS_MANAGER   = { Input::Key::Alt | Input::Key::N0, "WindowsManager", "Show the windows manager", MenuCommands::SHOW_WINDOW_MANAGER, KF::RequiresRestart };
+        // the course keys: bare F-keys (a terminal shows only the keys without a modifier on the command bar), handled only by a window
+        // of the course, before the command bar keys of its type plugin / panels (KeyBindings.cpp does not report those as conflicts; a
+        // viewer handles its keys first: a conflict). F11 is not used: Windows Terminal, conhost, GNOME Terminal and macOS keep it
         inline GView::KeyboardControl INSTANCE_LEARNING_SUBMIT_FLAG = {
-            Input::Key::Ctrl | Input::Key::Alt | Input::Key::F, "LearningSubmitFlag", "Submit the flag for the current learning task", CMD_LEARNING_SUBMIT_FLAG
+            Input::Key::F10, "LearningSubmitFlag", "Submit the flag for the current learning task", CMD_LEARNING_SUBMIT_FLAG
         };
-        // the commands of a window of the course (save / resume the work, the teacher's solution, publish, replay journal)
+        // the commands of a window of the course (save / resume the work, the teacher's solution, publish, replay journal); with no
+        // window opened, the same key opens the window of the course server (GViewDesktop.cpp)
         inline GView::KeyboardControl INSTANCE_LEARNING_COURSE = {
-            Input::Key::Ctrl | Input::Key::Alt | Input::Key::L, "LearningCourse", "Course commands of a learning task window (save, resume, solution)", CMD_LEARNING_COURSE_MENU
+            Input::Key::F12,
+            "LearningCourse",
+            "Course commands of a learning task window (save, resume, solution); with no window opened: the course server window",
+            CMD_LEARNING_COURSE_MENU
         };
         inline GView::KeyboardControl INSTANCE_EXIT              = { Input::Key::Shift | Input::Key::Escape, "Exit", "Close GView", MenuCommands::EXIT_GVIEW, KF::RequiresRestart };
         // remote windows send every key to the remote GView; after this key the next one is handled locally
@@ -1063,7 +1070,7 @@ namespace App
 #endif
     void ShowLearningSubmitDialog(std::string_view problemName);
     // Course work and teacher solutions of a task window (LearningCourseDialogs.cpp, spec §10.12)
-    // the "Course" menu (Ctrl+Alt+L) of a window bound to a problem of the course
+    // the "Course" menu (F12) of a window bound to a problem of the course
     void ShowLearningCourseMenu(FileWindow* window);
     // the close prompt of a student's task window with unsaved course changes: true when the window may close (saved, or the
     // user chose to close without saving), false to keep it open

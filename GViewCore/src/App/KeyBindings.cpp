@@ -36,6 +36,25 @@ namespace
             return nullptr;
         return &c->second;
     }
+
+    // defaults that were moved to another key: a legacy value equal to the old default was written by an older GView
+    // (it wrote every key), it is not a choice of the user -> the new default is used
+    struct RetiredDefault {
+        std::string_view section;
+        std::string_view caption;
+        Key oldKey;
+    };
+    const RetiredDefault RETIRED_DEFAULTS[] = {
+        { "View.Dissasm", "ShowOnlyDissasm", Key::F7 },
+        { "View.Dissasm", "AsmExportToFile", Key::F8 },
+    };
+    bool IsRetiredDefault(std::string_view section, std::string_view caption, Key key)
+    {
+        for (const auto& r : RETIRED_DEFAULTS)
+            if ((r.oldKey == key) && EqualsIgnoreCase(r.section, section) && EqualsIgnoreCase(r.caption, caption))
+                return true;
+        return false;
+    }
 } // namespace
 
 //====================================================================================== Registry ===
@@ -94,7 +113,7 @@ void Registry::Load(IniObject& ini)
                 if (!StartsWithIgnoreCase(valueName, "Key."))
                     continue;
                 const auto key = value.AsKey();
-                if (key.has_value())
+                if (key.has_value() && !IsRetiredDefault(name, valueName.substr(4), key.value()))
                     legacy[EqualsIgnoreCase(name, SECTION_GVIEW) ? std::string(SECTION_GVIEW) : std::string(name)][std::string(valueName.substr(4))] =
                           key.value();
             }
@@ -300,12 +319,12 @@ void ResolveRows(std::vector<Row>& rows, const Registry& registry)
 
 namespace
 {
-    enum class ContextKind : uint8
-    {
+    enum class ContextKind : uint8 {
         Global,
         Plugin,
         Panel,
-        Viewer
+        Viewer,
+        CourseWindow // the course keys: only in a window of a problem of the course, where they win over its command bar keys
     };
     struct Context
     {
@@ -313,9 +332,15 @@ namespace
         std::string_view owner;    // section
         std::string_view category; // for panels: keys of different panel groups are never active together
     };
+    // GView keys handled by a window of the course only (FileWindow), before the viewer / panel / type plugin keys
+    constexpr std::string_view COURSE_WINDOW_CAPTIONS[] = { "LearningSubmitFlag", "LearningCourse" };
     Context GetContext(const Row& r)
     {
         const std::string_view section = r.section;
+        if (EqualsIgnoreCase(section, SECTION_GVIEW))
+            for (const auto caption : COURSE_WINDOW_CAPTIONS)
+                if (EqualsIgnoreCase(r.caption, caption))
+                    return { ContextKind::CourseWindow, section, {} };
         if (StartsWithIgnoreCase(section, SECTION_VIEW_PREFIX))
             return { ContextKind::Viewer, section, {} };
         if (StartsWithIgnoreCase(section, SECTION_TYPE_PREFIX))
@@ -328,6 +353,13 @@ namespace
     }
     bool CanBeActiveTogether(const Context& a, const Context& b)
     {
+        // the course keys win over the command bar keys of a course window (type plugin commands, panel keys), not over a viewer
+        // key (a viewer handles its keys before the window): a conflict with the keys that are always active, the viewers and each
+        // other
+        if ((a.kind == ContextKind::CourseWindow) || (b.kind == ContextKind::CourseWindow)) {
+            const auto other = (a.kind == ContextKind::CourseWindow) ? b.kind : a.kind;
+            return (other == ContextKind::Global) || (other == ContextKind::CourseWindow) || (other == ContextKind::Viewer);
+        }
         if ((a.kind == ContextKind::Global) || (b.kind == ContextKind::Global))
             return true;
         const bool sameOwner = a.owner == b.owner;

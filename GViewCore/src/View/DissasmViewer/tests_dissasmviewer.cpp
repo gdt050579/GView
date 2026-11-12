@@ -3853,7 +3853,7 @@ TEST_CASE("AssistantSuggestions", "[Dissasm]AI")
 
 TEST_CASE("HeadlessAnalysisListing", "[Dissasm]Analyze")
 {
-    // GView analyze --listing: the listing of every zone (the F8 export) next to the JSON
+    // GView analyze --listing: the listing of every zone (the Ctrl+F8 export) next to the JSON
     std::vector<unsigned char> file = {
         0x48, 0x83, 0xEC, 0x28,       // 0x00: sub rsp, 0x28 (entry point)
         0xE8, 0x17, 0x00, 0x00, 0x00, // 0x04: call 0x20

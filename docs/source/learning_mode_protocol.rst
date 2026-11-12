@@ -84,7 +84,8 @@ Key                                 Meaning
 ``LearningDownloadFolder``          Base folder for ``file`` deliveries (empty = ``<Documents>/GView``), see `File mode`_.
 ``LearningTrustedLaunchOrigins``    Web build only: course servers approved for the one-click launch (space separated
                                     origins, written after the first *Connect* of the trust prompt; see section 17).
-``Key.LearningSubmitFlag``          Shortcut of "Submit flag for this task" in a task window (default Ctrl+Alt+F).
+``LearningSubmitFlag``              In ``[Keys.GView]``: shortcut of "Submit flag for this task" in a task window
+                                    (default F10; ``LearningCourse``, default F12, opens the *Course* menu).
 =================================== ================================================================================
 
 3. Access token and request headers
@@ -489,7 +490,7 @@ Body (``application/json``)::
 * Response: ``correct``, ``points``, ``attempts``, ``alreadySolved``, ``duplicate``, ``details``, ``totalScore`` are
   shown. ``409 ALREADY_SOLVED`` is informational. ``403 POLICY_EXPIRED`` expires the session.
 * Legacy servers (no ``correct`` field): ``correct = (status == "ok")``.
-* UI: catalogue *Submit flag* button, or Ctrl+Alt+F (``Key.LearningSubmitFlag``) in a task window.
+* UI: catalogue *Submit flag* button, or F10 (``[Keys.GView] LearningSubmitFlag``) in a task window.
 
 11. Catalogue model
 -------------------
@@ -1088,8 +1089,8 @@ not written at all: the course server is then the only persistence of the journa
 
 **User interface.**
 
-* *Course* menu (``Ctrl+Alt+L``, ``[Keys.GView] LearningCourse``; on the command bar of every window of a problem of
-  the course): *Save work to course* (document size, replay steps), *Resume work from course* ("saved <time>", or
+* *Course* menu (``F12``, ``[Keys.GView] LearningCourse``; on the command bar of every window of a problem of
+  the course; with no window opened, the same key is *SeeServerWindow*, the Learning and Evaluation Mode window): *Save work to course* (document size, replay steps), *Resume work from course* ("saved <time>", or
   "(no saved work)"), *Compare with the teacher's solution* / *Replay the teacher's solution* (when the catalogue says
   a solution / a replay is published for the student), *Course note*, *Submit flag*; course staff add *Publish
   solution...* and *Edit replay journal...*. In a solution window the only command is *Close solution window*.

@@ -92,7 +92,7 @@ local note to the window.
 
 The names, comments, variables and collapsible zones the student adds in the disassembly, and
 the *replay journal* of how they got there (the lines visited, the jumps followed, the edits),
-can be saved on the course server: *Course* (Ctrl+Alt+L) in the task window, then *Save work
+can be saved on the course server: *Course* (F12) in the task window, then *Save work
 to course*. The dialog shows what is sent and its size; *Include replay journal* is checked by
 default. Only these changes are sent, never the task file or the local disassembly cache.
 Closing a task window with changes that are not on the server asks *Save and close*,
@@ -128,7 +128,7 @@ without the replay) and can first remove steps from the journal with *Edit repla
 **Step 5: Submit the solution.**
 
 The student submits the solution directly from GView (*Submit flag* in the catalogue, or
-Ctrl+Alt+F in the task window), optionally - or, if the course requires it, mandatorily -
+F10 in the task window), optionally - or, if the course requires it, mandatorily -
 together with a short explanation of the reasoning:
 
 * If the solution is wrong, the server returns a failure response, and the student

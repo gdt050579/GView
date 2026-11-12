@@ -195,13 +195,13 @@ namespace View
             //  Command Bar keys
             // inline static DissasmCommand AddNewTypeCommand            = { Input::Key::F6, "AddNewType", "Add new data type", COMMAND_ADD_NEW_TYPE };
             inline static KeyboardControl ShowOnlyDissasmCommand = {
-                Input::Key::F7, "ShowOnlyDissasm", "Show only the dissasm code", COMMAND_SHOW_ONLY_DISSASM
+                Input::Key::F3, "ShowOnlyDissasm", "Show only the dissasm code", COMMAND_SHOW_ONLY_DISSASM
             };
             // inline static DissasmCommand ShowOrHideFileContentCommand = {
             //     Input::Key::F9, "ShowOrHideFileContent", "Show or hide file content", COMMAND_ADD_SHOW_FILE_CONTENT
             // };
             inline static KeyboardControl AsmExportFileContentCommand = {
-                Input::Key::F8, "AsmExportToFile", "Export ASM content to file", COMMAND_EXPORT_ASM_FILE
+                Input::Key::Ctrl | Input::Key::F8, "AsmExportToFile", "Export ASM content to file", COMMAND_EXPORT_ASM_FILE
             };
             inline static KeyboardControl JumpBackCommand    = { Input::Key::Ctrl | Input::Key::Q, "JumpBack", "Jump to previous location", COMMAND_JUMP_BACK };
             inline static KeyboardControl JumpForwardCommand = {
@@ -211,9 +211,10 @@ namespace View
                 Input::Key::F2, "GoToEntrypoint", "Go to the entry point of the dissasm zone", COMMAND_DISSAM_GOTO_ENTRYPOINT
             };
 
-            // the same key and name as the address mode of the buffer view
+            // the same name as the address mode of the buffer view; F3 is left to ShowOnlyDissasm (a terminal shows only the keys
+            // without a modifier on the command bar: room for the course keys)
             inline static KeyboardControl ChangeAddressModeCommand = {
-                Input::Key::F3, "ChangeAddressMode", "Show the addresses as VA, RVA or file offsets", COMMAND_CHANGE_ADDRESS_MODE
+                Input::Key::Ctrl | Input::Key::F3, "ChangeAddressMode", "Show the addresses as VA, RVA or file offsets", COMMAND_CHANGE_ADDRESS_MODE
             };
 
             inline static KeyboardControl UndoCommand = { Input::Key::Ctrl | Input::Key::Z, "Undo", "Undo the last edit (comment, rename, numbers base, zone)", COMMAND_UNDO };

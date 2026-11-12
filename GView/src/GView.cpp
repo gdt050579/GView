@@ -99,7 +99,7 @@ Where <command> is on of:
                             --make-signatures <file.json>  writes the signatures
                                                        of the named functions
                             --listing <file.asm>       writes the listing of the
-                                                       code (the F8 export)
+                                                       code (the Ctrl+F8 export)
 
 Remote mode (requires a build with -DGVIEW_ENABLE_REMOTE=ON):
    serve [files] [options]  Runs GView as a server: the analysis runs here and

@@ -264,7 +264,7 @@ bool GView::View::DissasmViewer::BuildAnalysisJson(
     if (options.signaturesOutput)
         *options.signaturesOutput = BuildSignaturesDocument(analyzedZones);
     // the listings (IDA's .asm of a batch run): the zones in the order of the file, with the names, the comments and the arguments of the
-    // known APIs (the known functions of the view: AddKnownFunctions) as the F8 export writes them
+    // known APIs (the known functions of the view: AddKnownFunctions) as the Ctrl+F8 export writes them
     if (options.listingOutput) {
         options.listingOutput->clear();
         AsmData asmData;
