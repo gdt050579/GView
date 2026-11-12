@@ -208,8 +208,8 @@ std::vector<Kind> KindsOf(const std::vector<DissasmReplayEvent>& events)
 struct RecorderView {
     DissasmTestInstance test;
     std::optional<uint32> cursorLine;
-    uint64 ms   = 5000;
-    uint64 unix = 1700000000;
+    uint64 ms       = 5000;
+    uint64 unixTime = 1700000000; // not "unix": GCC predefines it as a macro in its GNU modes
     DissasmReplayRecorder recorder;
 
     explicit RecorderView(bool localVariables = false)
@@ -225,7 +225,7 @@ struct RecorderView {
             return PlaceOfLine(state.lineInZone >= 2 ? std::optional<uint32>(state.lineInZone - 2) : std::nullopt);
         };
         resolver.nowMs   = [this]() { return ms; };
-        resolver.nowUnix = [this]() { return unix; };
+        resolver.nowUnix = [this]() { return unixTime; };
         return resolver;
     }
     std::optional<DissasmReplayRecorder::ResolvedPlace> PlaceOfLine(std::optional<uint32> line)
@@ -263,7 +263,7 @@ struct RecorderView {
     void Wait(uint64 milliseconds)
     {
         ms += milliseconds;
-        unix += milliseconds / 1000;
+        unixTime += milliseconds / 1000;
         recorder.Poll();
     }
     const std::vector<DissasmReplayEvent>& Events() const
@@ -318,7 +318,8 @@ uint32 FindLine(DissasmTestInstance& test, std::string_view mnemonic, uint32 sta
 
 TEST_CASE("ReplayVarints", "[Dissasm]Replay")
 {
-    for (const uint64 value : { 0ull, 1ull, 127ull, 128ull, 16383ull, 16384ull, 0xFFFFFFFFull, 0x123456789ABCDEFull, UINT64_MAX }) {
+    // typed list: UINT64_MAX is unsigned long (not unsigned long long) on LP64 Linux/macOS
+    for (const uint64 value : std::initializer_list<uint64>{ 0, 1, 127, 128, 16383, 16384, 0xFFFFFFFFull, 0x123456789ABCDEFull, UINT64_MAX }) {
         std::vector<std::byte> buffer;
         append_varint(buffer, value);
         const std::byte* p = buffer.data();
@@ -336,7 +337,8 @@ TEST_CASE("ReplayVarints", "[Dissasm]Replay")
     REQUIRE(sizeOf(127) == 1);
     REQUIRE(sizeOf(128) == 2);
     REQUIRE(sizeOf(UINT64_MAX) == 10);
-    for (const int64 value : { 0ll, -1ll, 1ll, -64ll, 64ll, static_cast<long long>(INT32_MIN), static_cast<long long>(INT32_MAX), INT64_MIN, INT64_MAX }) {
+    // typed list: INT64_MIN / INT64_MAX are long (not long long) on LP64 Linux/macOS
+    for (const int64 value : std::initializer_list<int64>{ 0, -1, 1, -64, 64, INT32_MIN, INT32_MAX, INT64_MIN, INT64_MAX }) {
         std::vector<std::byte> buffer;
         append_svarint(buffer, value);
         const std::byte* p = buffer.data();
@@ -604,7 +606,7 @@ TEST_CASE("ReplayRecorderVisits", "[Dissasm]Replay")
     RecorderView edited;
     for (uint32 line = 40; line < 45; line++) {
         edited.Click(line);
-        edited.unix += 2;
+        edited.unixTime += 2;
     }
     REQUIRE(edited.recorder.PendingVisits() == 3);
     REQUIRE(edited.test.AddOrUpdateComment(44, "the key"));

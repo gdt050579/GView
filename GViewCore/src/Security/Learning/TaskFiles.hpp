@@ -77,6 +77,7 @@ class TaskFileStore
     std::map<std::string, Entry, std::less<>> entries;
 
     bool IsTakenByAnotherItem(std::string_view file, std::string_view itemName) const;
+    std::filesystem::path ManifestPath() const;
     void Load();
     bool Save() const; // best effort: a lost manifest only costs a hash comparison (or a question) on the next open
 };

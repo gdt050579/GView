@@ -1137,6 +1137,92 @@ TEST_CASE("Learning: task file store", "[learning][content]")
     std::filesystem::remove_all(dir, ec);
 }
 
+TEST_CASE("Learning: download base folder", "[learning][content]")
+{
+#ifdef BUILD_FOR_WINDOWS
+    const std::string rooted = "C:\\Courses\\GView";
+#else
+    const std::string rooted = "/srv/courses/gview";
+#endif
+    REQUIRE(DownloadBaseFolder(rooted) == PathFromUtf8(rooted));
+    REQUIRE(DownloadBaseFolder(rooted + "/x/../y") == PathFromUtf8(rooted) / "y"); // normalised
+    // the default: <Documents>/GView, from the OS (never from USERPROFILE / HOME)
+    const auto def = DownloadBaseFolder("");
+    REQUIRE(def.has_root_directory());
+    REQUIRE(def.filename() == "GView");
+    for (const auto& part : def)
+        REQUIRE(part != "..");
+    // a relative setting would depend on the current folder: the default is used instead
+    REQUIRE(DownloadBaseFolder("relative/folder") == def);
+    REQUIRE(DownloadBaseFolder("../up") == def);
+#ifdef BUILD_FOR_WINDOWS
+    REQUIRE(DownloadBaseFolder("C:relative") == def); // drive-relative
+#endif
+}
+
+TEST_CASE("Learning: task file store never follows links", "[learning][content]")
+{
+    const auto dir     = std::filesystem::temp_directory_path() / "gview_learning_test_links";
+    const auto outside = std::filesystem::temp_directory_path() / "gview_learning_test_links_target.bin";
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    std::filesystem::create_directories(dir, ec);
+    const auto writeText = [](const std::filesystem::path& p, std::string_view text) {
+        std::ofstream f(p, std::ios::binary | std::ios::trunc);
+        f.write(text.data(), static_cast<std::streamsize>(text.size()));
+    };
+    const auto readAll = [](const std::filesystem::path& p) {
+        std::ifstream f(p, std::ios::binary);
+        return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    };
+    const std::string secret = "not a task file";
+    writeText(outside, secret);
+
+    // the store's own paths stay in the folder, even for a folder given with a trailing separator
+    {
+        TaskFileStore store(dir / "");
+        REQUIRE(store.Folder() == dir);
+        REQUIRE(store.PlanFor("p1", "task.bin", Sha256Hex("x")).path.parent_path() == dir);
+    }
+
+    // symbolic links need a privilege on Windows (or developer mode): skip the rest when one cannot be made
+    std::filesystem::create_symlink(outside, dir / "task.bin", ec);
+    if (ec)
+    {
+        std::filesystem::remove_all(dir, ec);
+        std::filesystem::remove(outside, ec);
+        SKIP("cannot create symbolic links here");
+    }
+    std::filesystem::create_symlink(outside, dir / (std::string(TASK_MANIFEST_FILE_NAME) + ".tmp"), ec);
+    REQUIRE_FALSE(ec);
+    {
+        TaskFileStore store(dir);
+        // a link in the way is never hashed, kept or opened: it is replaced by the server version
+        auto plan = store.PlanFor("p1", "task.bin", Sha256Hex(secret));
+        REQUIRE(plan.state == TaskFileStore::LocalState::Missing);
+        REQUIRE_FALSE(store.KnownFile("p1").has_value());
+        // replacing it replaces the link, not its target; the manifest is not written through the link at its temp name
+        const std::string v1 = "version one";
+        std::filesystem::path out;
+        REQUIRE(store.Store(plan, "p1", BufferView(v1), Sha256Hex(v1), 1, out).ok);
+        REQUIRE(std::filesystem::is_regular_file(std::filesystem::symlink_status(out)));
+        REQUIRE(readAll(out) == v1);
+        REQUIRE(readAll(outside) == secret);
+        REQUIRE(store.FindUpToDate("p1", Sha256Hex(v1)) == out);
+    }
+    {
+        // a manifest that is a link is not read
+        std::filesystem::remove(dir / TASK_MANIFEST_FILE_NAME, ec);
+        writeText(outside, R"({"items":{"p1":{"file":"task.bin","sha256":"","itemVersion":9}}})");
+        std::filesystem::create_symlink(outside, dir / TASK_MANIFEST_FILE_NAME, ec);
+        REQUIRE_FALSE(ec);
+        TaskFileStore store(dir);
+        REQUIRE(store.RecordedVersion("p1") == 0);
+    }
+    std::filesystem::remove_all(dir, ec);
+    std::filesystem::remove(outside, ec);
+}
+
 TEST_CASE("Learning: locked buffer hygiene", "[learning][content]")
 {
     LockedBuffer b;

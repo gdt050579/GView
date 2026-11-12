@@ -4729,10 +4729,13 @@ void Instance::StartAINaming()
         Dialogs::MessageBox::ShowNotification("Info", "The functions are found by the deep scan of a shown disassembly zone!");
         return;
     }
-    if (!queryInterface || !queryInterface->GetSmartAssistantInterface()) {
+    if (!queryInterface) {
         Dialogs::MessageBox::ShowNotification("Warning", "There is no digital assistant available!");
         return;
     }
+    // GetSmartAssistantInterface explains itself when none is configured; nullptr is also a cancelled pick (no message)
+    if (!queryInterface->GetSmartAssistantInterface())
+        return;
     // the function of the cursor and the functions it calls; only the ones with an automatic name and no suggestion yet
     uint64 functionStart  = zone->functionStarts.front();
     const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
@@ -5677,11 +5680,14 @@ void Instance::QuerySmartAssistantX86X64(
             displayPrompt.AddFormat("%s", data.mnemonic);
     }
 
-    const auto assistantInterface = queryInterface ? queryInterface->GetSmartAssistantInterface() : nullptr;
-    if (!assistantInterface) {
+    if (!queryInterface) {
         Dialogs::MessageBox::ShowNotification("Warning", "There is no digital assistant available!");
         return;
     }
+    // GetSmartAssistantInterface explains itself when none is configured; nullptr is also a cancelled pick (no message)
+    const auto assistantInterface = queryInterface->GetSmartAssistantInterface();
+    if (!assistantInterface)
+        return;
 
     // the code starts below the function label, or at the first selected line
     const uint32 firstLine      = queryParams.startsAtSelectedLine ? line : line + 1u;

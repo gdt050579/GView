@@ -53,10 +53,41 @@ namespace
         return true;
     }
 
-    bool IsRegularFile(const std::filesystem::path& p)
+    // The week folder is under the student's control: a symbolic link or junction placed there could send a read (the
+    // manifest, the hash of a task file) or a write (the manifest) somewhere else. Links are never followed.
+    std::filesystem::file_type EntryType(const std::filesystem::path& p)
     {
         std::error_code ec;
-        return std::filesystem::is_regular_file(p, ec);
+        const auto st = std::filesystem::symlink_status(p, ec);
+        return ec ? std::filesystem::file_type::not_found : st.type();
+    }
+
+    bool IsPlainFile(const std::filesystem::path& p)
+    {
+        return EntryType(p) == std::filesystem::file_type::regular;
+    }
+
+    // folder / name, only when name is one plain component (no separator, "..", drive or device name): every path the
+    // store opens is built here, so none can leave the folder whatever the manifest or the server sent
+    std::optional<std::filesystem::path> ChildPath(const std::filesystem::path& folder, std::string_view name)
+    {
+        if (name.empty() || SanitizePathComponent(name, "") != name)
+            return std::nullopt;
+        auto path = folder / PathFromUtf8(name);
+        if (path.parent_path() != folder || PathToUtf8(path.filename()) != name)
+            return std::nullopt;
+        return path;
+    }
+
+    // removes a link (not its target) or a stale file left at a path the store is about to create
+    void RemoveNonDirectory(const std::filesystem::path& p)
+    {
+        const auto type = EntryType(p);
+        if (type != std::filesystem::file_type::not_found && type != std::filesystem::file_type::directory)
+        {
+            std::error_code ec;
+            std::filesystem::remove(p, ec);
+        }
     }
 } // namespace
 
@@ -66,9 +97,16 @@ std::filesystem::path TaskFolder(std::string_view configuredFolder, std::string_
            PathFromUtf8(SanitizePathComponent(weekName, "Course", MAX_WEEK_NAME_BYTES));
 }
 
-TaskFileStore::TaskFileStore(std::filesystem::path taskFolder) : folder(std::move(taskFolder))
+TaskFileStore::TaskFileStore(std::filesystem::path taskFolder) : folder(taskFolder.lexically_normal())
 {
+    if (folder.has_relative_path() && folder.filename().empty())
+        folder = folder.parent_path(); // "a/b/" -> "a/b": ChildPath compares the parent of each file with it
     Load();
+}
+
+std::filesystem::path TaskFileStore::ManifestPath() const
+{
+    return folder / PathFromUtf8(TASK_MANIFEST_FILE_NAME); // a constant name: never server or manifest data
 }
 
 void TaskFileStore::Load()
@@ -76,7 +114,9 @@ void TaskFileStore::Load()
     entries.clear();
     try
     {
-        const auto path = folder / PathFromUtf8(TASK_MANIFEST_FILE_NAME);
+        const auto path = ManifestPath();
+        if (!IsPlainFile(path))
+            return;
         std::error_code ec;
         const auto size = std::filesystem::file_size(path, ec);
         if (ec || size == 0 || size > MAX_MANIFEST_BYTES)
@@ -130,11 +170,16 @@ bool TaskFileStore::Save() const
             items[name] = { { "file", e.file }, { "sha256", e.sha256 }, { "itemVersion", e.itemVersion } };
         const nlohmann::json j    = { { "format", 1 }, { "items", std::move(items) } };
         const std::string text    = j.dump(2);
-        const auto finalPath      = folder / PathFromUtf8(TASK_MANIFEST_FILE_NAME);
+        const auto finalPath      = ManifestPath();
         tmp                       = finalPath;
         tmp += ".tmp";
         std::error_code ec;
         std::filesystem::create_directories(folder, ec);
+        // never write through a link (or into a stale file) placed at the temporary name; a link at the manifest's own
+        // name goes too, so that the replace below cannot touch its target
+        RemoveNonDirectory(tmp);
+        if (EntryType(finalPath) != std::filesystem::file_type::regular)
+            RemoveNonDirectory(finalPath);
         {
             std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
             if (!f.is_open())
@@ -204,8 +249,8 @@ std::optional<std::filesystem::path> TaskFileStore::FindUpToDate(std::string_vie
     const auto it = entries.find(itemName);
     if (it == entries.end())
         return std::nullopt;
-    auto path = folder / PathFromUtf8(it->second.file);
-    if (!IsRegularFile(path) || FileSha256Hex(path) != sha256)
+    auto path = ChildPath(folder, it->second.file);
+    if (!path || !IsPlainFile(*path) || FileSha256Hex(*path) != sha256)
         return std::nullopt;
     return path;
 }
@@ -231,9 +276,21 @@ TaskFileStore::Plan TaskFileStore::PlanFor(std::string_view itemName, std::strin
             plan.file = SanitizeFileName(prefix + "-" + preferred);
         }
     }
-    plan.path = folder / PathFromUtf8(plan.file);
+    const auto path = ChildPath(folder, plan.file);
+    if (!path)
+    {
+        // cannot happen: the name was sanitized (here or when the manifest was read); Store refuses an empty plan, so
+        // nothing is read, written or opened then
+        plan.file.clear();
+        plan.path.clear();
+        plan.state = LocalState::Missing;
+        return plan;
+    }
+    plan.path = *path;
 
-    if (!IsRegularFile(plan.path))
+    // Nothing there, or something that is not a plain file (a link, a folder, a device): never hashed, kept or opened.
+    // Writing replaces a link itself (never its target); a folder in the way makes the write fail.
+    if (EntryType(plan.path) != std::filesystem::file_type::regular)
     {
         plan.state = LocalState::Missing;
         return plan;
@@ -251,6 +308,8 @@ TaskFileStore::Plan TaskFileStore::PlanFor(std::string_view itemName, std::strin
 Utils::GStatus TaskFileStore::Store(
       const Plan& plan, std::string_view itemName, BufferView data, std::string_view sha256, uint32 itemVersion, std::filesystem::path& outPath)
 {
+    if (plan.file.empty() || plan.path.empty())
+        return Utils::GStatus::Error("invalid file name");
     auto st = WriteFileAtomic(folder, plan.file, data, sha256, outPath);
     if (!st.ok)
         return st;
@@ -264,6 +323,8 @@ Utils::GStatus TaskFileStore::Store(
 
 void TaskFileStore::Keep(const Plan& plan, std::string_view itemName, std::string_view serverSha256, uint32 itemVersion)
 {
+    if (plan.file.empty())
+        return;
     auto it = entries.find(itemName);
     if (plan.state == LocalState::SameAsServer || it == entries.end() || it->second.file != plan.file)
     {
@@ -289,8 +350,8 @@ std::optional<std::filesystem::path> TaskFileStore::KnownFile(std::string_view i
     const auto it = entries.find(itemName);
     if (it == entries.end())
         return std::nullopt;
-    auto path = folder / PathFromUtf8(it->second.file);
-    if (!IsRegularFile(path))
+    auto path = ChildPath(folder, it->second.file);
+    if (!path || !IsPlainFile(*path))
         return std::nullopt;
     return path;
 }

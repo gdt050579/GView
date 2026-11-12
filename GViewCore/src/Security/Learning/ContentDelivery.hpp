@@ -50,7 +50,8 @@ std::filesystem::path PathFromUtf8(std::string_view utf8);
 std::string PathToUtf8(const std::filesystem::path& p);
 
 // File mode helpers (TaskFiles.hpp builds the per-server / per-week folders under this base)
-// [GView] LearningDownloadFolder when set, otherwise <Documents>/GView
+// [GView] LearningDownloadFolder when set to a rooted path, otherwise <Documents>/GView (the account's Documents folder as
+// the OS reports it - never read from USERPROFILE / HOME). The result is lexically normal and has no ".." component.
 std::filesystem::path DownloadBaseFolder(std::string_view configuredFolder);
 Utils::GStatus WriteFileAtomic(
       const std::filesystem::path& folder, std::string_view fileName, BufferView data, std::string_view expectedSha256Hex, std::filesystem::path& outPath);
