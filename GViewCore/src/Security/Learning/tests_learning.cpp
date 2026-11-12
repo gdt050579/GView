@@ -1968,8 +1968,7 @@ TEST_CASE("Learning: policy notes object (absent, present, clamping)", "[learnin
     REQUIRE_FALSE(p.notes.present);
 
     // a present field with a wrong JSON type is POLICY_MALFORMED (spec §9.2)
-    for (const json bad : { json("on"), json{ { "enabled", "yes" } }, json{ { "maxChars", -1 } }, json{ { "maxChars", "20000" } } })
-    {
+    for (const json& bad : { json("on"), json{ { "enabled", "yes" } }, json{ { "maxChars", -1 } }, json{ { "maxChars", "20000" } } }) {
         o.notes  = bad;
         auto st  = ParsePolicyWith(o, p);
         INFO(bad.dump());
@@ -3323,7 +3322,7 @@ TEST_CASE("Learning: work document validation and canonical text", "[learning][w
     REQUIRE(ValidateWorkDocumentText(R"({"format":"gview-disassembly-annotations","version":1})", 1000, c).ok);
 
     const std::string tooLarge = "x";
-    for (const std::string bad : {
+    for (const std::string& bad : {
                std::string(""),
                std::string("[1,2]"),
                std::string("\"text\""),
@@ -3340,8 +3339,7 @@ TEST_CASE("Learning: work document validation and canonical text", "[learning][w
                std::string("{\"format\":\"gview-disassembly-annotations\",\"version\":1,\"t\":\"a\0b\"}", 52),
                std::string(R"({"format":"gview-disassembly-annotations","version":1,"t":"\xff"})"), // invalid UTF-8
                R"({"format":"gview-disassembly-annotations","version":1,"d":)" + std::string(200, '[') + std::string(200, ']') + "}",
-         })
-    {
+         }) {
         INFO(bad.substr(0, 80));
         std::string out = "unchanged";
         REQUIRE_FALSE(ValidateWorkDocumentText(bad, MAX_WORK_DOCUMENT_BYTES, out).ok);
@@ -3523,8 +3521,11 @@ TEST_CASE("Learning: GetWork / SaveWork / GetSolution / PublishSolution answers 
     REQUIRE(ParseSaveWorkResponse(BufferView(std::string_view(text)), sw).ok);
     REQUIRE(sw.revision == 4);
     REQUIRE(sw.updatedAt == 1760000000);
-    for (const std::string b : { std::string(R"({"status":"ok"})"), std::string(R"({"status":"ok","revision":"4"})"), std::string(R"({"status":"ok","revision":0})"),
-                                 std::string(R"({"status":"error","revision":4})"), std::string("[]") })
+    for (const std::string& b : { std::string(R"({"status":"ok"})"),
+                                  std::string(R"({"status":"ok","revision":"4"})"),
+                                  std::string(R"({"status":"ok","revision":0})"),
+                                  std::string(R"({"status":"error","revision":4})"),
+                                  std::string("[]") })
         REQUIRE_FALSE(ParseSaveWorkResponse(BufferView(std::string_view(b)), sw).ok);
     PublishSolutionResponse pr;
     text = R"({"status":"ok","id":3,"revision":1,"updatedAt":5,"created":true})";
@@ -3591,8 +3592,7 @@ TEST_CASE("Learning: policy work object (absent, present, clamping)", "[learning
     REQUIRE(ParsePolicyWith(o, p).ok);
     REQUIRE_FALSE(p.work.present);
 
-    for (const json bad : { json("on"), json::array(), json{ { "enabled", "yes" } }, json{ { "maxBytes", -1 } }, json{ { "maxBytes", "2097152" } } })
-    {
+    for (const json& bad : { json("on"), json::array(), json{ { "enabled", "yes" } }, json{ { "maxBytes", -1 } }, json{ { "maxBytes", "2097152" } } }) {
         o.work  = bad;
         auto st = ParsePolicyWith(o, p);
         INFO(bad.dump());

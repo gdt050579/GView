@@ -2732,13 +2732,14 @@ void Instance::RefreshCursorLineNumbers()
     const std::string_view lineOperands(asmLine.op_str, asmLine.op_str_size);
     const auto lineKind = static_cast<X86InstructionKind>(asmLine.instructionKind);
     if (cursorLineNumbers.instruction.empty() && (lineKind == X86InstructionKind::Call || lineKind == X86InstructionKind::Jump) &&
-        asmLine.branchTarget.has_value())
+        asmLine.branchTarget.has_value()) {
         if (const auto* user = zone->FindUserPrototype(asmLine.branchTarget.value())) // the prototype the user gave (Y)
             cursorLineNumbers.instruction = std::string(user->prototype);
         else if (const auto* inferred = zone->FindInferredPrototype(asmLine.branchTarget.value())) // the one inferred from its calls
             cursorLineNumbers.instruction = std::string(inferred->prototype) + " (inferred)";
         else if (const auto* named = zone->FindNamedPrototype(asmLine.branchTarget.value())) // its name: a C++ one (its spaces and parentheses)
             cursorLineNumbers.instruction = std::string(named->prototype);
+    }
     if (cursorLineNumbers.instruction.empty() && (lineKind == X86InstructionKind::Call || lineKind == X86InstructionKind::Jump)) {
         // the last name of the operands: call CreateFileW / call cs:__imp_CreateFileW / jmp j_connect
         size_t end = lineOperands.size();

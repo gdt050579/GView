@@ -286,28 +286,29 @@ struct ZoneLayout {
     uint64 entryPoint            = 10;
     DisassemblyLanguage language = DisassemblyLanguage::x86;
     uint32 cacheSize             = 0; // data cache size, 0 for the whole file (the data cache has at least 64 KB)
-    std::optional<uint64> labelAddressBase; // the VA of the zone start (the plugins with an offset translation)
-    std::function<bool(uint64)> isFileAddress; // the addresses of the file (cross references of the immediates)
-    std::map<uint64, DissasmFunctionEntry> functionEntries; // the function starts given by the plugin, by file offset
-    std::set<uint64> codeLocations;                         // the places inside the functions given by the plugin (AddCodeLocation)
-    std::vector<LandingPad> landingPads;                    // the call sites of GCC / clang (AddLandingPads; their pads as codeLocations)
-    std::map<uint64, uint64> codeRanges;                    // the code of a function or of a fragment (AddCodeRange: the FDEs)
-    std::unordered_map<uint64, MemoryMappingEntry> imports;  // the imports by the RVA of their slot (the VA for x86 without translation)
-    bool translateOffsets = false;                           // a plugin translation: the RVA is the file offset
-    std::function<std::optional<uint64>(uint64)> addressToFileOffset; // the jump tables are read there (empty: no jump tables)
-    std::optional<uint64> imageBase;
-    std::optional<std::chrono::milliseconds> deepScanBudget; // none: the deep scan ends in InitZone
-    std::vector<uint64> instructionBoundaries;               // file offsets where an instruction starts (section starts)
-    bool isData = false;                                     // a data zone (AddDataZone)
-    std::optional<uint64> globalOffsetTable;                 // 32 bit x86 PIC: ebx in the PLT stubs
-    std::vector<DissasmCodeZone*> siblings;                  // the other zones of the file (their xrefs name the labels of a data zone)
+    // (every member has an initializer: GCC's -Wmissing-field-initializers skips them, so { start, size, entryPoint } is clean)
+    std::optional<uint64> labelAddressBase{};                           // the VA of the zone start (the plugins with an offset translation)
+    std::function<bool(uint64)> isFileAddress{};                        // the addresses of the file (cross references of the immediates)
+    std::map<uint64, DissasmFunctionEntry> functionEntries{};           // the function starts given by the plugin, by file offset
+    std::set<uint64> codeLocations{};                                   // the places inside the functions given by the plugin (AddCodeLocation)
+    std::vector<LandingPad> landingPads{};                              // the call sites of GCC / clang (AddLandingPads; their pads as codeLocations)
+    std::map<uint64, uint64> codeRanges{};                              // the code of a function or of a fragment (AddCodeRange: the FDEs)
+    std::unordered_map<uint64, MemoryMappingEntry> imports{};           // the imports by the RVA of their slot (the VA for x86 without translation)
+    bool translateOffsets = false;                                      // a plugin translation: the RVA is the file offset
+    std::function<std::optional<uint64>(uint64)> addressToFileOffset{}; // the jump tables are read there (empty: no jump tables)
+    std::optional<uint64> imageBase{};
+    std::optional<std::chrono::milliseconds> deepScanBudget{}; // none: the deep scan ends in InitZone
+    std::vector<uint64> instructionBoundaries{};               // file offsets where an instruction starts (section starts)
+    bool isData = false;                                       // a data zone (AddDataZone)
+    std::optional<uint64> globalOffsetTable{};                 // 32 bit x86 PIC: ebx in the PLT stubs
+    std::vector<DissasmCodeZone*> siblings{};                  // the other zones of the file (their xrefs name the labels of a data zone)
     bool alignPadding = false; // the listings of the tests show every padding instruction (int3), unless a test asks for align lines
-    std::optional<std::chrono::milliseconds> lineCountBudget; // none: the lines are counted in InitZone
-    std::map<uint64, ArmCodeMode> armCodeModes;               // 32 bit ARM: the mode changes, by file offset
-    std::map<uint64, uint64> relocatedPointers;               // the pointers the loader writes (file offset -> VA)
-    bool isUninitialized = false;                             // an uninitialized data zone (start: its file offset, labelAddressBase: its VA)
-    std::map<uint64, DissasmDataField> dataFields;            // the fields of the structures of the data, by VA
-    std::unordered_map<uint64, std::string> boundSymbols;     // Mach-O: the symbols of the pointers dyld binds, by RVA
+    std::optional<std::chrono::milliseconds> lineCountBudget{}; // none: the lines are counted in InitZone
+    std::map<uint64, ArmCodeMode> armCodeModes{};               // 32 bit ARM: the mode changes, by file offset
+    std::map<uint64, uint64> relocatedPointers{};               // the pointers the loader writes (file offset -> VA)
+    bool isUninitialized = false;                               // an uninitialized data zone (start: its file offset, labelAddressBase: its VA)
+    std::map<uint64, DissasmDataField> dataFields{};            // the fields of the structures of the data, by VA
+    std::unordered_map<uint64, std::string> boundSymbols{};     // Mach-O: the symbols of the pointers dyld binds, by RVA
     bool systemV = false; // x64: the System V calling convention (the content type of an ELF: not a PE)
 };
 

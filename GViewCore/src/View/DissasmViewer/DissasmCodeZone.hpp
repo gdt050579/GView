@@ -441,7 +441,7 @@ struct DissasmCodeZone : public ParseZone {
         uint64 begin;                  // the first instruction of the scope (of the first range of the try of a catch)
         std::optional<uint64> handler; // the filter / the __finally funclet; none: the constant filter EXCEPTION_EXECUTE_HANDLER
         std::optional<uint64> target;  // the __except block; none: a __finally
-        std::string catchType;         // a catch: the type it takes ("..." for all)
+        std::string catchType{};       // a catch: the type it takes ("..." for all)
         bool owned = true;             // a catch / a handler: false when its scope has no range in the function (no owner shown)
     };
     std::unordered_map<uint64, std::vector<ExceptionMark>> exceptionMarks;

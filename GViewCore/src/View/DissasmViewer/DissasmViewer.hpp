@@ -147,7 +147,7 @@ namespace View
             uint64 size;
             uint64 entryPoint; // NO_ENTRY_POINT: the zone has none
             DisassemblyLanguage language;
-            std::string name; // shown in the title of the zone (a section name), not saved in the cache
+            std::string name{};  // shown in the title of the zone (a section name), not saved in the cache
             bool isData = false; // a data zone (AddDataZone): no instructions, its bytes are data lines
             // an uninitialized data zone (AddUninitializedDataZone): its VA, its file offset is from DISSASM_UNINITIALIZED_ZONES_BASE
             bool isUninitialized  = false;
@@ -616,7 +616,7 @@ namespace View
         struct DissasmCollapsibleZone {
             uint32 start = 0;
             uint32 end   = 0; // exclusive
-            std::string name;
+            std::string name{};
             bool isCollapsed = false;
 
             bool Contains(uint32 line) const
@@ -635,13 +635,13 @@ namespace View
             bool isExport = false; // the name is the name of an export
             // x64 structured exception handling (Settings::AddExceptionScopes): the __try scopes of the function and its frame in the
             // unwind data (the prologue size, the frame register and its offset / 16)
-            std::vector<ExceptionScope> exceptionScopes;
+            std::vector<ExceptionScope> exceptionScopes{};
             uint8 prologSize    = 0;
             uint8 frameRegister = 0;
             uint8 frameOffset   = 0;
-            std::vector<ExceptionFunclet> exceptionFunclets; // the C++ exception handling (Settings::AddExceptionFunclets)
-            std::vector<std::pair<uint64, uint64>> chunks;   // its chunks (Settings::AddFunctionChunk): file offset, size
-            std::vector<ExceptionObject> exceptionObjects;   // the objects its unwinding destroys (Settings::AddExceptionObjects)
+            std::vector<ExceptionFunclet> exceptionFunclets{}; // the C++ exception handling (Settings::AddExceptionFunclets)
+            std::vector<std::pair<uint64, uint64>> chunks{};   // its chunks (Settings::AddFunctionChunk): file offset, size
+            std::vector<ExceptionObject> exceptionObjects{};   // the objects its unwinding destroys (Settings::AddExceptionObjects)
             bool exceptionData = false;                      // an entry of the exception data (.pdata): its size covers its code only
         };
 

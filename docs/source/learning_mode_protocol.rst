@@ -546,9 +546,9 @@ T8   ``telemetry whitelist, bounds and flush outcomes`` (network failure keeps e
 N    Course notes: ``policy notes object``, ``note text helpers``, ``note request bodies``,         passed
      ``GetNotes parsing``, ``note error mapping``, ``notes availability follows the policy``,
      ``notes autosave``, ``notes network errors retry the same request``, ``notes 409 keeps the
-     server copy and the local text``, ``notes 403 hides the Notes UI``, ``notes 404, refusals and
-     deletion``, ``notes are saved at session end``, ``notes conflicts left unresolved, deletions
-     and GetNotes failures``, ``notes of another account are dropped``,
+     server copy and the local text``, ``notes 403 hides the Notes UI``, ``notes 404,
+     refusals and deletion``, ``notes are saved at session end``, ``notes conflicts left
+     unresolved, deletions and GetNotes failures``, ``notes of another account are dropped``,
      ``course notes of the teacher``, ``note text never reaches telemetry or the disk``; E2E
      ``course notes end-to-end against the stub server`` (student, ``--staff``,
      ``--notes-forbidden``, ``--notes off``)
@@ -574,7 +574,7 @@ How to reproduce::
 Manual check of the UI: ``GView learn <connection string printed by the stub>``.
 
 Test vectors
-~~~~~~~~~~~~
+^^^^^^^^^^^^
 
 The stub key is derived from a public seed and is **for tests only**.
 
@@ -598,7 +598,7 @@ Signed policy (``serverUrl`` ``https://re.example.edu``, verified at ``now = 175
    signature (base64) = LnnH52/44aGmbhfBVmmv7LwdQoUSTaNppaRMhuE4W4tBy0rKPLyUIbVAlUa2Jw/cuy3jjOSjIkWPkFzbPNdWBQ==
 
 Limitations
-~~~~~~~~~~~
+^^^^^^^^^^^
 
 * **AppCUI controls write to the clipboard on their own** (Ctrl+C in ``ListView``/``TreeView``/``Grid`` panels,
   ``TextField``/``TextArea`` selections, theme editor, window manager notes) through ``AppCUI::OS::Clipboard`` and

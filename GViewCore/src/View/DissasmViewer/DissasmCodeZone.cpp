@@ -7280,7 +7280,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 const auto opType = [&](uint8 i) { return isArm64 ? static_cast<int>(current.detail->arm64.operands[i].type) : static_cast<int>(current.detail->arm.operands[i].type); };
                 const auto opReg  = [&](uint8 i) { return isArm64 ? static_cast<unsigned int>(current.detail->arm64.operands[i].reg) : static_cast<unsigned int>(current.detail->arm.operands[i].reg); };
                 const auto opImm  = [&](uint8 i) { return isArm64 ? static_cast<int64>(current.detail->arm64.operands[i].imm) : static_cast<int64>(current.detail->arm.operands[i].imm); };
-                const int REG = isArm64 ? ARM64_OP_REG : ARM_OP_REG, IMM = isArm64 ? ARM64_OP_IMM : ARM_OP_IMM, MEM = isArm64 ? ARM64_OP_MEM : ARM_OP_MEM;
+                // the two architectures have their own enums: compared as int (GCC -Wenum-compare on a ?: of two enum types)
+                const int REG             = isArm64 ? static_cast<int>(ARM64_OP_REG) : static_cast<int>(ARM_OP_REG);
+                const int IMM             = isArm64 ? static_cast<int>(ARM64_OP_IMM) : static_cast<int>(ARM_OP_IMM);
+                const int MEM             = isArm64 ? static_cast<int>(ARM64_OP_MEM) : static_cast<int>(ARM_OP_MEM);
+                const unsigned int NO_REG = isArm64 ? static_cast<unsigned int>(ARM64_REG_INVALID) : static_cast<unsigned int>(ARM_REG_INVALID);
                 const bool isStore = isArm64 ? (current.id == ARM64_INS_STR || current.id == ARM64_INS_STUR) : current.id == ARM_INS_STR;
                 const bool isLoad  = isArm64 ? (current.id == ARM64_INS_LDR || current.id == ARM64_INS_LDUR) : current.id == ARM_INS_LDR;
                 const bool isAdd   = isArm64 ? current.id == ARM64_INS_ADD : current.id == ARM_INS_ADD;
@@ -7299,7 +7303,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                                                      : current.detail->arm.operands[1].mem.index == ARM_REG_INVALID;
                         const int64 disp   = isArm64 ? current.detail->arm64.operands[1].mem.disp : current.detail->arm.operands[1].mem.disp;
                         if (noIndex)
-                            storeReturn(frameOffsetOf(base, isArm64 ? ARM64_REG_INVALID : ARM_REG_INVALID, disp, current.address), returned[source]);
+                            storeReturn(frameOffsetOf(base, NO_REG, disp, current.address), returned[source]);
                     }
                     continue;
                 }
@@ -7320,11 +7324,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     const int64 disp = isArm64 ? current.detail->arm64.operands[1].mem.disp : current.detail->arm.operands[1].mem.disp;
                     const bool noIndex = isArm64 ? indexRegister == ARM64_REG_INVALID : indexRegister == ARM_REG_INVALID;
                     if (noIndex) // the value of the slot
-                        held = slotValue(frameOffsetOf(base, isArm64 ? ARM64_REG_INVALID : ARM_REG_INVALID, disp, current.address), false);
+                        held = slotValue(frameOffsetOf(base, NO_REG, disp, current.address), false);
                     knownEffect = true;
                 } else if ((isAdd || isSub) && count == 3 && opType(1) == REG && opType(2) == IMM) {
                     const int64 value = isSub ? -opImm(2) : opImm(2);
-                    held        = slotValue(frameOffsetOf(opReg(1), isArm64 ? ARM64_REG_INVALID : ARM_REG_INVALID, value, current.address), true); // its address
+                    held              = slotValue(frameOffsetOf(opReg(1), NO_REG, value, current.address), true); // its address
                     knownEffect = true;
                 } else if (isMove && count == 2 && opType(1) == REG) {
                     const int source = registerIndex(opReg(1));
@@ -8460,7 +8464,6 @@ std::vector<DissasmFunctionInfo> DissasmCodeZone::GetFunctions(const std::map<ui
     if (cachedCodeOffsets.empty())
         return functions;
     const uint64 codeStart = cachedCodeOffsets[0].offset;
-    const uint64 codeSize  = GetCodeSize();
     functions.reserve(functionStarts.size());
     for (size_t index = 0; index < functionStarts.size(); index++) {
         DissasmFunctionInfo function;

@@ -1591,8 +1591,6 @@ TEST_CASE("BranchTargetsRelativeToTheCode", "[Dissasm]Jumps")
     REQUIRE(!dissasmInstance.GetDrawnAsmLine(5).branchTarget.has_value());
 }
 
-std::optional<uint32> DissasmGetCurrentAsmLineAndPrepareCodeZone(DissasmCodeZone* zone, uint32 currentLine); // DissasmX86.cpp
-
 TEST_CASE("FollowJumpLineState", "[Dissasm]Jumps")
 {
     // SPACE (follow a jump) maps the cursor line to its instruction right after the lines around it were decoded (drawing, cursor
