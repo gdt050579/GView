@@ -169,6 +169,42 @@ bool IsLearningProblem(const GView::Object* obj) noexcept
     return b != nullptr && b->problem;
 }
 
+WorkspaceRole GetWorkspaceRole(const GView::Object* obj) noexcept
+{
+    const auto* b = GetSession().FindBinding(obj);
+    return b != nullptr ? b->role : WorkspaceRole::Normal;
+}
+
+std::optional<std::string> TakePendingWorkDocument(const GView::Object* obj, WorkspaceRole& role) noexcept
+{
+    role = WorkspaceRole::Normal;
+    try
+    {
+        return GetSession().TakePendingWork(obj, role);
+    }
+    catch (...)
+    {
+        return std::nullopt;
+    }
+}
+
+bool IsReadOnlyAnnotations(const GView::Object* obj) noexcept
+{
+    const auto role = GetWorkspaceRole(obj);
+    return role == WorkspaceRole::Solution || role == WorkspaceRole::Replay;
+}
+
+bool IsCourseWorkWindow(const GView::Object* obj) noexcept
+{
+    const auto* b = GetSession().FindBinding(obj);
+    return b != nullptr && b->problem && b->role == WorkspaceRole::Student;
+}
+
+bool IsCourseStaff() noexcept
+{
+    return GetSession().IsCourseStaff();
+}
+
 void ReportClientError(std::string_view constantMessage, bool fatal) noexcept
 {
     try
@@ -177,6 +213,24 @@ void ReportClientError(std::string_view constantMessage, bool fatal) noexcept
     }
     catch (...)
     {
+    }
+}
+
+bool OnDesktopFrame() noexcept
+{
+    try
+    {
+        auto& s = GetSession();
+        if (!s.HasSession())
+            return false;
+        s.NotifyFrameUpdatesAvailable(); // the desktop only gets frames on frontends that deliver them
+        const bool applied = s.DrainCompletions() > 0;
+        s.Tick(false);
+        return applied;
+    }
+    catch (...)
+    {
+        return false;
     }
 }
 

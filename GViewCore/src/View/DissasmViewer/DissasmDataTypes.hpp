@@ -282,11 +282,12 @@ namespace View
             std::string name;
             // the name the analysis gave (var_8, or the argument of an API it is passed as: phkResult); empty: the default name. Not saved:
             // the analysis gives it again; a name different from it is the user's
-            std::string analysisName;
+            // (the "{}" initializers: GCC's -Wmissing-field-initializers skips the members that have one, so { offset, size, name } is clean)
+            std::string analysisName{};
             // what the analysis knows of its value from the APIs (not saved either): its type (HKEY, HANDLE; empty when not known) and
             // where it comes from ("phkResult of RegOpenKeyExW", "returned by CreateFileW")
-            std::string type;
-            std::string origin;
+            std::string type{};
+            std::string origin{};
             // a structure the APIs fill (its address passed as lpStartupInfo): the slots inside it are its fields, not variables (not saved)
             const DissasmApiStructure* structure = nullptr;
         };
@@ -296,13 +297,18 @@ namespace View
         struct DissasmFunctionFrame {
             uint64 startAddress;
             uint64 endAddress;                           // exclusive
-            std::vector<DissasmLocalVariable> variables; // sorted by frameOffset, unique offsets and names
+            std::vector<DissasmLocalVariable> variables{}; // sorted by frameOffset, unique offsets and names
             int32 stackOffset = 0;            // ARM64: sp - x29 in the body (the [sp, #n] slots); recomputed by the deep scan
             bool usesFrameRegister = true;    // ARM64: false for a function without x29 (offsets from the sp of the entry)
             uint8 frameRegister    = 0;       // 32 bit ARM: r11 (ARM mode) or r7 (Thumb)
+            // ARM64: x29 in the offsets of the frame ([x29, #n] is the slot n + frameRegisterOffset): 0, but for MSVC's frame record below
+            // the locals (stp x29, x30, [sp, #-0x80]!; mov x29, sp after the saves): the offsets are then from the top of the locals (IDA)
+            int32 frameRegisterOffset = 0;
+            // ARM64: a funclet (SEH / C++ EH) whose x29 is the frame of that function (by start): its [x29, #n] are the slots of that frame
+            std::optional<uint64> frameRegisterOf{};
             // x64 without a frame register: rsp - the rsp of the entry from an address on (push / pop / sub / add rsp), sorted; the slots
             // ([rsp + 0x20]) are kept in offsets from the rsp of the entry (the return address at 0). Recomputed by the deep scan
-            std::vector<std::pair<uint64, int32>> stackDeltas;
+            std::vector<std::pair<uint64, int32>> stackDeltas{};
             // the registers that hold the stack pointer in [start, end): a copy (mov r11, rsp at the entry: [r11 - 0x28]), the biased frame
             // pointer of MSVC x64 (lea rbp, [rsp - 0x5f] after the saves: [rbp + 0xf]); the register - the rsp of the entry = delta
             struct StackAlias {
@@ -311,12 +317,12 @@ namespace View
                 uint64 start = 0, end = 0;
                 // the slots are the ones of the frame of another function (by start): a funclet of x64 SEH keeps the establisher frame of
                 // its function in rbp (mov rbp, rdx), the delta is then in the offsets of that frame
-                std::optional<uint64> frameOf;
+                std::optional<uint64> frameOf{};
             };
-            std::vector<StackAlias> stackAliases;
+            std::vector<StackAlias> stackAliases{};
             // a chunk of a function (its cold code: Settings::AddFunctionChunk): its slots are the variables of that function (by start), its
             // stack deltas in the offsets of that frame; it has no variable of its own. Recomputed by the deep scan
-            std::optional<uint64> variablesOf;
+            std::optional<uint64> variablesOf{};
             // the slots of the registers the prologue saves by its pushes (push rbp; push rbx: the saved registers of the caller), in the
             // offsets of the frame: not variables, their operands named as IDA does (var_s0 the lowest, var_s8, ...). Recomputed by the
             // deep scan
@@ -325,6 +331,18 @@ namespace View
             // and esp, -8 (an aligned frame of a frame register function): the depths of the stack pointer are not the ones of the frame
             // register above the alignment (a local through esp may fall on the saved registers / the return address)
             bool alignedStack = false;
+            // without a frame register: the code reads the return address through the stack pointer (wil passes _ReturnAddress(): mov rcx,
+            // qword ptr [rsp + 0x28]): the frame is kept without variables, its depths name the slot (retaddr)
+            bool readsReturnAddress = false;
+            // ARM64: the variadic registers the prologue homes (MSVC: stp x2, x3, [sp, #0x30] .. x7: va_x2 ..; ARM64EC: x0 .. x3 once x4
+            // moved): the first one (the fixed arguments are the registers before it), the offset of its home (the va_list of va_start),
+            // whether the va_list is x4 (ARM64EC). Recomputed by the deep scan
+            struct VariadicHomes {
+                uint8 firstRegister = 0;
+                int32 frameOffset   = 0;
+                bool throughX4      = false;
+            };
+            std::optional<VariadicHomes> variadic{};
             bool IsSavedRegisterSlot(int32 frameOffset) const
             {
                 return savedRegistersSize != 0 && frameOffset >= savedRegistersOffset &&

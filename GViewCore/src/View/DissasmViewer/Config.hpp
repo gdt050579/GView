@@ -54,6 +54,12 @@ constexpr uint32 COMMAND_ADD_REPEATABLE_COMMENT = 147;
 constexpr uint32 COMMAND_SHOW_IMPORTS          = 148;
 constexpr uint32 COMMAND_SET_PROTOTYPE         = 149;
 constexpr uint32 COMMAND_SET_OPERAND_CONSTANT  = 150;
+// the playback of a replay journal (on the command bar only while the view plays one back) and its editor
+constexpr uint32 COMMAND_REPLAY_BACK           = 151;
+constexpr uint32 COMMAND_REPLAY_FORWARD        = 152;
+constexpr uint32 COMMAND_REPLAY_TO_START       = 153;
+constexpr uint32 COMMAND_REPLAY_TO_END         = 154;
+constexpr uint32 COMMAND_EDIT_REPLAY_JOURNAL   = 155;
 
 // navigation commands (resolved through Config::Map in OnKeyEvent)
 constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
@@ -189,13 +195,13 @@ namespace View
             //  Command Bar keys
             // inline static DissasmCommand AddNewTypeCommand            = { Input::Key::F6, "AddNewType", "Add new data type", COMMAND_ADD_NEW_TYPE };
             inline static KeyboardControl ShowOnlyDissasmCommand = {
-                Input::Key::F7, "ShowOnlyDissasm", "Show only the dissasm code", COMMAND_SHOW_ONLY_DISSASM
+                Input::Key::F3, "ShowOnlyDissasm", "Show only the dissasm code", COMMAND_SHOW_ONLY_DISSASM
             };
             // inline static DissasmCommand ShowOrHideFileContentCommand = {
             //     Input::Key::F9, "ShowOrHideFileContent", "Show or hide file content", COMMAND_ADD_SHOW_FILE_CONTENT
             // };
             inline static KeyboardControl AsmExportFileContentCommand = {
-                Input::Key::F8, "AsmExportToFile", "Export ASM content to file", COMMAND_EXPORT_ASM_FILE
+                Input::Key::Ctrl | Input::Key::F8, "AsmExportToFile", "Export ASM content to file", COMMAND_EXPORT_ASM_FILE
             };
             inline static KeyboardControl JumpBackCommand    = { Input::Key::Ctrl | Input::Key::Q, "JumpBack", "Jump to previous location", COMMAND_JUMP_BACK };
             inline static KeyboardControl JumpForwardCommand = {
@@ -205,9 +211,10 @@ namespace View
                 Input::Key::F2, "GoToEntrypoint", "Go to the entry point of the dissasm zone", COMMAND_DISSAM_GOTO_ENTRYPOINT
             };
 
-            // the same key and name as the address mode of the buffer view
+            // the same name as the address mode of the buffer view; F3 is left to ShowOnlyDissasm (a terminal shows only the keys
+            // without a modifier on the command bar: room for the course keys)
             inline static KeyboardControl ChangeAddressModeCommand = {
-                Input::Key::F3, "ChangeAddressMode", "Show the addresses as VA, RVA or file offsets", COMMAND_CHANGE_ADDRESS_MODE
+                Input::Key::Ctrl | Input::Key::F3, "ChangeAddressMode", "Show the addresses as VA, RVA or file offsets", COMMAND_CHANGE_ADDRESS_MODE
             };
 
             inline static KeyboardControl UndoCommand = { Input::Key::Ctrl | Input::Key::Z, "Undo", "Undo the last edit (comment, rename, numbers base, zone)", COMMAND_UNDO };
@@ -282,6 +289,26 @@ namespace View
 
             inline static KeyboardControl CommandQueryMITRETechnique = {
                 Input::Key::Ctrl | Input::Key::L, "QueryMITRETechnique", "Query Digital Assistants (if any) for MITRE Techniques", COMMAND_QUERY_MITRE_TECHNIQUE
+            };
+
+            // the replay of a teacher's solution (Learning mode): on the command bar only while the view plays a journal back
+            inline static KeyboardControl ReplayBackCommand = {
+                Input::Key::Alt | Input::Key::Left, "ReplayBack", "Replay: one step back (the last step is undone)", COMMAND_REPLAY_BACK
+            };
+            inline static KeyboardControl ReplayForwardCommand = {
+                Input::Key::Alt | Input::Key::Right, "ReplayForward", "Replay: one step forward (the next visit, jump or edit)", COMMAND_REPLAY_FORWARD
+            };
+            inline static KeyboardControl ReplayToStartCommand = {
+                Input::Key::Alt | Input::Key::Home, "ReplayToStart", "Replay: back to the start (every step undone)", COMMAND_REPLAY_TO_START
+            };
+            inline static KeyboardControl ReplayToEndCommand = {
+                Input::Key::Alt | Input::Key::End, "ReplayToEnd", "Replay: to the end (every step applied)", COMMAND_REPLAY_TO_END
+            };
+            inline static KeyboardControl EditReplayJournalCommand = {
+                Input::Key::None, "EditReplayJournal", "Edit the replay journal of the file (delete steps, compact the visits)", COMMAND_EDIT_REPLAY_JOURNAL
+            };
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 4> ReplayCommands = {
+                ReplayBackCommand, ReplayForwardCommand, ReplayToStartCommand, ReplayToEndCommand
             };
 
             inline static std::array<std::reference_wrapper<KeyboardControl>, 23> CommandBarCommands = {
@@ -451,7 +478,7 @@ namespace View
             };
             inline static Input::KeyMap Map;
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 33> AllKeyboardCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 38> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ChangeAddressModeCommand,
                 ExportAnnotationsCommand,
                 ImportAnnotationsCommand,
@@ -484,7 +511,12 @@ namespace View
                 SaveCacheCommand,
                 ToggleNumberBaseCommand,
                 CommandQueryFunctionName,
-                CommandQueryMITRETechnique
+                CommandQueryMITRETechnique,
+                ReplayBackCommand,
+                ReplayForwardCommand,
+                ReplayToStartCommand,
+                ReplayToEndCommand,
+                EditReplayJournalCommand
             };
             bool Loaded;
 

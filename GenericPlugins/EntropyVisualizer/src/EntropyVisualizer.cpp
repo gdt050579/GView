@@ -15,6 +15,7 @@ PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> objec
 
 PLUGIN_EXPORT void UpdateSettings(IniSection sect)
 {
-    sect["Command.EntropyVisualizer"] = Input::Key::F12;
+    // was F12 (an older GView.ini keeps it: Instance::Init (MoveRetiredPluginKeys) moves it to the new default)
+    sect["Command.EntropyVisualizer"] = Input::Key::Alt | Input::Key::F12;
 }
 }

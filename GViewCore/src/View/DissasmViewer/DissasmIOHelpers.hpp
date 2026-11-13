@@ -200,3 +200,74 @@ inline void append_string(std::vector<std::byte>& buffer, const std::string& s)
     const auto* ptr = reinterpret_cast<const std::byte*>(s.data());
     buffer.insert(buffer.end(), ptr, ptr + size);
 }
+
+// Variable length integers (LEB128): 7 bits per byte, the low bits first, the high bit set on every byte but the last. The small numbers
+// of the compact records (indexes, the seconds between two events, the relative addresses) take one or two bytes.
+inline void append_varint(std::vector<std::byte>& buffer, std::uint64_t value)
+{
+    while (value >= 0x80) {
+        buffer.push_back(static_cast<std::byte>((value & 0x7F) | 0x80));
+        value >>= 7;
+    }
+    buffer.push_back(static_cast<std::byte>(value));
+}
+
+// the signed numbers zigzag encoded (0, -1, 1, -2 ... -> 0, 1, 2, 3 ...): a small negative number is small too
+inline void append_svarint(std::vector<std::byte>& buffer, std::int64_t value)
+{
+    append_varint(buffer, (static_cast<std::uint64_t>(value) << 1) ^ static_cast<std::uint64_t>(value >> 63));
+}
+
+// false for a truncated number or one longer than 10 bytes / above 64 bits (the record is corrupted)
+static inline bool read_varint(const std::byte*& p, const std::byte* end, std::uint64_t& out) noexcept
+{
+    std::uint64_t result = 0;
+    for (uint32 shift = 0; shift < 64; shift += 7) {
+        if (p >= end)
+            return false;
+        const auto byte = static_cast<std::uint8_t>(*p++);
+        // the tenth byte holds the last bit of the 64: anything above it does not fit
+        if (shift == 63 && (byte & 0x7E) != 0)
+            return false;
+        result |= static_cast<std::uint64_t>(byte & 0x7F) << shift;
+        if ((byte & 0x80) == 0) {
+            out = result;
+            return true;
+        }
+    }
+    return false;
+}
+
+static inline bool read_svarint(const std::byte*& p, const std::byte* end, std::int64_t& out) noexcept
+{
+    std::uint64_t value = 0;
+    if (!read_varint(p, end, value))
+        return false;
+    out = static_cast<std::int64_t>(value >> 1) ^ -static_cast<std::int64_t>(value & 1);
+    return true;
+}
+
+// a text as [varint size][bytes] (no NUL inside, read_text_bytes)
+inline void append_varint_string(std::vector<std::byte>& buffer, std::string_view s)
+{
+    append_varint(buffer, s.size());
+    const auto* ptr = reinterpret_cast<const std::byte*>(s.data());
+    buffer.insert(buffer.end(), ptr, ptr + s.size());
+}
+
+// false for a text longer than maxSize, truncated or with a NUL
+static inline bool read_varint_string(const std::byte*& p, const std::byte* end, std::size_t maxSize, std::string& out)
+{
+    std::uint64_t size = 0;
+    if (!read_varint(p, end, size) || size > maxSize)
+        return false;
+    const std::byte* begin = nullptr;
+    if (!read_text_bytes(p, end, static_cast<std::size_t>(size), begin))
+        return false;
+    try {
+        out.assign(reinterpret_cast<const char*>(begin), static_cast<std::size_t>(size));
+        return true;
+    } catch (...) {
+        return false;
+    }
+}

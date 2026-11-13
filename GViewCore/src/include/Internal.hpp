@@ -557,6 +557,11 @@ namespace Type
     };
 } // namespace Type
 
+namespace View::DissasmViewer
+{
+    class Instance;
+}
+
 namespace App
 {
     // the key bindings are applied again to every viewer (a viewer changed the default keys: its key profile)
@@ -603,6 +608,7 @@ namespace App
         constexpr int CMD_SWITCH_TO_VIEW        = 30012351;
         constexpr int CMD_OPEN_ADD_NOTE         = 30012352;
         constexpr int CMD_LEARNING_SUBMIT_FLAG  = 30012353;
+        constexpr int CMD_LEARNING_COURSE_MENU  = 30012354;
 
         using KF = GView::KeyboardControlFlags;
         // GView (window level) keys. `inline` -> one object shared by every translation unit (the key bindings
@@ -622,8 +628,19 @@ namespace App
         inline GView::KeyboardControl INSTANCE_PREVIOUS_WINDOW   = { Input::Key::Shift | Input::Key::Tab, "PreviousWindow", "Switch to the previous window (when the viewer has the focus)", 0 };
         inline GView::KeyboardControl INSTANCE_FOCUS_VIEWER      = { Input::Key::Escape, "FocusViewer", "Move the focus from a panel back to the viewer", 0 };
         inline GView::KeyboardControl INSTANCE_WINDOWS_MANAGER   = { Input::Key::Alt | Input::Key::N0, "WindowsManager", "Show the windows manager", MenuCommands::SHOW_WINDOW_MANAGER, KF::RequiresRestart };
+        // the course keys: bare F-keys (a terminal shows only the keys without a modifier on the command bar), handled only by a window
+        // of the course, before the command bar keys of its type plugin / panels (KeyBindings.cpp does not report those as conflicts; a
+        // viewer handles its keys first: a conflict). F11 is not used: Windows Terminal, conhost, GNOME Terminal and macOS keep it
         inline GView::KeyboardControl INSTANCE_LEARNING_SUBMIT_FLAG = {
-            Input::Key::Ctrl | Input::Key::Alt | Input::Key::F, "LearningSubmitFlag", "Submit the flag for the current learning task", CMD_LEARNING_SUBMIT_FLAG
+            Input::Key::F10, "LearningSubmitFlag", "Submit the flag for the current learning task", CMD_LEARNING_SUBMIT_FLAG
+        };
+        // the commands of a window of the course (save / resume the work, the teacher's solution, publish, replay journal); with no
+        // window opened, the same key opens the window of the course server (GViewDesktop.cpp)
+        inline GView::KeyboardControl INSTANCE_LEARNING_COURSE = {
+            Input::Key::F12,
+            "LearningCourse",
+            "Course commands of a learning task window (save, resume, solution); with no window opened: the course server window",
+            CMD_LEARNING_COURSE_MENU
         };
         inline GView::KeyboardControl INSTANCE_EXIT              = { Input::Key::Shift | Input::Key::Escape, "Exit", "Close GView", MenuCommands::EXIT_GVIEW, KF::RequiresRestart };
         // remote windows send every key to the remote GView; after this key the next one is handled locally
@@ -631,11 +648,11 @@ namespace App
             Input::Key::Ctrl | Input::Key::F12, "RemoteLocalKey", "Remote window: handle the next key in this GView (not in the remote one)", 0
         };
 
-        inline const std::array<GView::KeyboardControl*, 17> GViewKeys = {
+        inline const std::array<GView::KeyboardControl*, 18> GViewKeys = {
             &INSTANCE_KEY_CONFIGURATOR, &INSTANCE_CHANGE_VIEW,     &INSTANCE_SWITCH_TO_VIEW,  &INSTANCE_COMMAND_GOTO,  &FILE_WINDOW_COMMAND_GOTO,
             &FILE_WINDOW_COMMAND_FIND,  &INSTANCE_COMMAND_FIND,    &FILE_WINDOW_COMMAND_COPY, &FILE_WINDOW_COMMAND_INSERT, &INSTANCE_CHOOSE_TYPE,
             &INSTANCE_OPEN_ADD_NOTE,    &INSTANCE_NEXT_WINDOW,     &INSTANCE_PREVIOUS_WINDOW, &INSTANCE_FOCUS_VIEWER,  &INSTANCE_WINDOWS_MANAGER,
-            &INSTANCE_EXIT,             &INSTANCE_LEARNING_SUBMIT_FLAG,
+            &INSTANCE_EXIT,             &INSTANCE_LEARNING_SUBMIT_FLAG, &INSTANCE_LEARNING_COURSE,
         };
         // registers the GView keys (section "GView")
         void RegisterGViewKeys(KeyboardControlsInterface* interface);
@@ -690,6 +707,14 @@ namespace App
             int64 storedAtMs{ 0 };
             bool materialized{ false }; // also in the in-memory file system
         };
+        // BrowserLaunch.cpp: one-click launch of Learning and Evaluation Mode (<page>#launch=<code>&server=<url>), as
+        // redeemed by the page (GView/web/gview-page.js). Polled from OnFrame; handled once, when the desktop has focus.
+        struct LearningLaunch {
+            std::string serverOrigin;     // the server the code was redeemed at (URL.origin)
+            std::string connectionString; // empty on error (wiped after use)
+            std::string error;            // human readable, for the student
+        };
+        bool LaunchOnFrame(bool desktopHasFocus);
         bool StorageAvailable();
         std::vector<StoredFile> StoredFiles();
         bool IsStoredPath(const std::string& relativePath); // in the store, even if not loaded into memory
@@ -1012,9 +1037,18 @@ namespace App
         void Paint(AppCUI::Graphics::Renderer& renderer) override;
         ~FileWindow() override;
 
-        // title = object name [+ " - " + course watermark]
+        // title = object name [+ " - Teacher solution[ (replay)]"] [+ " - " + course watermark]
         void RefreshTitle();
         std::string_view GetCurrentViewerKind();
+        // the disassembly view of the window (any tab), nullptr when it has none
+        View::DissasmViewer::Instance* FindDissasmView();
+        // makes the disassembly view the shown one; false when the window has none
+        bool ShowDissasmView();
+        // the object of the window (never null while the window exists)
+        GView::Object* GetObjectPtr() const
+        {
+            return obj.get();
+        }
 
         // key bindings
         inline Reference<Type::Plugin> GetTypePlugin() const
@@ -1029,7 +1063,26 @@ namespace App
 
     // Learning and Evaluation Mode UI (LearningModeWindow.cpp / LearningSubmitDialog.cpp)
     void ShowLearningModeWindow(std::string_view prefilledConnectionString, bool autoConnect);
+#ifdef BUILD_FOR_WASM
+    // launch link of the web build: validates the connection string, asks once per server origin, ends the current
+    // connection if it is another one, then connects as if the string had been pasted (stored after a verified connect)
+    void RunLearningLaunch(const Browser::LearningLaunch& launch);
+#endif
     void ShowLearningSubmitDialog(std::string_view problemName);
+    // Course work and teacher solutions of a task window (LearningCourseDialogs.cpp, spec §10.12)
+    // the "Course" menu (F12) of a window bound to a problem of the course
+    void ShowLearningCourseMenu(FileWindow* window);
+    // the close prompt of a student's task window with unsaved course changes: true when the window may close (saved, or the
+    // user chose to close without saving), false to keep it open
+    bool ConfirmCloseCourseWorkWindow(FileWindow* window);
+    // the teacher's solution of the problem of the student's window in a window of its own (role Solution, or Replay: a window
+    // without the annotations that plays back the journal of the solution), tiled side by side with it (student left), the
+    // focus back on the student's window. The standalone variant (Learning window): App/LearningCourse.hpp
+    bool OpenSolutionCompare(FileWindow* studentWindow, std::string_view problem, bool replay);
+    // Course notes (LearningNotesWindow.cpp). focusItem: the open catalogue item (its notes first, preselected scope),
+    // "" for none; taskObject: the task window it was opened from (note_add telemetry) or nullptr; openNoteForItem:
+    // open the newest note of focusItem, or start a new one.
+    void ShowLearningNotesWindow(std::string_view focusItem, bool focusIsProblem, const void* taskObject, bool openNoteForItem);
     void RefreshAllFileWindowTitles();
     bool TakeStartupLearningConnection(std::string& out);
     // Next Init uses this frontend instead of a terminal (remote server); the desktop stays open without windows.
@@ -1116,6 +1169,14 @@ namespace Security
         bool ParseFeature(std::string_view name, RestrictedMode::Feature& out) noexcept;
     } // namespace RestrictedMode::Internal
 
+    namespace Learning
+    {
+        // What a window shows in a course: Normal (not a window of the course), Student (the task of the student: its work is saved to the
+        // course server), Solution (a solution of the teacher, read only, never written to a cache), Replay (the replay journal of a solution
+        // played back in a window of its own, read only)
+        enum class WorkspaceRole : uint8 { Normal, Student, Solution, Replay };
+    } // namespace Learning
+
     namespace Learning::Hooks
     {
         // Thin, UI-thread facade used by viewers/windows to report learning-relevant actions.
@@ -1144,6 +1205,24 @@ namespace Security
         bool IsLearningProblem(const GView::Object* obj) noexcept;
         void ReportClientError(std::string_view constantMessage, bool fatal) noexcept;
         void ShowSubmitDialogForObject(const GView::Object* obj);
+        // every frame of the desktop (GViewDesktop::OnFrameUpdate, called before AppCUI walks the windows): runs the
+        // session's completions and timers; returns true when something was applied (repaint)
+        bool OnDesktopFrame() noexcept;
+        // AddNote (Ctrl+F11) in a window opened from the course catalogue: opens the server-backed course note of that
+        // item and returns true; false when the window is not a course window (or the server has no notes): the caller
+        // then shows the local note as outside Learning mode
+        bool OpenNoteForObject(const GView::Object* obj);
+        // the role of the window of the object (its binding); Normal when it is not a window of the course
+        WorkspaceRole GetWorkspaceRole(const GView::Object* obj) noexcept;
+        // the work document (JSON) handed to the window of the object when it was opened (LearningSession::SetPendingWorkDocument), taken
+        // once; `role` is the role of the window
+        std::optional<std::string> TakePendingWorkDocument(const GView::Object* obj, WorkspaceRole& role) noexcept;
+        // a teacher solution (or its replay) is shown: annotations are read only and never written to a cache
+        bool IsReadOnlyAnnotations(const GView::Object* obj) noexcept;
+        // the student's own task window of a problem: its work may be saved to / resumed from the course server
+        bool IsCourseWorkWindow(const GView::Object* obj) noexcept;
+        // the session's token is course staff (publishes solutions or edits teacher notes)
+        bool IsCourseStaff() noexcept;
         void Shutdown() noexcept;
 #ifdef BUILD_FOR_WASM
         // every frame of the desktop (BrowserHost.cpp); pageHidden: the page has just been hidden
@@ -1162,6 +1241,22 @@ namespace Security
         inline bool IsMemoryOnlyObject(Reference<GView::Object> obj) noexcept
         {
             return IsMemoryOnlyObject(static_cast<const GView::Object*>(obj.operator->()));
+        }
+        inline WorkspaceRole GetWorkspaceRole(Reference<GView::Object> obj) noexcept
+        {
+            return GetWorkspaceRole(static_cast<const GView::Object*>(obj.operator->()));
+        }
+        inline std::optional<std::string> TakePendingWorkDocument(Reference<GView::Object> obj, WorkspaceRole& role) noexcept
+        {
+            return TakePendingWorkDocument(static_cast<const GView::Object*>(obj.operator->()), role);
+        }
+        inline bool IsReadOnlyAnnotations(Reference<GView::Object> obj) noexcept
+        {
+            return IsReadOnlyAnnotations(static_cast<const GView::Object*>(obj.operator->()));
+        }
+        inline bool IsCourseWorkWindow(Reference<GView::Object> obj) noexcept
+        {
+            return IsCourseWorkWindow(static_cast<const GView::Object*>(obj.operator->()));
         }
     } // namespace Learning::Hooks
 

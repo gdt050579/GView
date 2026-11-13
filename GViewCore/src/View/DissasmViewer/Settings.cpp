@@ -56,6 +56,8 @@ void Settings::AddFunctionEntry(uint64 fileOffset, std::string_view name, Functi
     }
     if (size > 0)
         entry.size = size;
+    if (type == FunctionEntryType::ExceptionData)
+        entry.exceptionData = true;
 }
 
 void Settings::AddExceptionScopes(uint64 functionFileOffset, uint8 prologSize, uint8 frameRegister, uint8 frameOffset, const std::vector<ExceptionScope>& scopes)
@@ -92,9 +94,36 @@ void Settings::AddFunctionChunk(uint64 chunkFileOffset, uint64 size, uint64 func
     entry.chunks.emplace_back(chunkFileOffset, size);
 }
 
+void Settings::AddCodeLocation(uint64 fileOffset)
+{
+    INTERNAL_SETTINGS->codeLocations.insert(fileOffset);
+}
+
+void Settings::AddCodeRange(uint64 fileOffset, uint64 size)
+{
+    if (size == 0)
+        return;
+    auto& range = INTERNAL_SETTINGS->codeRanges[fileOffset];
+    range       = std::max(range, size);
+}
+
+void Settings::AddLandingPads(const std::vector<LandingPad>& pads)
+{
+    auto& landingPads = INTERNAL_SETTINGS->landingPads;
+    landingPads.insert(landingPads.end(), pads.begin(), pads.end());
+    for (const auto& pad : pads)
+        INTERNAL_SETTINGS->codeLocations.insert(pad.pad); // a place inside its function, never a function start
+}
+
 void Settings::AddInstructionBoundary(uint64 fileOffset)
 {
     INTERNAL_SETTINGS->instructionBoundaries.push_back(fileOffset);
+}
+
+void Settings::AddArm64ECCode(uint64 fileOffset, uint64 size)
+{
+    if (size > 0 && fileOffset + size > fileOffset)
+        INTERNAL_SETTINGS->arm64ECCode[fileOffset] = fileOffset + size;
 }
 
 void Settings::SetGlobalOffsetTable(uint64 address)

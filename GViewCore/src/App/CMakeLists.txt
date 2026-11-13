@@ -14,6 +14,8 @@ target_sources(GViewCore PRIVATE
     OptionsWindow.cpp
     LearningModeWindow.cpp
     LearningSubmitDialog.cpp
+    LearningNotesWindow.cpp
+    LearningCourseDialogs.cpp
     UpdateDialog.cpp
     GViewDesktop.cpp
     TemporaryFolder.cpp
@@ -24,9 +26,10 @@ target_sources(GViewCore PRIVATE
 target_sources(GViewCore PRIVATE BrowserStorageDiff.cpp)
 
 if (EMSCRIPTEN)
-    target_sources(GViewCore PRIVATE BrowserHost.cpp BrowserStorage.cpp StoredFilesWindow.cpp)
+    target_sources(GViewCore PRIVATE BrowserHost.cpp BrowserStorage.cpp BrowserLaunch.cpp StoredFilesWindow.cpp)
 endif()
 
 add_testing_sources(GViewCore tests_keybindings.cpp)
 add_testing_sources(GViewCore tests_browserstorage.cpp)
 add_testing_sources(GViewCore tests_temporaryfolder.cpp)
+add_testing_sources(GViewCore tests_learningcourse.cpp)

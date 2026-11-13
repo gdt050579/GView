@@ -158,7 +158,7 @@ bool GView::App::ResetConfiguration()
     //   ServerConnectionString          - saved after the first verified connect
     //   PolicyPublicKey                 - 64 hex chars, used when the connection string has no public key (v1)
     //   LearningAllowPlainHttpLocalhost - allow http:// for localhost/127.0.0.1 only (teacher-laptop labs)
-    //   LearningDownloadFolder          - default folder for file-mode deliveries (empty = <Documents>/GView/<week>)
+    //   LearningDownloadFolder          - default folder for file-mode deliveries, an absolute path (empty or relative = <Documents>/GView)
     ini["GView"]["PolicyPublicKey"]                 = "";
     ini["GView"]["LearningAllowPlainHttpLocalhost"] = false;
     ini["GView"]["LearningDownloadFolder"]          = "";

@@ -5,6 +5,8 @@
 #include "DissasmChainedFixups.hpp"
 #include "DissasmObjC.hpp"
 #include "DissasmRtti.hpp"
+#include "DissasmReplayRecorder.hpp"
+#include "DissasmReplayController.hpp"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -70,6 +72,22 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     for (auto& menu_command : RIGHT_CLICK_MENU_COMMANDS) {
         rightClickMenu.AddCommandItem(menu_command.text, menu_command.commandID);
     }
+    // the windows of a teacher's solution (read only): the collapsible zones can be opened / closed, nothing is edited
+    readOnlyRightClickMenu.AddCommandItem("Expand zone", RIGHT_CLICK_DISSASM_EXPAND_ZONE);
+    readOnlyRightClickMenu.AddCommandItem("Collapse zone", RIGHT_CLICK_DISSASM_COLLAPSE_ZONE);
+    readOnlyRightClickMenu.AddCommandItem("Clear selections", RIGHT_CLICK_CLEAR_SELECTION);
+
+    // the replay journal: the places are the lines of the code zones of this view
+    DissasmReplayRecorder::Resolver resolver;
+    resolver.cursorPlace = [this]() -> std::optional<DissasmReplayRecorder::ResolvedPlace> {
+        const auto place = ResolveCursorPlace();
+        return place.has_value() ? std::optional<DissasmReplayRecorder::ResolvedPlace>({ place->first, place->second }) : std::nullopt;
+    };
+    resolver.placeOf = [this](const CursorState& state) -> std::optional<DissasmReplayRecorder::ResolvedPlace> {
+        const auto place = ResolvePlace(state);
+        return place.has_value() ? std::optional<DissasmReplayRecorder::ResolvedPlace>({ place->first, place->second }) : std::nullopt;
+    };
+    replay = std::make_unique<DissasmReplayRecorder>(std::move(resolver));
     // rightClickOffset = 0;
 
     // the colors of the instructions: GetX86MnemonicColor / GetX86TokenColor (x86_x64/DissasmX86.cpp)
@@ -189,6 +207,18 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint
         return;
 
     int x = 0;
+    // a replay: its step on the first row (the only row when there is one), the cursor information below it
+    if (const auto replayStatus = ReplayStatusText(); !replayStatus.empty() && height >= 1) {
+        renderer.WriteSingleLineText(0, 0, replayStatus, this->ColorMan.Colors.CursorHighlighted);
+        if (height == 1)
+            return;
+        x = PrintCursorPosInfo(x, 1, 16, false, renderer);
+        x = PrintCursorLineInfo(x, 1, 16, false, renderer);
+        x = PrintCursorValueInfo(x, 1, renderer);
+        x = PrintCursorLocationInfo(x, 1, renderer);
+        PrintCursorInstructionInfo(x, 1, renderer);
+        return;
+    }
     switch (height) {
     case 0:
         break;
@@ -1576,6 +1606,7 @@ bool Instance::ShowNavigationBandRow(int x, int y, bool recordJump)
     const uint64 line = std::min<uint64>(total - 1, (row * total + rows - 1) / rows);
     if (line == static_cast<uint64>(Cursor.startViewLine) + Cursor.lineInView)
         return true;
+    DissasmReplayJumpScope jumpScope(recordJump ? replay.get() : nullptr, DissasmReplayJumpKind::Band);
     const auto from      = SaveCursorState();
     Cursor.lineInView    = static_cast<uint32>(std::min<uint64>(std::min<uint32>(5, rows / 2), line));
     Cursor.startViewLine = static_cast<uint32>(line - Cursor.lineInView);
@@ -1605,6 +1636,7 @@ bool Instance::ShowGoToDialog()
     std::string error;
     std::optional<uint32> line;
     const auto fileOffset = ResolveGoToText(dlg.GetResultText(), error, line);
+    DissasmReplayJumpScope jumpScope(replay.get(), DissasmReplayJumpKind::GoTo);
     if (line.has_value()) {
         const uint32 currentLine = Cursor.lineInView + Cursor.startViewLine;
         if (line.value() != currentLine) {
@@ -1689,6 +1721,12 @@ void Instance::OnStart()
     if (settings->defaultLanguage == DisassemblyLanguage::Default)
         settings->defaultLanguage = DisassemblyLanguage::x86;
 
+    // the role of the window in a course (before the cache: a solution window never reads nor writes it) and the work document it was
+    // opened with (applied once the zones are analysed)
+    pendingWorkDocument = GView::Security::Learning::Hooks::TakePendingWorkDocument(obj, role);
+    if (IsReadOnlyRole())
+        replay->Suspend(true); // nothing of a solution window is recorded
+
     this->RecomputeDissasmLayout();
     this->RecomputeDissasmZones();
 
@@ -1768,6 +1806,11 @@ void Instance::RefreshDrawnLines()
 
 Instance::~Instance()
 {
+    replayController.reset(); // it refers to this view
+    // the zones belong to the settings (destroyed after the recorder): they must not tell a destroyed recorder about an edit
+    for (const auto& zone : settings->parseZones)
+        if (zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone)
+            static_cast<DissasmCodeZone*>(zone.get())->editObserver = nullptr;
     while (!settings->buffersToDelete.empty()) {
         char* bufferToDelete = settings->buffersToDelete.back();
         settings->buffersToDelete.pop_back();
@@ -1798,61 +1841,291 @@ static std::optional<uint64> GetArgumentImmediate(const DissasmAsmPreCacheLine& 
     return std::nullopt;
 }
 
-void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* functionDetails, bool registerArguments)
+// the comment of an argument: the name of its parameter, the type of one without a name (a demangled C++ function: IDA's ; unsigned int);
+// null for a parameter an inferred prototype does not know
+static const char* ArgumentText(const AsmFunctionDetails::NameType& parameter)
+{
+    if (parameter.name && parameter.name[0])
+        return parameter.name;
+    return parameter.type && parameter.type[0] ? parameter.type : nullptr;
+}
+
+// a variadic function whose last fixed parameter is its format (printf, DbgPrintEx: format, Format, pszFormat, fmt, lpFmt)
+static bool HasFormatArguments(const AsmFunctionDetails& function)
+{
+    if (function.params.empty() || !function.prototype.ends_with("...)") || !function.params.back().name)
+        return false;
+    const std::string_view name = function.params.back().name;
+    return name.find("ormat") != std::string_view::npos || name.find("mt") != std::string_view::npos;
+}
+
+// the arguments a format string passes after it (printf, DbgPrintEx, scanf): one text per argument slot, the conversion that takes it (%s,
+// %08x, the width / precision of %*.*d); an empty text for a slot without a name (the high half of a value of 8 bytes in 32 bit code:
+// %I64x, %lld, %f); none for a double of System V (an xmm register), for the %m of glibc. scanf: %*d assigns nothing, %[a-z] takes a
+// buffer. The texts up to a conversion it does not know (a long double, an unknown letter, the end of a shortened string); none for a
+// positional one (%1$s)
+std::vector<std::string> GView::View::DissasmViewer::GetFormatArgumentTexts(std::string_view format, bool scanf, bool slotsOf4Bytes, bool floatsInXmm)
+{
+    std::vector<std::string> texts;
+    const auto isDigit = [&format](size_t index) { return index < format.size() && format[index] >= '0' && format[index] <= '9'; };
+    for (size_t index = 0; index < format.size(); index++) {
+        if (format[index] != '%')
+            continue;
+        const size_t start = index++;
+        if (index < format.size() && format[index] == '%')
+            continue; // %%
+        size_t digits = index;
+        while (isDigit(digits))
+            digits++;
+        if (digits > index && digits < format.size() && format[digits] == '$')
+            return {}; // %1$s: the arguments are not in the order of the conversions
+        bool suppressed = false, starWidth = false, starPrecision = false;
+        if (scanf && index < format.size() && format[index] == '*') {
+            suppressed = true;
+            index++;
+        }
+        while (index < format.size() && std::string_view("-+ #0'").find(format[index]) != std::string_view::npos)
+            index++;
+        if (!scanf && index < format.size() && format[index] == '*') {
+            starWidth = true;
+            index++;
+        }
+        while (isDigit(index))
+            index++;
+        if (!scanf && index < format.size() && format[index] == '.') {
+            index++;
+            if (index < format.size() && format[index] == '*') {
+                starPrecision = true;
+                index++;
+            }
+            while (isDigit(index))
+                index++;
+        }
+        // the size: 8 bytes in 32 bit code for %I64d, %lld, %qd, %jd (scanf: a pointer whatever it is)
+        const std::string_view rest = format.substr(index);
+        bool eightBytes             = false;
+        if (rest.starts_with("I64") || rest.starts_with("I32") || rest.starts_with("ll") || rest.starts_with("hh")) {
+            eightBytes = rest.starts_with("I64") || rest.starts_with("ll");
+            index += rest.starts_with("ll") || rest.starts_with("hh") ? 2 : 3;
+        } else if (!rest.empty() && std::string_view("hlLqjztIw").find(rest[0]) != std::string_view::npos) {
+            if (rest[0] == 'L')
+                return texts; // a long double (12 bytes in 32 bit code, the stack of System V)
+            eightBytes = rest[0] == 'q' || rest[0] == 'j';
+            index++;
+        }
+        if (index >= format.size())
+            return texts; // the string is shortened there
+        const char conversion = format[index];
+        if (!scanf && conversion == 'm') // glibc: the text of errno, no argument
+            continue;
+        if (scanf && conversion == '[') { // a set: %[^]a-z]
+            size_t close = index + 1;
+            if (close < format.size() && format[close] == '^')
+                close++;
+            close = format.find(']', close + 1);
+            if (close == std::string_view::npos)
+                return texts;
+            index = close;
+        } else if (std::string_view("diouxXeEfFgGaAcCsSpnZ").find(conversion) == std::string_view::npos) {
+            return texts;
+        }
+        const std::string spec(format.substr(start, index + 1 - start));
+        if (suppressed)
+            continue;
+        if (starWidth)
+            texts.push_back("width of " + spec);
+        if (starPrecision)
+            texts.push_back("precision of " + spec);
+        const bool isFloat = !scanf && std::string_view("eEfFgGaA").find(conversion) != std::string_view::npos;
+        if (isFloat && floatsInXmm)
+            continue;
+        texts.push_back(spec);
+        if (slotsOf4Bytes && !scanf && (eightBytes || isFloat))
+            texts.emplace_back(); // the high half of the value
+    }
+    return texts;
+}
+
+// the text of the format a line passes: the string it shows ("%s: %d", L"%ws"), without its quotes; empty for another comment
+static std::string_view GetShownFormat(const DissasmAsmPreCacheLine& line)
+{
+    std::string_view text = line.autoComment;
+    if (text.starts_with("L\""))
+        text.remove_prefix(1);
+    if (text.size() < 2 || text.front() != '"' || text.back() != '"')
+        return {};
+    text = text.substr(1, text.size() - 2);
+    if (text.ends_with("...")) // shortened: its last conversion may be cut
+        text.remove_suffix(3);
+    return text;
+}
+
+// the name of the argument before the generated text of the line: lpFileName "C:\\file.txt"; a constant with its symbolic name:
+// dwDesiredAccess = GENERIC_READ
+void GView::View::DissasmViewer::NameArgumentLine(DissasmAsmPreCacheLine& line, std::string_view functionName, const char* name)
+{
+    std::string text = name;
+    std::string constant;
+    if (const auto value = GetArgumentImmediate(line); value.has_value())
+        constant = FormatApiConstant(functionName, name, value.value());
+    if (line.constantComment) { // a status named on the line: the value of the argument (ExitStatus = STATUS_ACCESS_DENIED)
+        if (constant.empty())
+            constant = line.autoComment;
+        line.autoComment.clear();
+        line.constantComment = false;
+    }
+    if (!constant.empty())
+        text += " = " + constant;
+    if (!line.autoComment.empty() && !line.autoComment.starts_with(text)) {
+        // the marks of the exception scopes are not a part of the value: dwBytes; try {
+        const std::string_view comment = line.autoComment;
+        const bool exceptionMark       = comment.starts_with("try {") || comment.starts_with("__try {") || comment.starts_with("} // starts at") ||
+                                   comment.starts_with("__except(") || comment.starts_with("catch(") || comment.starts_with("cleanup()");
+        text += exceptionMark ? "; " : " ";
+        text += line.autoComment;
+        line.autoComment = std::move(text);
+    } else if (line.autoComment.empty()) {
+        line.autoComment = std::move(text);
+    }
+}
+
+void DissasmAsmPreCacheData::AnnounceCallInstruction(
+      const AsmFunctionDetails* functionDetails,
+      bool registerArguments,
+      bool systemVPushes,
+      bool formatArguments,
+      bool variadicFloatsApart,
+      uint8 variadicSlots)
 {
     // the lines prepared so far (above the call); the call line itself is not added yet
     if (cachedAsmLines.empty())
         return;
-    // the name of the argument before the generated text of the line: lpFileName "C:\\file.txt"; a constant with its symbolic name:
-    // dwDesiredAccess = GENERIC_READ
-    auto nameArgument = [functionDetails](DissasmAsmPreCacheLine& line, const char* name) {
-        std::string text = name;
-        std::string constant;
-        if (const auto value = GetArgumentImmediate(line); value.has_value())
-            constant = FormatApiConstant(functionDetails->functionName, name, value.value());
-        if (line.constantComment) { // a status named on the line: the value of the argument (ExitStatus = STATUS_ACCESS_DENIED)
-            if (constant.empty())
-                constant = line.autoComment;
-            line.autoComment.clear();
-            line.constantComment = false;
-        }
-        if (!constant.empty())
-            text += " = " + constant;
-        if (!line.autoComment.empty() && !line.autoComment.starts_with(text)) {
-            // the marks of the exception scopes are not a part of the value: dwBytes; try {
-            const std::string_view comment = line.autoComment;
-            const bool exceptionMark       = comment.starts_with("try {") || comment.starts_with("__try {") || comment.starts_with("} // starts at") ||
-                                       comment.starts_with("__except(") || comment.starts_with("catch(");
-            text += exceptionMark ? "; " : " ";
-            text += line.autoComment;
-            line.autoComment = std::move(text);
-        } else if (line.autoComment.empty()) {
-            line.autoComment = std::move(text);
-        }
-    };
+    auto nameArgument = [functionDetails](DissasmAsmPreCacheLine& line, const char* name) { NameArgumentLine(line, functionDetails->functionName, name); };
     const uint32 startingLine = cachedAsmLines.back().currentLine;
     const auto paramsCount    = static_cast<uint32>(functionDetails->params.size());
+    // beyond IDA (its decompiler does it): the arguments after a format (printf, DbgPrintEx, scanf) named by the conversions of the string
+    // the format line shows (; %s, ; %08x, ; width of %*d); the lines of the slots after the format are kept until it is read
+    constexpr uint32 MAX_FORMAT_ARGUMENTS = 16;
+    const bool hasFormat                  = formatArguments && HasFormatArguments(*functionDetails);
+    std::string format;
+    std::vector<DissasmAsmPreCacheLine*> formatArgumentLines(hasFormat ? MAX_FORMAT_ARGUMENTS : 0, nullptr);
+    const auto nameFormatArguments = [&](bool slotsOf4Bytes, bool floatsInXmm) {
+        if (format.empty())
+            return;
+        const auto texts = GetFormatArgumentTexts(format, functionDetails->functionName.find("scanf") != std::string_view::npos, slotsOf4Bytes, floatsInXmm);
+        for (size_t index = 0; index < texts.size() && index < formatArgumentLines.size(); index++)
+            if (formatArgumentLines[index] && !texts[index].empty())
+                nameArgument(*formatArgumentLines[index], texts[index].c_str());
+    };
 
     if (registerArguments) {
         // x64: the last instruction before the call that writes an argument register / stack slot gives that argument; the search stops
-        // at the start of the block (a label, another call, a jmp or ret); a conditional jump continues into the call
+        // at another call, a jmp or ret, a label that the code before it does not fall into; a conditional jump continues into the call
         constexpr uint32 MAX_LINE_DIFF_X64 = 24;
         constexpr uint32 MAX_ARGUMENTS     = 20;
         bool named[MAX_ARGUMENTS]          = {};
-        uint32 remaining                   = std::min(paramsCount, MAX_ARGUMENTS);
+        const uint32 slotsCount            = std::min(paramsCount + static_cast<uint32>(formatArgumentLines.size()), MAX_ARGUMENTS);
+        uint32 remaining                   = slotsCount;
+        // ARM64EC: a call of a variadic function passes the address of its stack arguments in x4 and their size in x5 (mov x4, sp; mov x5,
+        // #0x10), whatever its parameters; the last writes of them before the call
+        const bool stackArgumentsOfEC = variadicSlots < 8 && functionDetails->prototype.ends_with("...)");
+        bool namedEC[2]               = {};
+        if (stackArgumentsOfEC)
+            remaining += 2;
+        // ARM64: a stp of two stack arguments (stp x8, x9, [sp, #8]) is one line with two slots: its names together, once both are known
+        // (the first register first)
+        struct PairNames {
+            DissasmAsmPreCacheLine* line;
+            std::string texts[2];
+        };
+        std::vector<PairNames> pairNames;
+        const auto nameSlot = [&](DissasmAsmPreCacheLine& line, bool second, const char* text) {
+            if (!line.argumentPair) {
+                nameArgument(line, text);
+                return;
+            }
+            auto pair = std::find_if(pairNames.begin(), pairNames.end(), [&line](const PairNames& names) { return names.line == &line; });
+            if (pair == pairNames.end())
+                pair = pairNames.insert(pairNames.end(), PairNames{ &line, {} });
+            pair->texts[second ? 1 : 0] = text;
+        };
+        std::vector<bool> secondOfPair(formatArgumentLines.size(), false); // the format arguments that are the second register of a stp
+        bool stackMoved = false;
+        // System V: the arguments after the sixth are pushed, the last push the seventh (push 0x82 ; nr of __syscall_cancel); another write of
+        // rsp before them (sub rsp, 8 aligning them, the prologue) ends them
+        uint8 pushedSlot = systemVPushes ? 6 : MAX_ARGUMENTS;
+        bool afterLabel  = false; // a location passed: the instruction before it must fall into it
         for (auto it = cachedAsmLines.rbegin(); it != cachedAsmLines.rend() && remaining; ++it) {
             const auto kind = static_cast<X86InstructionKind>(it->instructionKind);
-            if (startingLine - it->currentLine > MAX_LINE_DIFF_X64 || it->size == 0 || (it->flags & DissasmAsmPreCacheLine::InstructionFlag::CallFlag) ||
+            if (startingLine - it->currentLine > MAX_LINE_DIFF_X64 || (it->flags & DissasmAsmPreCacheLine::InstructionFlag::CallFlag) ||
                 kind == X86InstructionKind::Call || kind == X86InstructionKind::Jump || kind == X86InstructionKind::Return)
                 break;
-            const uint8 slot = it->argumentSlot;
-            if (slot >= paramsCount || slot >= MAX_ARGUMENTS || named[slot])
+            if (it->size == 0) {
+                // a location the code before it falls into (loc_, the target of other jumps too): the arguments written before it reach the
+                // call on that path (IDA names them there); not a function, a variable line, a collapsed zone
+                if (it->isCollapsedLine || it->localVariableKind != DissasmAsmPreCacheLine::LocalVariableKind::None || !it->label.starts_with("loc_"))
+                    break;
+                afterLabel = true;
                 continue;
-            named[slot] = true;
-            remaining--;
-            if (functionDetails->params[slot].name && functionDetails->params[slot].name[0]) // not a parameter an inferred prototype does not know
-                nameArgument(*it, functionDetails->params[slot].name);
+            }
+            if (afterLabel && kind != X86InstructionKind::Other && kind != X86InstructionKind::Compare && kind != X86InstructionKind::Stack &&
+                kind != X86InstructionKind::ConditionalJump)
+                break; // padding (align, int3, nop), data, ud2 / hlt before the location: nothing falls into it
+            afterLabel                      = false;
+            uint8 slot                      = it->argumentSlot;
+            const std::string_view operands = it->op_str ? std::string_view(it->op_str, it->op_str_size) : std::string_view();
+            if (it->flags == DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
+                slot = pushedSlot < MAX_ARGUMENTS ? pushedSlot++ : DissasmAsmPreCacheLine::NO_ARGUMENT;
+            else if (operands.starts_with("rsp, ") || operands == "rbp, rsp")
+                pushedSlot = MAX_ARGUMENTS;
+            // ARM64: a write of sp before the call (sub sp, sp, #0x200, stp x29, x30, [sp, #-0x10]!): the stores through sp before it are
+            // not the stack arguments of the call
+            if (slot != DissasmAsmPreCacheLine::NO_ARGUMENT && slot >= 8 && stackMoved)
+                continue;
+            if (operands.starts_with("sp, ") ||
+                (operands.find("[sp") != std::string_view::npos && (operands.ends_with("]!") || operands.find("], #") != std::string_view::npos)))
+                stackMoved = true;
+            if (stackArgumentsOfEC && (slot == 4 || slot == 5) && !it->argumentPair) {
+                if (!namedEC[slot - 4]) {
+                    namedEC[slot - 4] = true;
+                    remaining--;
+                    nameArgument(*it, slot == 4 ? "stack arguments" : "stack arguments size");
+                }
+                continue;
+            }
+            // ARM64EC: the variadic arguments after x3 are in the stack x4 points to (str w8, [sp]: the first of them), x4 / x5 (their address,
+            // their size) are no arguments
+            if (hasFormat && variadicSlots < 8 && slot != DissasmAsmPreCacheLine::NO_ARGUMENT && slot >= variadicSlots)
+                slot = slot >= 8 ? static_cast<uint8>(variadicSlots + (slot - 8)) : DissasmAsmPreCacheLine::NO_ARGUMENT;
+            for (uint32 pairIndex = 0; pairIndex < (it->argumentPair ? 2u : 1u); pairIndex++) {
+                const uint32 pairSlot = slot == DissasmAsmPreCacheLine::NO_ARGUMENT ? slot : slot + pairIndex;
+                if (pairSlot >= slotsCount || named[pairSlot])
+                    continue;
+                named[pairSlot] = true;
+                remaining--;
+                if (pairSlot >= paramsCount) {
+                    formatArgumentLines[pairSlot - paramsCount] = &*it;
+                    secondOfPair[pairSlot - paramsCount]        = pairIndex == 1;
+                    continue;
+                }
+                // the text of the format, read before its name is added to the line
+                if (hasFormat && pairSlot + 1 == paramsCount)
+                    format = GetShownFormat(*it);
+                if (const char* text = ArgumentText(functionDetails->params[pairSlot])) // not a parameter an inferred prototype does not know
+                    nameSlot(*it, pairIndex == 1, text);
+            }
         }
+        if (!format.empty()) {
+            const auto texts =
+                  GetFormatArgumentTexts(format, functionDetails->functionName.find("scanf") != std::string_view::npos, false, variadicFloatsApart);
+            for (size_t index = 0; index < texts.size() && index < formatArgumentLines.size(); index++)
+                if (formatArgumentLines[index] && !texts[index].empty())
+                    nameSlot(*formatArgumentLines[index], secondOfPair[index], texts[index].c_str());
+        }
+        for (const auto& pair : pairNames) // %d, %s
+            nameArgument(
+                  *pair.line,
+                  ((pair.texts[0].empty() ? std::string("?") : pair.texts[0]) + ", " + (pair.texts[1].empty() ? std::string("?") : pair.texts[1])).c_str());
         return;
     }
 
@@ -1861,7 +2134,25 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* f
     // the pushes such a call takes are left to it, the arguments of a known stdcall API (its prototype) or the ones its caller removes
     // after it (cdecl: pop ecx / add esp, 8 right after the call); a call that takes what is not known ends it, as a jmp / ret
     constexpr uint32 MAX_LINE_DIFF = 32;
-    uint32 pushIndex = 0, remaining = paramsCount;
+    // a method of MSVC (__thiscall): this in ecx, set by the last instruction that writes it before the call (mov ecx, esi / lea ecx, [ebp +
+    // var_10]); a call between them, another write (pop ecx, xor ecx, ecx, rep movsd) ends the search
+    if (functionDetails->prototype.find("__thiscall ") != std::string_view::npos)
+        for (auto it = cachedAsmLines.rbegin(); it != cachedAsmLines.rend() && startingLine - it->currentLine <= MAX_LINE_DIFF; ++it) {
+            const auto kind = static_cast<X86InstructionKind>(it->instructionKind);
+            if (it->size == 0)
+                continue;
+            if (kind == X86InstructionKind::Call || kind == X86InstructionKind::Jump || kind == X86InstructionKind::Return ||
+                std::string_view(it->mnemonic).starts_with("rep"))
+                break;
+            const std::string_view operands = it->op_str ? std::string_view(it->op_str, it->op_str_size) : std::string_view();
+            if (operands != "ecx" && !operands.starts_with("ecx, ") && !operands.starts_with("cx, ") && !operands.starts_with("cl, "))
+                continue;
+            if ((strcmp(it->mnemonic, "mov") == 0 || strcmp(it->mnemonic, "lea") == 0) && operands.starts_with("ecx, "))
+                nameArgument(*it, "this");
+            break;
+        }
+    const uint32 slotsCount = paramsCount + static_cast<uint32>(formatArgumentLines.size());
+    uint32 pushIndex = 0, remaining = slotsCount;
     uint32 taken           = 0;     // the pushes found later that a pop / add esp / a call took (they are not arguments of this call)
     bool cleanedUpAfter    = false; // the call met next (walking back) is a cdecl one: its pushes are counted by its clean up
     const auto calleeName  = [](const DissasmAsmPreCacheLine& line) -> std::string_view {
@@ -1875,7 +2166,7 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* f
             start--;
         return operands.substr(start);
     };
-    std::vector<bool> named(paramsCount, false);
+    std::vector<bool> named(slotsCount, false);
     for (auto it = cachedAsmLines.rbegin(); it != cachedAsmLines.rend() && remaining; ++it) {
         if (startingLine - it->currentLine > MAX_LINE_DIFF)
             break;
@@ -1917,7 +2208,7 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* f
                 continue;
             }
         }
-        uint32 slot = paramsCount;
+        uint32 slot = slotsCount;
         if (it->flags == DissasmAsmPreCacheLine::InstructionFlag::PushFlag) {
             if (taken > 0) {
                 taken--; // an argument of a call made in between
@@ -1926,13 +2217,21 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* f
             slot = pushIndex++;
         } else if (it->argumentSlot != DissasmAsmPreCacheLine::NO_ARGUMENT)
             slot = it->argumentSlot;
-        if (slot >= paramsCount || named[slot])
+        if (slot >= slotsCount || named[slot])
             continue;
         named[slot] = true;
         remaining--;
-        if (functionDetails->params[slot].name && functionDetails->params[slot].name[0])
-            nameArgument(*it, functionDetails->params[slot].name);
+        if (slot >= paramsCount) {
+            formatArgumentLines[slot - paramsCount] = &*it;
+            continue;
+        }
+        // the text of the format, read before its name is added to the line
+        if (hasFormat && slot + 1 == paramsCount)
+            format = GetShownFormat(*it);
+        if (const char* text = ArgumentText(functionDetails->params[slot]))
+            nameArgument(*it, text);
     }
+    nameFormatArguments(true, false); // the values of 8 bytes take two pushes, the doubles too
 }
 
 void Instance::ProcessSpaceKey(bool goToEntryPoint)
@@ -1949,6 +2248,7 @@ void Instance::ProcessSpaceKey(bool goToEntryPoint)
             for (const auto& other : settings->parseZones) {
                 if (!isEntryZone(other))
                     continue;
+                DissasmReplayJumpScope jumpScope(replay.get(), DissasmReplayJumpKind::Entry);
                 if (GoToFileOffset(static_cast<DissasmCodeZone*>(other.get())->zoneDetails.entryPoint))
                     GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::GotoEntrypoint);
                 return;
@@ -2039,6 +2339,8 @@ void Instance::RestoreCursorState(const CursorState& state)
 void Instance::RecordJump(const CursorState& from)
 {
     jumps_holder.Record(from, SaveCursorState());
+    // pendingGoTo: the cursor reaches the destination once its zone is prepared (the next jump)
+    replay->OnJumpRecorded(from, pendingGoTo.has_value());
 }
 
 bool Instance::JumpInHistory(bool back)
@@ -2047,6 +2349,65 @@ bool Instance::JumpInHistory(bool back)
     if (!target.has_value())
         return false;
     RestoreCursorState(target.value());
+    replay->OnHistoryJump(back);
+    return true;
+}
+
+std::optional<std::pair<DissasmCodeZone*, DissasmCommentAnchor>> Instance::ResolvePlace(const CursorState& state) const
+{
+    // a line of an analysed code zone, below its title and its columns header
+    if (state.zoneIndex == CursorState::NO_ZONE || state.zoneIndex >= settings->parseZones.size() || state.lineInZone < 2)
+        return {};
+    const auto& parseZone = settings->parseZones[state.zoneIndex];
+    if (parseZone->zoneType != DissasmParseZoneType::DissasmCodeParseZone || parseZone->isCollapsed)
+        return {};
+    auto* zone = static_cast<DissasmCodeZone*>(parseZone.get());
+    if (!zone->isInit || zone->IsDeepScanPending() || !zone->CanReachAsmLines())
+        return {};
+    const auto anchor = zone->GetAnchorOfLine(state.lineInZone - 2u);
+    if (!anchor.has_value())
+        return {};
+    return std::make_pair(zone, anchor.value());
+}
+
+std::optional<std::pair<DissasmCodeZone*, DissasmCommentAnchor>> Instance::ResolveCursorPlace() const
+{
+    return ResolvePlace(SaveCursorState());
+}
+
+bool Instance::HasUnsavedCourseChanges() const
+{
+    return replay->IsDirty();
+}
+
+void Instance::MarkCourseWorkSaved(uint64 revision)
+{
+    courseWorkRevision = revision;
+    replay->ClearDirty();
+}
+
+std::string Instance::ReplayStatusText() const
+{
+    if (!replayController)
+        return {};
+    const size_t position = replayController->Position();
+    const size_t count    = replayController->Count();
+    std::string text      = "Replay: step " + std::to_string(position) + "/" + std::to_string(count) + " - ";
+    if (replayWaitingForAnalysis && HasPendingDeepScans())
+        return text + "wait, the analysis of the code is still running";
+    if (position == 0)
+        return text + (count == 0 ? "the journal is empty" : "at the start (Alt+Right: the first step)");
+    // without the time of the step: the step number says where the replay is
+    return text + replayController->Describe(position - 1, false);
+}
+
+bool Instance::IsCourseStateEmpty() const
+{
+    if (cacheData.hasCache || !replay->Journal().events.empty())
+        return false;
+    for (const auto& zone : settings->parseZones)
+        if (zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone && static_cast<const DissasmCodeZone*>(zone.get())->CanUndoEdit())
+            return false;
     return true;
 }
 

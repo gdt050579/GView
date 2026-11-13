@@ -270,17 +270,24 @@ struct PickPreferredSmartAssistant : public Window {
         newY += 2;
     }
 
-    bool OnEvent(Reference<Control>, Event eventType, int ID) override
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
     {
+        // the close button and Escape both raise WindowClose: without this the modal window could never be dismissed
+        if (eventType == Event::WindowClose) {
+            preferredIndex = UINT16_MAX;
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
         if (eventType == Event::ButtonClicked) {
-            if (ID < 0) {
+            if (ID < 0 || ID >= UINT16_MAX) {
                 Dialogs::MessageBox::ShowError("Smart Assistants", "Invalid ID button!");
-                return false;
+                return true;
             }
             preferredIndex = static_cast<uint16>(ID);
             Exit(Dialogs::Result::Ok);
+            return true;
         }
-        return false;
+        return Window::OnEvent(control, eventType, ID);
     }
 };
 #pragma endregion
@@ -359,7 +366,8 @@ SmartAssistantPromptInterface* SmartAssistantPromptInterfaceProxy::GetSmartAssis
     }
     if (prefferedIndex == UINT16_MAX) {
         PickPreferredSmartAssistant pickPreferred(smartAssistants, validSmartAssistants);
-        pickPreferred.Show();
+        if (pickPreferred.Show() != Dialogs::Result::Ok)
+            return nullptr; // closed (close button / Escape) without picking: nothing to report
         this->prefferedIndex = pickPreferred.preferredIndex;
         if (prefferedIndex == UINT16_MAX) {
             Dialogs::MessageBox::ShowError("Smart Assistant", "Failed to pick a Smart Assistant!");

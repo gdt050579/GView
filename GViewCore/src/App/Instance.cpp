@@ -94,6 +94,34 @@ bool AddMenuCommands(Menu* mnu, const GViewMenuCommand* list, size_t count)
     return true;
 }
 
+// The "Command.*" values of a plugin section are the defaults the plugin declared when GView.ini was created (the user's keys
+// are in [Keys.*]): a default moved by a newer plugin is moved in an older GView.ini too.
+struct MovedPluginKey {
+    std::string_view section;
+    std::string_view value;
+    Key oldKey;
+    Key newKey;
+};
+constexpr MovedPluginKey MOVED_PLUGIN_KEYS[] = {
+    // bare F10 / F12 are left to the course keys of Learning and Evaluation Mode
+    { "Generic.Dropper", "Command.Dropper", Key::F10, Key::Ctrl | Key::F10 },
+    { "Generic.EntropyVisualizer", "Command.EntropyVisualizer", Key::F12, Key::Alt | Key::F12 },
+};
+static bool MoveRetiredPluginKeys(IniObject& ini)
+{
+    bool changed = false;
+    for (const auto& m : MOVED_PLUGIN_KEYS) {
+        auto section = ini.GetSection(m.section);
+        if (!section.Exists() || !section.HasValue(m.value))
+            continue;
+        if (section.GetValue(m.value).AsKey() == std::optional<Key>(m.oldKey)) {
+            section[m.value] = m.newKey;
+            changed          = true;
+        }
+    }
+    return changed;
+}
+
 // set by the remote server before Init (GView::App::SetHeadlessFrontend)
 static AppCUI::Application::CustomFrontendInterface* headlessFrontend = nullptr;
 void GView::App::SetHeadlessFrontend(AppCUI::Application::CustomFrontendInterface* frontend)
@@ -264,6 +292,9 @@ bool Instance::Init(bool isTestingEnabled)
     }
     // reserve some space fo type
     this->typePlugins.reserve(128);
+    // before the plugins read their keys; saved when possible (otherwise it is done again at the next start)
+    if (auto settings = AppCUI::Application::GetAppSettings(); settings && MoveRetiredPluginKeys(*settings) && !isTestingEnabled)
+        AppCUI::Application::SaveAppSettings();
     if (!LoadSettings()) {
         auto preservedSettingsNewPath = settingsPath;
         preservedSettingsNewPath.replace_extension(".ini.bak");

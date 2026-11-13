@@ -1087,6 +1087,21 @@ namespace Security
             uint32 explanationMaxChars{ 2000 };
         };
 
+        // Course notes (spec §2.2 / §10.11). Absent object = a server without notes: the client shows no Notes UI.
+        struct NotesSettings {
+            bool present{ false }; // the policy carries a "notes" object
+            bool enabled{ false };
+            uint32 maxChars{ 20000 }; // longest note body the server accepts, clamped to [100, 100000]
+        };
+
+        // Course work documents and teacher solutions (spec §10.12). Absent object = a server without them: no Save /
+        // Resume / Compare UI. enabled = students may save their work (course staff are never gated).
+        struct WorkSettings {
+            bool present{ false }; // the policy carries a "work" object
+            bool enabled{ false };
+            uint32 maxBytes{ 2 * 1024 * 1024 }; // largest work document the server accepts, clamped to [64 KiB, 16 MiB]
+        };
+
         struct Policy {
             uint32 schema{ 1 };
             std::string id;
@@ -1111,6 +1126,8 @@ namespace Security
 
             TelemetrySettings telemetry;
             SubmissionSettings submission;
+            NotesSettings notes;
+            WorkSettings work;
 
             std::vector<uint8_t> contentKeyId; // 8 bytes when present
             std::string contentEncryption;     // "" or "aes-256-gcm-hkdf-v1"
@@ -1821,6 +1838,17 @@ namespace View
             uint64 destructor;
             bool isPointer;
         };
+        // a call site of the exception handling of GCC / clang (ELF: the call-site table of the LSDA of an FDE, .gcc_except_table), file
+        // offsets: the code [begin, end) whose exceptions go to the landing pad `pad`, a place inside the function; a cleanup (the
+        // destructors, the cleanup attributes of C, then _Unwind_Resume) and / or the types its catches take, in the order they are tried
+        // ("std::runtime_error", "..." for a catch-all; empty: a type not known)
+        struct LandingPad {
+            uint64 begin;
+            uint64 end;
+            uint64 pad;
+            bool isCleanup;
+            std::vector<std::string> catchTypes;
+        };
 
         constexpr TypeID TypeIDError = static_cast<TypeID>(-1);
         // the entry point of a code zone that has none (an executable section that is not the one of the entry point)
@@ -1882,6 +1910,24 @@ namespace View
              */
             void AddFunctionChunk(uint64 chunkFileOffset, uint64 size, uint64 functionFileOffset, uint8 functionPrologSize);
             /**
+             * \brief A place inside a function where its code goes on, never the start of a function: the targets of the EH continuation
+             * table of the load config (an __except block, the code after a local unwind: _local_unwind receives its address) and of the
+             * longjmp target table. The code that takes its address is its function.
+             */
+            void AddCodeLocation(uint64 fileOffset);
+            /**
+             * \brief The exception handling of GCC / clang (ELF: .eh_frame, .gcc_except_table): the call sites with a landing pad. The
+             * viewer labels the landing pads (places inside their function, never function starts: AddCodeLocation) and marks, as IDA,
+             * the code of each call site (try {, } // starts at) and its landing pad (cleanup() / catch(type), owned by the call site).
+             */
+            void AddLandingPads(const std::vector<LandingPad>& pads);
+            /**
+             * \brief The code of one function or of one fragment of it (ELF: an FDE of .eh_frame): `size` bytes at `fileOffset`. The
+             * viewer starts no function strictly inside it by the prologue rules (a stripped file: the frame GCC sets up after the early
+             * exits); it starts none at it either (a fragment is a chunk of its function).
+             */
+            void AddCodeRange(uint64 fileOffset, uint64 size);
+            /**
              * \brief The name of an import by ordinal (Ordinal:357 of certcli.dll): the name the DLL exports that ordinal under, from its
              * export table. The DLL is the one in the folder of the file (`filePath`), else the one of the system (Windows: SysWOW64 for a
              * 32 bit image on a 64 bit Windows, System32): the names of another version of the DLL may differ. Empty when the DLL is not
@@ -1894,6 +1940,9 @@ namespace View
              * boundaries as well.
              */
             void AddInstructionBoundary(uint64 fileOffset);
+            // the ARM64EC code of an ARM64X image (the code map of its CHPE metadata): its calls pass the variadic arguments after the fourth
+            // through x4 (their address) and x5 (their size), not in x4 .. x7
+            void AddArm64ECCode(uint64 fileOffset, uint64 size);
             // 32 bit x86 position independent code (an ELF shared object / PIE): the address of the global offset table, the value of ebx
             // in the PLT stubs (jmp dword ptr [ebx + 0xc])
             void SetGlobalOffsetTable(uint64 address);
@@ -2012,7 +2061,7 @@ namespace App
         std::filesystem::path annotations;      // a JSON annotations file (ExportAnnotations) added to the data of the user
         std::filesystem::path signatures;       // a JSON signatures file (CreateSignatures): the sub_ functions that match get their names
         std::filesystem::path signaturesOutput; // the signatures of the named functions are written to this file
-        std::filesystem::path listingOutput;    // the listing of every disassembly zone (the text of the F8 export) is written to this file
+        std::filesystem::path listingOutput;    // the listing of every disassembly zone (the text of the Ctrl+F8 export) is written to this file
     };
     // the analysis of the disassembly of a file (functions, calls, strings, switches, the data of the user) as JSON, without a window;
     // Init must be called first

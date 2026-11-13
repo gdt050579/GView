@@ -4,12 +4,19 @@
 #include <array>
 #include <map>
 #include <memory>
+#include <set>
+#include <span>
+#include <unordered_map>
 
 using namespace GView::View::DissasmViewer;
 
 namespace
 {
 constexpr uint32 MAX_PROLOGUE_PADDING_INSTRUCTIONS = 2;        // mov edi, edi (hot patching), endbr32/64, nop before push ebp
+constexpr uint32 MAX_HOME_SPACE_SAVES              = 4;        // MSVC x64: mov qword ptr [rsp + 8..0x20], reg before push rbp
+constexpr uint32 MAX_EARLY_EXIT_INSTRUCTIONS       = 16;       // GCC shrink wrapping: test rdi, rdi; je; ... before push rbp
+constexpr uint32 MAX_SCHEDULED_MOVES               = 2;        // GCC: push rbp; mov r10, rcx; mov rbp, rsp
+constexpr size_t MAX_ARM64_STACK_DELTAS            = 4096;     // the changes of sp an ARM64 frame records
 constexpr uint32 MAX_FUNCTION_INSTRUCTIONS         = 1u << 20; // hard stop for malformed code
 constexpr int64 MAX_FRAME_DISPLACEMENT             = 0x100000; // larger displacements are not stack slots
 constexpr size_t ACCESSES_COMPACT_THRESHOLD        = 4096;     // bounds the memory used while scanning huge functions
@@ -92,6 +99,21 @@ std::string_view GetOperandSizeName(uint16 size)
     }
 }
 
+// jmp rax / jmp qword ptr [rax*8 + table] / notrack jmp rax: the jump of a switch
+bool IsIndirectJump(const cs_insn& insn)
+{
+    const cs_x86& x86 = insn.detail->x86;
+    return insn.id == X86_INS_JMP && x86.op_count == 1 && (x86.operands[0].type == X86_OP_REG || x86.operands[0].type == X86_OP_MEM);
+}
+
+// after the end of the flow of a function, only its padding and the code of a computed goto (an endbr64: a function start would bound the
+// walk, DemoteComputedGotoTargets made it a location) go on: true when the walk stops at `current`
+bool EndsAfterFlowEnd(const cs_insn& current, bool& skip)
+{
+    skip = current.id == X86_INS_NOP || current.id == X86_INS_INT3;
+    return !skip && current.id != X86_INS_ENDBR64 && current.id != X86_INS_ENDBR32;
+}
+
 bool IsNameStartCharacter(char c)
 {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '@' || c == '$' || c == '?';
@@ -101,9 +123,9 @@ bool IsNameCharacter(char c)
 {
     return IsNameStartCharacter(c) || (c >= '0' && c <= '9') || c == '.';
 }
-} // namespace
 
-bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
+// AnalyzeX86FunctionFrame; a funclet (AnalyzeX86FuncletFrame): no prologue, its frame register the one of its function from its start
+bool AnalyzeFramePointerCode(
       csh detailHandle,
       const uint8* code,
       size_t codeSize,
@@ -112,7 +134,10 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
       bool is64,
       DissasmFunctionFrame& frame,
       const X86FrameHelperCheck& frameHelper,
-      const X86CallNoReturn& callNoReturn)
+      const X86CallNoReturn& callNoReturn,
+      const X86SwitchCases& switchCases,
+      bool funclet,
+      bool funcletSehRecord)
 {
     frame.startAddress = codeAddress;
     frame.endAddress   = codeAddress;
@@ -133,9 +158,15 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
     uint64 furthestBranchTarget                                    = 0;
     uint64 endAddress                                              = codeAddress;
     uint32 decodedInstructions                                     = 0;
-    enum class State : uint8 { ExpectPush, ExpectMov, Body } state = State::ExpectPush;
+    enum class State : uint8 { ExpectPush, ExpectMov, Body } state = funclet ? State::Body : State::ExpectPush;
     uint32 helperSetup = 0, helperPushes = 0; // push 0x10; push offset scopetable / mov eax, offset handler before the frame helper
-    bool sehRecord     = false;               // __SEH_prolog4: the SEH record (CPPEH_RECORD) is at [ebp - 0x18]
+    bool sehRecord     = funcletSehRecord;    // __SEH_prolog4: the SEH record (CPPEH_RECORD) is at [ebp - 0x18]
+    bool flowEnd       = false;               // a flow end no branch of the function goes past: EndsAfterFlowEnd
+    x86_reg homeCopy   = X86_REG_INVALID;     // MSVC x64: mov rax, rsp before the saves of the home space
+    uint32 earlyExitInstructions = 0;                   // GCC shrink wrapping: the instructions before the frame
+    bool afterEarlyExit          = false;               // a ret / jmp before the frame: its padding skipped
+    x86_reg realignBase          = X86_REG_INVALID;     // GCC: lea r10, [rsp + 8] before the realignment of the stack
+    uint32 scheduledMoves        = 0;                   // the instructions between push rbp and mov rbp, rsp
 
     std::vector<FrameAccess> accesses;
     accesses.reserve(32);
@@ -145,7 +176,15 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
         const cs_insn* current   = insn.get();
         const cs_x86& x86        = current->detail->x86;
         const uint64 nextAddress = current->address + current->size;
-        endAddress               = nextAddress;
+        if (flowEnd) {
+            bool padding = false;
+            if (EndsAfterFlowEnd(*current, padding))
+                break;
+            if (padding)
+                continue;
+            flowEnd = false;
+        }
+        endAddress = nextAddress;
 
         if (state == State::ExpectPush) {
             if (current->id == X86_INS_PUSH && IsRegisterOperand(x86, 0, frameRegister)) {
@@ -158,19 +197,79 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
             }
             if (decodedInstructions <= MAX_PROLOGUE_PADDING_INSTRUCTIONS && helperSetup == 0 && IsProloguePadding(current))
                 continue;
+            // MSVC x64: the registers saved in the home space before push rbp (mov qword ptr [rsp + 0x10], rbx, mov dword ptr [rsp + 0x20],
+            // r9d; or through a copy of rsp: mov rax, rsp; mov qword ptr [rax + 8], rbx): the stack pointer unchanged
+            if (is64 && decodedInstructions <= MAX_HOME_SPACE_SAVES + 1 && helperSetup == 0) {
+                if (current->id == X86_INS_MOV && homeCopy == X86_REG_INVALID && decodedInstructions == 1 && x86.op_count == 2 &&
+                    x86.operands[0].type == X86_OP_REG && x86.operands[0].size == 8 && IsRegisterOperand(x86, 1, stackRegister)) {
+                    homeCopy = x86.operands[0].reg;
+                    continue;
+                }
+                if (current->id == X86_INS_MOV && x86.op_count == 2 && x86.operands[0].type == X86_OP_MEM && x86.operands[1].type == X86_OP_REG &&
+                    (x86.operands[0].mem.base == stackRegister || x86.operands[0].mem.base == homeCopy) && x86.operands[0].mem.index == X86_REG_INVALID &&
+                    x86.operands[0].mem.segment == X86_REG_INVALID && x86.operands[0].mem.disp >= 8 && x86.operands[0].mem.disp <= 0x20 &&
+                    x86.operands[1].reg != homeCopy)
+                    continue;
+            }
             // MSVC: the frame built by a helper (push 0x10; push offset scopetable; call __SEH_prolog4 / push 8; mov eax, offset handler;
-            // call __EH_prolog3 / mov eax, offset handler; call _EH_prolog)
-            if (frameHelper && !is64 && helperSetup < 2 &&
-                ((current->id == X86_INS_PUSH && x86.op_count == 1 && x86.operands[0].type == X86_OP_IMM) ||
-                 (current->id == X86_INS_MOV && IsRegisterOperand(x86, 0, X86_REG_EAX) && x86.operands[1].type == X86_OP_IMM))) {
+            // call __EH_prolog3 / mov eax, offset handler; call _EH_prolog / push 8; push 0x48; mov eax, offset handler; call
+            // __EH_prolog3_align: the size, the alignment, the handler)
+            const bool pushesImmediate = current->id == X86_INS_PUSH && x86.op_count == 1 && x86.operands[0].type == X86_OP_IMM;
+            const bool setsHandler     = current->id == X86_INS_MOV && IsRegisterOperand(x86, 0, X86_REG_EAX) && x86.operands[1].type == X86_OP_IMM;
+            if (frameHelper && !is64 && (helperSetup < 2 || (helperSetup == 2 && helperPushes == 2 && setsHandler)) && (pushesImmediate || setsHandler)) {
                 helperSetup++;
-                helperPushes += current->id == X86_INS_PUSH ? 1u : 0u;
+                helperPushes += pushesImmediate ? 1u : 0u;
                 continue;
             }
             if (helperSetup > 0 && current->id == X86_INS_CALL && x86.op_count == 1 && x86.operands[0].type == X86_OP_IMM && frameHelper(*current)) {
-                sehRecord = helperPushes == 2;
+                sehRecord = helperPushes == 2 && helperSetup == 2; // __SEH_prolog4 (not the aligned C++ frame)
                 state     = State::Body;
                 continue;
+            }
+            // GCC, a realigned stack (lea r10, [rsp + 8]; and rsp, -0x10; push qword ptr [r10 - 8]; then push rbp; mov rbp, rsp): the frame
+            // register points into the aligned stack, its locals below it
+            const int64 pointerSize = is64 ? 8 : 4;
+            if (helperSetup == 0 && current->id == X86_INS_LEA && realignBase == X86_REG_INVALID && x86.op_count == 2 && x86.operands[0].type == X86_OP_REG &&
+                x86.operands[0].size == pointerSize && x86.operands[1].type == X86_OP_MEM && x86.operands[1].mem.base == stackRegister &&
+                x86.operands[1].mem.index == X86_REG_INVALID && x86.operands[1].mem.disp == pointerSize) {
+                realignBase = x86.operands[0].reg;
+                continue;
+            }
+            if (realignBase != X86_REG_INVALID && current->id == X86_INS_AND && IsRegisterOperand(x86, 0, stackRegister) && x86.op_count == 2 &&
+                x86.operands[1].type == X86_OP_IMM && x86.operands[1].imm < 0)
+                continue;
+            if (realignBase != X86_REG_INVALID && current->id == X86_INS_PUSH && x86.op_count == 1 && x86.operands[0].type == X86_OP_MEM &&
+                x86.operands[0].mem.base == realignBase && x86.operands[0].mem.index == X86_REG_INVALID && x86.operands[0].mem.disp == -pointerSize)
+                continue; // the return address copied above the frame
+            // GCC shrink wrapping: the early exits before the frame (test rdi, rdi; je; cmp; jb; a ret / a tail jmp, the frame at the target
+            // of a branch past it): neither the stack pointer nor the frame register written, no call
+            if (helperSetup == 0 && earlyExitInstructions < MAX_EARLY_EXIT_INSTRUCTIONS && current->id != X86_INS_CALL) {
+                if (afterEarlyExit && (current->id == X86_INS_NOP || current->id == X86_INS_INT3))
+                    continue; // the padding after a ret / jmp
+                afterEarlyExit          = false;
+                const bool endsPath     = current->id == X86_INS_RET || current->id == X86_INS_JMP;
+                bool writesStackOrFrame = false;
+                for (uint8 index = 0; index < x86.op_count && !endsPath; index++)
+                    writesStackOrFrame |= x86.operands[index].type == X86_OP_REG && (x86.operands[index].access & CS_AC_WRITE) &&
+                                          (GetX64RegisterFamily(x86.operands[index].reg) == GetX64RegisterFamily(stackRegister) ||
+                                           GetX64RegisterFamily(x86.operands[index].reg) == GetX64RegisterFamily(frameRegister));
+                for (uint8 index = 0; index < current->detail->regs_write_count && !endsPath; index++)
+                    writesStackOrFrame |= GetX64RegisterFamily(current->detail->regs_write[index]) == GetX64RegisterFamily(stackRegister) ||
+                                          GetX64RegisterFamily(current->detail->regs_write[index]) == GetX64RegisterFamily(frameRegister);
+                if (!writesStackOrFrame) {
+                    earlyExitInstructions++;
+                    if (cs_insn_group(detailHandle, current, CS_GRP_JUMP) && x86.op_count == 1 && x86.operands[0].type == X86_OP_IMM) {
+                        const uint64 target = static_cast<uint64>(x86.operands[0].imm);
+                        if (target > current->address && target < limitAddress)
+                            furthestBranchTarget = std::max(furthestBranchTarget, target);
+                    }
+                    if (endsPath) {
+                        if (furthestBranchTarget < nextAddress)
+                            return false; // no branch goes on to the frame
+                        afterEarlyExit = true;
+                    }
+                    continue;
+                }
             }
             return false;
         }
@@ -179,6 +278,19 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
                 state = State::Body;
                 continue;
             }
+            // GCC schedules a move between them (push rbp; mov r10, rcx; mov rbp, rsp): neither the stack pointer nor the frame register
+            // written, no branch
+            bool writesStackOrFrame = cs_insn_group(detailHandle, current, CS_GRP_JUMP) || cs_insn_group(detailHandle, current, CS_GRP_CALL) ||
+                                      cs_insn_group(detailHandle, current, CS_GRP_RET);
+            for (uint8 index = 0; index < x86.op_count; index++)
+                writesStackOrFrame |= x86.operands[index].type == X86_OP_REG && (x86.operands[index].access & CS_AC_WRITE) &&
+                                      (GetX64RegisterFamily(x86.operands[index].reg) == GetX64RegisterFamily(stackRegister) ||
+                                       GetX64RegisterFamily(x86.operands[index].reg) == GetX64RegisterFamily(frameRegister));
+            for (uint8 index = 0; index < current->detail->regs_write_count; index++)
+                writesStackOrFrame |= GetX64RegisterFamily(current->detail->regs_write[index]) == GetX64RegisterFamily(stackRegister) ||
+                                      GetX64RegisterFamily(current->detail->regs_write[index]) == GetX64RegisterFamily(frameRegister);
+            if (!writesStackOrFrame && scheduledMoves++ < MAX_SCHEDULED_MOVES)
+                continue;
             return false;
         }
 
@@ -212,6 +324,10 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
             const uint64 target = static_cast<uint64>(x86.operands[0].imm);
             if (target > current->address && target < limitAddress)
                 furthestBranchTarget = std::max(furthestBranchTarget, target);
+        } else if (const auto* cases = IsIndirectJump(*current) && switchCases ? switchCases(*current) : nullptr) {
+            for (const uint64 target : *cases) // the cases of a switch: the code of the function up to the last one
+                if (target > current->address && target < limitAddress)
+                    furthestBranchTarget = std::max(furthestBranchTarget, target);
         }
 
         bool endsFlow = false;
@@ -232,9 +348,9 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
         default:
             break;
         }
-        // the code that follows belongs to the function only when one of its branches reaches it
+        // the code that follows belongs to the function only when one of its branches reaches it (or a computed goto: an endbr64)
         if (endsFlow && furthestBranchTarget < nextAddress)
-            break;
+            flowEnd = true;
     }
 
     if (state != State::Body)
@@ -259,6 +375,36 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
     }
     return true;
 }
+} // namespace
+
+bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      uint64 limitAddress,
+      bool is64,
+      DissasmFunctionFrame& frame,
+      const X86FrameHelperCheck& frameHelper,
+      const X86CallNoReturn& callNoReturn,
+      const X86SwitchCases& switchCases)
+{
+    return AnalyzeFramePointerCode(detailHandle, code, codeSize, codeAddress, limitAddress, is64, frame, frameHelper, callNoReturn, switchCases, false, false);
+}
+
+bool GView::View::DissasmViewer::AnalyzeX86FuncletFrame(
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      uint64 limitAddress,
+      bool is64,
+      bool sehRecord,
+      DissasmFunctionFrame& frame,
+      const X86CallNoReturn& callNoReturn)
+{
+    return AnalyzeFramePointerCode(detailHandle, code, codeSize, codeAddress, limitAddress, is64, frame, {}, callNoReturn, {}, true, sehRecord);
+}
 
 namespace
 {
@@ -276,7 +422,16 @@ struct ChunkEntry {
     const std::vector<DissasmFunctionFrame::StackAlias>* aliases;
 };
 
-// AnalyzeX86StackFrame with a reading of the ambiguous pushes; `ambiguousPushes` receives the readings that the function needs
+// the cases of a switch placed before their jump, reached by the walk after a ret / jmp with a guessed depth (the deepest one): the depth
+// and the aliases of the stack pointer at the jump (by the address of the case), for a second walk
+struct LateCase {
+    int64 delta;
+    std::vector<std::pair<x86_reg, int64>> aliases;
+};
+using LateCases = std::map<uint64, LateCase>;
+
+// AnalyzeX86StackFrame with a reading of the ambiguous pushes; `ambiguousPushes` receives the readings that the function needs; `late`
+// receives the cases of the switches the walk reached before their jump, `seeds` gives them to a second walk
 StackFrameResult AnalyzeStackPointerFrame(
       csh detailHandle,
       const uint8* code,
@@ -287,9 +442,12 @@ StackFrameResult AnalyzeStackPointerFrame(
       DissasmFunctionFrame& frame,
       const X86CalleeStackPurge& calleePurge,
       const X86CallNoReturn& callNoReturn,
+      const X86SwitchCases& switchCases,
       uint8 reading,
       uint8& ambiguousPushes,
-      const ChunkEntry* chunk = nullptr)
+      const ChunkEntry* chunk = nullptr,
+      const LateCases* seeds  = nullptr,
+      LateCases* late         = nullptr)
 {
     frame.startAddress      = codeAddress;
     frame.endAddress        = codeAddress;
@@ -301,6 +459,7 @@ StackFrameResult AnalyzeStackPointerFrame(
     frame.savedRegistersOffset = 0;
     frame.savedRegistersSize   = 0;
     frame.alignedStack         = false;
+    frame.readsReturnAddress   = false;
     if (!code || codeSize == 0 || limitAddress <= codeAddress)
         return StackFrameResult::Rejected;
     const std::unique_ptr<cs_insn, CsInsnDeleter> insn(cs_malloc(detailHandle));
@@ -330,7 +489,9 @@ StackFrameResult AnalyzeStackPointerFrame(
     std::optional<int64> accumulator;    // mov eax, 0x2000: eax keeps it through the call __chkstk that follows
     bool accumulatorAfterCall = false;
     bool flowEnded            = false;
+    bool lastFlowEnd          = false; // a flow end no branch of the function goes past: EndsAfterFlowEnd
     bool reachedRet           = false; // 32 bit: a function chunk (the cold code of a function, reached by a jcc) has no ret
+    bool frameFromEntry       = false; // 32 bit: push ebp; mov ebp, esp at the entry (the depth of a function: no ret needed)
     // a dynamic allocation (alloca: sub rsp, rax; the probing loop of GCC: sub rsp, 0x1000 until rsp reaches its end): the depth is not
     // known until the stack pointer is restored from a callee saved alias (lea rsp, [rbp - 0x28]); the slots through rsp are not read there
     bool unknownDepth                  = false;
@@ -383,9 +544,13 @@ StackFrameResult AnalyzeStackPointerFrame(
     // a chunk: the callee saved aliases of its function (a volatile one does not survive the jumps to the chunk), at its start and at
     // every part of it after a ret / jmp (each part is reached from the body of the function)
     std::vector<ActiveAlias> chunkAliases;
-    if (chunk && chunk->aliases && is64)
+    static constexpr std::array<x86_reg, 8> CALLEE_SAVED_64 = { X86_REG_RBX, X86_REG_RBP, X86_REG_RSI, X86_REG_RDI,
+                                                                X86_REG_R12, X86_REG_R13, X86_REG_R14, X86_REG_R15 };
+    static constexpr std::array<x86_reg, 4> CALLEE_SAVED_32 = { X86_REG_EBX, X86_REG_EBP, X86_REG_ESI, X86_REG_EDI };
+    const std::span<const x86_reg> calleeSaved              = is64 ? std::span<const x86_reg>(CALLEE_SAVED_64) : std::span<const x86_reg>(CALLEE_SAVED_32);
+    if (chunk && chunk->aliases)
         for (const auto& alias : *chunk->aliases)
-            for (const x86_reg reg : { X86_REG_RBX, X86_REG_RBP, X86_REG_RSI, X86_REG_RDI, X86_REG_R12, X86_REG_R13, X86_REG_R14, X86_REG_R15 })
+            for (const x86_reg reg : calleeSaved)
                 if (alias.reg == cs_reg_name(detailHandle, reg))
                     chunkAliases.push_back({ reg, alias.delta, 0 });
     const auto openAliases = [&](const std::vector<ActiveAlias>& opened, uint64 at) {
@@ -396,11 +561,30 @@ StackFrameResult AnalyzeStackPointerFrame(
             }
     };
     openAliases(chunkAliases, codeAddress);
+    // a second walk: the cases before their jump get the depth and the aliases of the jump, as the targets of the forward branches
+    std::set<uint64> guessedStarts; // the code after a ret / jmp that no branch seen before reaches: its depth guessed
+    if (seeds)
+        for (const auto& [target, seed] : *seeds) {
+            branchDeltas.emplace(target, std::pair<int64, uint64>(seed.delta, target));
+            std::vector<ActiveAlias> opened;
+            for (const auto& [reg, aliasDelta] : seed.aliases)
+                opened.push_back({ reg, aliasDelta, 0 });
+            if (!opened.empty())
+                branchAliases.emplace(target, std::move(opened));
+        }
     while (decodedInstructions < MAX_FUNCTION_INSTRUCTIONS && cs_disasm_iter(detailHandle, &data, &size, &address, insn.get())) {
         decodedInstructions++;
         const cs_insn* current   = insn.get();
         const cs_x86& x86        = current->detail->x86;
         const uint64 nextAddress = current->address + current->size;
+        if (lastFlowEnd) {
+            bool padding = false;
+            if (EndsAfterFlowEnd(*current, padding))
+                break;
+            if (padding)
+                continue;
+            lastFlowEnd = false;
+        }
         frame.endAddress         = nextAddress;
         const auto immediate     = [&x86](uint8 index) -> std::optional<int64> {
             return index < x86.op_count && x86.operands[index].type == X86_OP_IMM ? std::optional<int64>(x86.operands[index].imm) : std::nullopt;
@@ -418,6 +602,8 @@ StackFrameResult AnalyzeStackPointerFrame(
         if (flowEnded) {
             // a chunk: the next part is reached from the body of the function, with its depth
             const auto known = branchDeltas.find(current->address);
+            if (known == branchDeltas.end() && !chunk)
+                guessedStarts.insert(current->address);
             if (known != branchDeltas.end() && known->second.first == UNKNOWN_DEPTH)
                 setUnknownDepth(current->address);
             else
@@ -453,8 +639,9 @@ StackFrameResult AnalyzeStackPointerFrame(
                 unknownPurge.reset();
             }
         }
-        // push esi before esi is written: a saved register (also after a call: shrink wrapping); push ecx at the entry: a local
-        const bool savesRegister = pushesRegister && isCalleeSaved(x86.operands[0].reg) && pushedFamily >= 0 &&
+        // push esi before esi is written: a saved register (also after a call: shrink wrapping); push ecx at the entry: a local. A chunk
+        // runs after the prologue of its function: its pushes are arguments
+        const bool savesRegister = !chunk && pushesRegister && isCalleeSaved(x86.operands[0].reg) && pushedFamily >= 0 &&
                                    (writtenFamilies & (1u << pushedFamily)) == 0 && !(calledYet && (reading & LATE_SAVES_ARE_ARGUMENTS));
         const bool allocatesLocal = pushesRegister && leadingPushes && !(reading & ENTRY_PUSHES_ARE_ARGUMENTS) && IsRegisterOperand(x86, 0, X86_REG_ECX);
         if (allocatesLocal)
@@ -478,6 +665,8 @@ StackFrameResult AnalyzeStackPointerFrame(
             if (!viaAlias && (unknownDepth || (current->id == X86_INS_OR && immediate(1) == 0 && x86.prefix[0] != X86_PREFIX_LOCK)))
                 continue;
             const int64 offset = op.mem.disp + (viaAlias ? viaAlias->delta : delta);
+            if (offset == 0 && op.size == pointerSize && current->id != X86_INS_LEA)
+                frame.readsReturnAddress = true; // wil: mov rcx, qword ptr [rsp + 0x28] (_ReturnAddress())
             if ((offset >= 0 && offset < pointerSize) || offset < -MAX_FRAME_DISPLACEMENT || offset > MAX_FRAME_DISPLACEMENT)
                 continue; // the return address
             accesses.push_back({ static_cast<int32>(offset), static_cast<uint16>(current->id == X86_INS_LEA ? 0 : op.size) });
@@ -650,6 +839,9 @@ StackFrameResult AnalyzeStackPointerFrame(
             frame.stackAliases.push_back({ cs_reg_name(detailHandle, x86.operands[0].reg), static_cast<int32>(aliasDelta), nextAddress, nextAddress });
         }
         if (inPrologue) {
+            // the frame register set right after its save, the first one (a function that does not return has no ret to confirm it)
+            if (copiesStack && prologueSaves == 1 && delta == -pointerSize && IsRegisterOperand(x86, 0, is64 ? X86_REG_RBP : X86_REG_EBP))
+                frameFromEntry = true;
             if (savesRegister && !unknownDepth && delta == -static_cast<int64>(prologueSaves) * pointerSize)
                 prologueSaves++;
             else if (change.has_value() || writesStack || cs_insn_group(detailHandle, current, CS_GRP_JUMP) ||
@@ -679,17 +871,21 @@ StackFrameResult AnalyzeStackPointerFrame(
         else
             accumulator.reset();
 
+        // a forward branch: the depth and the aliases at its target
+        const auto recordBranch = [&](uint64 target) {
+            furthestBranchTarget = std::max(furthestBranchTarget, target);
+            // a target reached with an unknown depth stays unknown (whatever the other branches to it)
+            const auto [branch, added] = branchDeltas.emplace(target, std::pair<int64, uint64>(unknownDepth ? UNKNOWN_DEPTH : delta, current->address));
+            if (!added && unknownDepth)
+                branch->second = { UNKNOWN_DEPTH, current->address };
+            unknownBranches |= unknownDepth;
+            if (!aliases.empty())
+                branchAliases.emplace(target, aliases);
+        };
         if (cs_insn_group(detailHandle, current, CS_GRP_JUMP) && x86.op_count == 1 && x86.operands[0].type == X86_OP_IMM) {
             const uint64 target = static_cast<uint64>(x86.operands[0].imm);
             if (target > current->address && target < limitAddress) {
-                furthestBranchTarget = std::max(furthestBranchTarget, target);
-                // a target reached with an unknown depth stays unknown (whatever the other branches to it)
-                const auto [branch, added] = branchDeltas.emplace(target, std::pair<int64, uint64>(unknownDepth ? UNKNOWN_DEPTH : delta, current->address));
-                if (!added && unknownDepth)
-                    branch->second = { UNKNOWN_DEPTH, current->address };
-                unknownBranches |= unknownDepth;
-                if (!aliases.empty())
-                    branchAliases.emplace(target, aliases);
+                recordBranch(target);
             } else if (target > codeAddress && target <= pageAllocation && is64 && !unknownDepth && aliasKeepsStack() &&
                        probingLoops < MAX_PROBING_LOOPS) {
                 // the probing loop of a dynamic allocation (GCC -fstack-clash-protection: sub rsp, 0x1000; or [rsp + 0xff8], 0; jmp to
@@ -709,6 +905,18 @@ StackFrameResult AnalyzeStackPointerFrame(
                     for (const auto& known : frame.stackDeltas)
                         if (known.second != DISSASM_UNKNOWN_STACK_DELTA)
                             deepest = std::min<int64>(deepest, known.second);
+                }
+            }
+        } else if (const auto* cases = IsIndirectJump(*current) && switchCases ? switchCases(*current) : nullptr) {
+            for (const uint64 target : *cases) { // the cases of a switch: reached with the stack of the jump
+                if (target > current->address && target < limitAddress)
+                    recordBranch(target);
+                else if (late && !unknownDepth && target >= codeAddress && target < current->address && guessedStarts.contains(target)) {
+                    auto& lateCase = (*late)[target];
+                    lateCase.delta = delta;
+                    lateCase.aliases.clear();
+                    for (const auto& alias : aliases)
+                        lateCase.aliases.emplace_back(alias.reg, alias.delta);
                 }
             }
         }
@@ -731,13 +939,13 @@ StackFrameResult AnalyzeStackPointerFrame(
         }
         if (endsFlow) {
             if (furthestBranchTarget < nextAddress && !chunk) // a chunk: its parts up to its end
-                break;
+                lastFlowEnd = true;
             flowEnded = true; // the code after an epilogue: reached through a branch of the body
         }
     }
-    if (!is64 && !reachedRet)
+    if (!is64 && !reachedRet && !frameFromEntry && !chunk)
         return StackFrameResult::Rejected; // no ret: the depth of the entry is not the one of a function (a chunk of another one)
-    if ((accesses.empty() && !chunk) || !CompactAccesses(accesses)) // a chunk without slots: its aliases, its depths
+    if ((accesses.empty() && !chunk && !frame.readsReturnAddress) || !CompactAccesses(accesses)) // a chunk without slots: its aliases, its depths
         return StackFrameResult::Rejected;
     frame.stackOffset          = static_cast<int32>(deepest);
     frame.savedRegistersOffset = -static_cast<int32>(prologueSaves * pointerSize);
@@ -765,17 +973,75 @@ bool GView::View::DissasmViewer::AnalyzeX86StackFrame(
       bool is64,
       DissasmFunctionFrame& frame,
       const X86CalleeStackPurge& calleePurge,
-      const X86CallNoReturn& callNoReturn)
+      const X86CallNoReturn& callNoReturn,
+      const X86SwitchCases& switchCases)
 {
     // push ecx at the entry: a local (MSVC: sub esp, 4) or the argument of the first call; push esi after a call: a saved register or an
     // argument. The other readings of the pushes the function has, while the stack stays unbalanced
     uint8 ambiguousPushes = 0;
-    auto result = AnalyzeStackPointerFrame(detailHandle, code, codeSize, codeAddress, limitAddress, is64, frame, calleePurge, callNoReturn, 0, ambiguousPushes);
+    LateCases late;
+    uint8 accepted = 0;
+    auto result    = AnalyzeStackPointerFrame(
+          detailHandle,
+          code,
+          codeSize,
+          codeAddress,
+          limitAddress,
+          is64,
+          frame,
+          calleePurge,
+          callNoReturn,
+          switchCases,
+          0,
+          ambiguousPushes,
+          nullptr,
+          nullptr,
+          &late);
     const uint8 firstAmbiguousPushes = ambiguousPushes;
     for (uint8 reading = 1; reading <= (ENTRY_PUSHES_ARE_ARGUMENTS | LATE_SAVES_ARE_ARGUMENTS) && result == StackFrameResult::Unbalanced; reading++)
-        if ((reading & ~firstAmbiguousPushes) == 0)
-            result = AnalyzeStackPointerFrame(detailHandle, code, codeSize, codeAddress, limitAddress, is64, frame, calleePurge, callNoReturn, reading, ambiguousPushes);
-    return result == StackFrameResult::Accepted;
+        if ((reading & ~firstAmbiguousPushes) == 0) {
+            late.clear();
+            accepted = reading;
+            result   = AnalyzeStackPointerFrame(
+                  detailHandle,
+                  code,
+                  codeSize,
+                  codeAddress,
+                  limitAddress,
+                  is64,
+                  frame,
+                  calleePurge,
+                  callNoReturn,
+                  switchCases,
+                  reading,
+                  ambiguousPushes,
+                  nullptr,
+                  nullptr,
+                  &late);
+        }
+    if (result != StackFrameResult::Accepted)
+        return false;
+    // the cases of a switch placed before their jump: the walk again, their depth the one of the jump
+    if (!late.empty()) {
+        DissasmFunctionFrame again{};
+        if (AnalyzeStackPointerFrame(
+                  detailHandle,
+                  code,
+                  codeSize,
+                  codeAddress,
+                  limitAddress,
+                  is64,
+                  again,
+                  calleePurge,
+                  callNoReturn,
+                  switchCases,
+                  accepted,
+                  ambiguousPushes,
+                  nullptr,
+                  &late) == StackFrameResult::Accepted)
+            frame = std::move(again);
+    }
+    return true;
 }
 
 bool GView::View::DissasmViewer::AnalyzeX64ChunkFrame(
@@ -791,8 +1057,49 @@ bool GView::View::DissasmViewer::AnalyzeX64ChunkFrame(
 {
     uint8 ambiguousPushes = 0;
     const ChunkEntry chunk{ entryDelta, &entryAliases };
-    return AnalyzeStackPointerFrame(detailHandle, code, codeSize, codeAddress, limitAddress, true, frame, {}, callNoReturn, 0, ambiguousPushes, &chunk) ==
+    return AnalyzeStackPointerFrame(detailHandle, code, codeSize, codeAddress, limitAddress, true, frame, {}, callNoReturn, {}, 0, ambiguousPushes, &chunk) ==
            StackFrameResult::Accepted;
+}
+
+bool GView::View::DissasmViewer::AnalyzeFrameRegisterChunk(
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      uint64 limitAddress,
+      bool is64,
+      int32 entryDelta,
+      int32 frameRegisterDelta,
+      DissasmFunctionFrame& frame,
+      const X86CalleeStackPurge& calleePurge,
+      const X86CallNoReturn& callNoReturn)
+{
+    const std::vector<DissasmFunctionFrame::StackAlias> aliases = { { is64 ? "rbp" : "ebp", frameRegisterDelta, codeAddress, codeAddress } };
+    const ChunkEntry chunk{ entryDelta, &aliases };
+    uint8 ambiguousPushes = 0;
+    DissasmFunctionFrame walked{};
+    if (AnalyzeStackPointerFrame(
+              detailHandle, code, codeSize, codeAddress, limitAddress, is64, walked, calleePurge, callNoReturn, {}, 0, ambiguousPushes, &chunk) !=
+        StackFrameResult::Accepted)
+        return false;
+    // in the offsets of the frame register, as the frame of the function (MergeStackPointerSlots)
+    frame.startAddress      = walked.startAddress;
+    frame.endAddress        = walked.endAddress;
+    frame.usesFrameRegister = true;
+    frame.stackDeltas.clear();
+    for (const auto& [address, delta] : walked.stackDeltas)
+        frame.stackDeltas.emplace_back(address, delta == DISSASM_UNKNOWN_STACK_DELTA ? delta : delta - frameRegisterDelta);
+    const int32 pointerSize = is64 ? 8 : 4;
+    frame.variables.clear();
+    for (const auto& variable : walked.variables) {
+        const int32 offset = variable.frameOffset - frameRegisterDelta;
+        if (offset >= 0 && offset < 2 * pointerSize)
+            continue; // the saved frame register, the return address
+        DissasmLocalVariable converted{ offset, variable.size, {} };
+        FormatDefaultLocalVariableName(offset, is64, converted.name);
+        frame.variables.push_back(std::move(converted));
+    }
+    return true;
 }
 
 bool GView::View::DissasmViewer::MergeStackPointerSlots(DissasmFunctionFrame& frame, DissasmFunctionFrame&& stackFrame, bool is64)
@@ -1132,10 +1439,12 @@ uint16 Arm64AccessSize(const cs_insn& insn, bool& isPair)
     }
 }
 
-// x19 .. x30, d8 .. d15: the registers a function saves (stp x20, x19, [sp, #0x10] keeps them, these slots are not variables)
+// x19 .. x30, d8 .. d15 (q8 .. q15 hold them): the registers a function saves (stp x20, x19, [sp, #0x10] keeps them, these slots are not
+// variables)
 bool IsArm64CalleeSaved(arm64_reg reg)
 {
-    return (reg >= ARM64_REG_X19 && reg <= ARM64_REG_X28) || reg == ARM64_REG_X29 || reg == ARM64_REG_X30 || (reg >= ARM64_REG_D8 && reg <= ARM64_REG_D15);
+    return (reg >= ARM64_REG_X19 && reg <= ARM64_REG_X28) || reg == ARM64_REG_X29 || reg == ARM64_REG_X30 || (reg >= ARM64_REG_D8 && reg <= ARM64_REG_D15) ||
+           (reg >= ARM64_REG_Q8 && reg <= ARM64_REG_Q15);
 }
 } // namespace
 
@@ -1146,12 +1455,17 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
       uint64 codeAddress,
       uint64 limitAddress,
       DissasmFunctionFrame& frame,
-      const std::function<bool(const cs_insn& call)>& callNoReturn)
+      const std::function<bool(const cs_insn& call)>& callNoReturn,
+      uint64 pathsEnd,
+      const std::function<int32(const cs_insn& call)>& callStackChange)
 {
     frame.startAddress = codeAddress;
     frame.endAddress   = codeAddress;
     frame.stackOffset  = 0;
     frame.variables.clear();
+    frame.stackDeltas.clear();
+    frame.savedRegistersOffset = 0;
+    frame.savedRegistersSize   = 0;
     if (!code || codeSize == 0 || limitAddress <= codeAddress)
         return false;
     const std::unique_ptr<cs_insn, CsInsnDeleter> insn(cs_malloc(detailHandle));
@@ -1159,6 +1473,28 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
         return false;
 
     constexpr uint32 MAX_PROLOGUE_INSTRUCTIONS = 12;
+    // the registers the prologue saves (stp x19, x20, [sp, #0x20]; stp x29, x30, [sp, #0x30]): their slots from the sp of the entry, not
+    // variables (IDA: var_s0); the depths of the prologue from the sp of the entry, in x29 offsets once the frame register is set
+    std::optional<int64> savedLow, savedHigh;
+    std::optional<int64> frameRecord; // stp x29, x30 of the prologue: the saved area too, unless locals separate it from the other saves
+    std::optional<int64> rebase;      // MSVC's frame record below the locals: the top of the locals (x29 offsets), the base of the offsets
+    std::vector<std::pair<uint64, int64>> prologueDeltas{ { codeAddress, 0 } };
+    // the depth of sp at the targets of the forward branches: the code after a ret / b in the middle of the function (an epilogue
+    // restored sp before it) goes on at the depth of the branches to it
+    std::unordered_map<uint64, int64> branchDepths;
+    bool afterFlowEnd           = false;
+    // the frame is set (mov x29, sp / the end of the saves): the stack it reserves after it (sub sp, sp, #N; the probe of MSVC: mov x15, #N;
+    // bl __chkstk; sub sp, sp, x15, lsl #4) comes before the depth of the body, the one of the first other instruction
+    bool settingUp = false;
+    std::optional<int64> x15Value; // mov x15, #N: the size of the probe, in 16 bytes
+    // the home of the variadic registers (MSVC): the prologue stores x_k at -(8 - k) * 8 from the sp of the entry, right below the arguments
+    // on the stack (stp x3, x4, [sp, #0x18] after stp x19, x20, [sp, #-0x40]!): va_start walks from there on. The slots from the sp of the
+    // entry, their register
+    std::vector<std::pair<int64, uint32>> variadicHomes;
+    // ARM64EC: a variadic function moves x4 (the stack arguments of the x64 convention: sub x4, x4, #0x10) and stores the homes through it
+    // (stp x2, x3, [x4]) in its prologue; its homes are the ones of x0 .. x3 (the x64 home space), x_k at -(4 - k) * 8
+    bool movesStackArguments    = false;
+    int64 frameRegisterAtEntry  = 0; // x29 - the sp of the entry (0 without a frame register: the offsets are from the sp of the entry)
     const uint8* data           = code;
     size_t size                 = static_cast<size_t>(std::min<uint64>(codeSize, limitAddress - codeAddress));
     uint64 address              = codeAddress;
@@ -1185,6 +1521,17 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
         frame.endAddress      = address;
         const cs_insn& current = *insn;
         const cs_arm64& arm64 = current.detail->arm64;
+        if (afterFlowEnd && hasFrame) {
+            // the depth of the branches to it; else (a case of a switch, past the direct branches) the one of the body
+            const auto depth  = branchDepths.find(current.address);
+            const auto target = depth != branchDepths.end() ? std::optional<int64>(depth->second) : bodyStackPointer;
+            if (target.has_value() && target.value() != stackPointer) {
+                stackPointer = target.value();
+                if (frame.stackDeltas.size() < MAX_ARM64_STACK_DELTAS)
+                    frame.stackDeltas.emplace_back(current.address, static_cast<int32>(stackPointer));
+            }
+        }
+        afterFlowEnd          = false;
         const auto isRegister = [&arm64](uint8 index, arm64_reg reg) {
             return index < arm64.op_count && arm64.operands[index].type == ARM64_OP_REG && arm64.operands[index].reg == reg;
         };
@@ -1194,9 +1541,25 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
 
         // sub sp, sp, #N / add sp, sp, #N / the writeback of [sp, #-N]! and [sp], #N
         int64 spChange = 0;
-        if ((current.id == ARM64_INS_SUB || current.id == ARM64_INS_ADD) && isRegister(0, ARM64_REG_SP) && isRegister(1, ARM64_REG_SP) && immediateAt(2))
-            spChange = current.id == ARM64_INS_SUB ? -immediateAt(2).value() : immediateAt(2).value();
-        else if (arm64.writeback) {
+        if ((current.id == ARM64_INS_SUB || current.id == ARM64_INS_ADD) && isRegister(0, ARM64_REG_SP) && isRegister(1, ARM64_REG_SP) && immediateAt(2)) {
+            // add sp, sp, #1, lsl #12: the immediate shifted
+            const int64 value = immediateAt(2).value()
+                                << (arm64.operands[2].shift.type == ARM64_SFT_LSL && arm64.operands[2].shift.value <= 12 ? arm64.operands[2].shift.value : 0);
+            spChange = current.id == ARM64_INS_SUB ? -value : value;
+        } else if (
+              (current.id == ARM64_INS_SUB || current.id == ARM64_INS_ADD) && isRegister(0, ARM64_REG_SP) && isRegister(1, ARM64_REG_SP) &&
+              isRegister(2, ARM64_REG_X15) && x15Value.has_value() && arm64.operands[2].shift.type == ARM64_SFT_LSL && arm64.operands[2].shift.value <= 12) {
+            // sub sp, sp, x15, lsl #4 after the probe; its release in the epilogue: mov x15, #N; add sp, sp, x15, lsl #4
+            const int64 value = x15Value.value() << arm64.operands[2].shift.value;
+            spChange          = current.id == ARM64_INS_SUB ? -value : value;
+        }
+        if ((current.id == ARM64_INS_MOV || current.id == ARM64_INS_MOVZ) && isRegister(0, ARM64_REG_X15))
+            x15Value = immediateAt(1).has_value() && immediateAt(1).value() >= 0 && immediateAt(1).value() < 0x100000 ? immediateAt(1) : std::nullopt;
+        else if (
+              arm64.op_count > 0 && arm64.operands[0].type == ARM64_OP_REG && arm64.operands[0].reg == ARM64_REG_X15 &&
+              (arm64.operands[0].access & CS_AC_WRITE))
+            x15Value = std::nullopt; // ldr x15, [x8] / add x15, x8, #1: not the size of the probe any more
+        if (arm64.writeback) {
             for (uint8 index = 0; index < arm64.op_count; index++)
                 if (arm64.operands[index].type == ARM64_OP_MEM && arm64.operands[index].mem.base == ARM64_REG_SP)
                     spChange = arm64.post_index ? immediateAt(static_cast<uint8>(arm64.op_count - 1)).value_or(0) : arm64.operands[index].mem.disp;
@@ -1209,17 +1572,81 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
                 const int64 offset = current.id == ARM64_INS_ADD ? immediateAt(2).value() : 0;
                 stackPointer       = -offset;
                 hasFrame           = true;
+                // x29 - the sp of the entry: the depths and the saved registers of the prologue in x29 offsets
+                const int64 frameRegister = entryDelta + offset;
+                frameRegisterAtEntry      = frameRegister;
+                for (const auto& [at, delta] : prologueDeltas)
+                    frame.stackDeltas.emplace_back(at, static_cast<int32>(delta - frameRegister));
+                // the frame record and the other saves: one area when they touch; MSVC puts the record below the locals (stp x29, x30,
+                // [sp, #-0x80]!; mov x29, sp after the saves): the saved area is then the other saves, the offsets of the frame are from
+                // the top of the locals (the first saved register, or the sp of the entry without one: IDA var_s0)
+                std::optional<int64> top;
+                if (frameRecord.has_value()) {
+                    const int64 record = frameRecord.value();
+                    if (!savedLow.has_value()) {
+                        savedLow  = record;
+                        savedHigh = record + 16;
+                        if (record == frameRegister && record + 16 < 0)
+                            top = 0;
+                    } else if (record + 16 == savedLow.value() || record == savedHigh.value()) {
+                        savedLow  = std::min(savedLow.value(), record);
+                        savedHigh = std::max(savedHigh.value(), record + 16);
+                    } else if (record == frameRegister && record + 16 < savedLow.value())
+                        top = savedLow.value();
+                }
+                if (top.has_value())
+                    rebase = top.value() - frameRegister;
+                if (savedLow.has_value()) {
+                    frame.savedRegistersOffset = static_cast<int32>(savedLow.value() - frameRegister);
+                    frame.savedRegistersSize   = static_cast<uint32>(savedHigh.value() - savedLow.value());
+                }
+                settingUp = true;
                 continue;
             }
-            // the prologue: sub sp, stp / str of the saved registers, pacibsp, bti
-            bool savesOnStack = false;
+            // the prologue: sub sp, stp / str of the saved registers, pacibsp, bti; ARM64EC: sub x4, x4, #N, the stores through x4
+            bool savesOnStack = false, storesThroughX4 = false;
             if (current.id == ARM64_INS_STP || current.id == ARM64_INS_STR)
-                for (uint8 index = 0; index < arm64.op_count; index++)
+                for (uint8 index = 0; index < arm64.op_count; index++) {
                     savesOnStack |= arm64.operands[index].type == ARM64_OP_MEM && arm64.operands[index].mem.base == ARM64_REG_SP;
+                    storesThroughX4 |= arm64.operands[index].type == ARM64_OP_MEM && arm64.operands[index].mem.base == ARM64_REG_X4;
+                }
+            const bool movesX4 = (current.id == ARM64_INS_SUB || current.id == ARM64_INS_ADD) && isRegister(0, ARM64_REG_X4) && isRegister(1, ARM64_REG_X4) &&
+                                 immediateAt(2).has_value();
+            movesStackArguments |= movesX4;
             const bool isPrologue = spChange != 0 || savesOnStack || current.id == ARM64_INS_PACIBSP || current.id == ARM64_INS_PACIASP ||
-                                    current.id == ARM64_INS_BTI;
+                                    current.id == ARM64_INS_BTI || movesX4 || (movesStackArguments && storesThroughX4);
             if (isPrologue && decodedInstructions < MAX_PROLOGUE_INSTRUCTIONS) {
+                bool pair             = false;
+                const uint16 saveSize = savesOnStack ? Arm64AccessSize(current, pair) : 0;
+                if (saveSize != 0 && arm64.operands[0].type == ARM64_OP_REG && IsArm64CalleeSaved(arm64.operands[0].reg))
+                    for (uint8 index = 0; index < arm64.op_count; index++)
+                        if (arm64.operands[index].type == ARM64_OP_MEM && arm64.operands[index].mem.base == ARM64_REG_SP) {
+                            // [sp, #n] and [sp, #-n]! at the sp before the instruction plus n; [sp], #n at the sp before it
+                            const int64 slot = entryDelta + (arm64.writeback && arm64.post_index ? 0 : arm64.operands[index].mem.disp);
+                            if (pair && arm64.operands[0].reg == ARM64_REG_X29 && !frameRecord.has_value()) {
+                                frameRecord = slot;
+                                continue;
+                            }
+                            savedLow  = std::min(savedLow.value_or(slot), slot);
+                            savedHigh = std::max(savedHigh.value_or(slot), slot + saveSize * (pair ? 2 : 1));
+                        }
+                if (saveSize == 8 && arm64.operands[0].type == ARM64_OP_REG && arm64.operands[0].reg >= ARM64_REG_X0 && arm64.operands[0].reg <= ARM64_REG_X7)
+                    for (uint8 index = 0; index < arm64.op_count; index++)
+                        if (arm64.operands[index].type == ARM64_OP_MEM && arm64.operands[index].mem.base == ARM64_REG_SP) {
+                            const int64 slot = entryDelta + (arm64.writeback && arm64.post_index ? 0 : arm64.operands[index].mem.disp);
+                            for (uint8 stored = 0; stored < (pair ? 2 : 1); stored++) {
+                                const cs_arm64_op& value = arm64.operands[stored];
+                                if (value.type != ARM64_OP_REG || value.reg < ARM64_REG_X0 || value.reg > ARM64_REG_X7)
+                                    continue;
+                                const uint32 number = static_cast<uint32>(value.reg - ARM64_REG_X0);
+                                if (slot + 8 * stored == -8 * static_cast<int64>(8 - number) ||
+                                    (movesStackArguments && number <= 3 && slot + 8 * stored == -8 * static_cast<int64>(4 - number)))
+                                    variadicHomes.emplace_back(slot + 8 * stored, number);
+                            }
+                        }
                 entryDelta += spChange;
+                if (spChange != 0)
+                    prologueDeltas.emplace_back(address, entryDelta);
                 continue;
             }
             if (entryDelta >= 0)
@@ -1229,24 +1656,52 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
             stackOnly    = true;
             stackPointer = entryDelta;
             spChange     = 0; // counted in the prologue
+            for (const auto& [at, delta] : prologueDeltas)
+                frame.stackDeltas.emplace_back(at, static_cast<int32>(delta));
+            if (frameRecord.has_value()) {
+                savedLow  = std::min(savedLow.value_or(frameRecord.value()), frameRecord.value());
+                savedHigh = std::max(savedHigh.value_or(frameRecord.value() + 16), frameRecord.value() + 16);
+            }
+            settingUp = true;
+            if (savedLow.has_value()) {
+                frame.savedRegistersOffset = static_cast<int32>(savedLow.value());
+                frame.savedRegistersSize   = static_cast<uint32>(savedHigh.value() - savedLow.value());
+            }
         }
+        if (callStackChange && GetArm64Flow(current) == X86Flow::Call)
+            spChange += callStackChange(current); // bl __security_push_cookie: sub sp, sp, #0x10 in the callee
         stackPointer += spChange;
+        if (spChange != 0 && frame.stackDeltas.size() < MAX_ARM64_STACK_DELTAS)
+            frame.stackDeltas.emplace_back(address, static_cast<int32>(stackPointer));
+        if (settingUp && spChange >= 0 && !isRegister(0, ARM64_REG_X15) && GetArm64Flow(current) != X86Flow::Call) {
+            settingUp = false;
+            if (!bodyStackPointer.has_value())
+                bodyStackPointer = stackPointer;
+        }
 
         bool writesFrameRegister = false;
         bool isPair              = false;
         const uint16 accessSize  = Arm64AccessSize(current, isPair);
-        const bool savesRegisters = isPair && arm64.op_count > 1 && arm64.operands[0].type == ARM64_OP_REG && IsArm64CalleeSaved(arm64.operands[0].reg);
+        // callee saved registers loaded (ldp x23, x24, [sp, #0x20] / ldr x27, [sp, #0x50] of an epilogue after its add sp / ldp x29, x30,
+        // [sp], #0x20): not the depth of the body; stored in the body (stp x24, xzr, [sp, #0x28]: a copy in a local) a slot of the saved
+        // area only when it is in it (filtered with the variables)
+        const bool restoresRegisters = (current.id == ARM64_INS_LDP || current.id == ARM64_INS_LDNP || current.id == ARM64_INS_LDR) && arm64.op_count > 1 &&
+                                       arm64.operands[0].type == ARM64_OP_REG && IsArm64CalleeSaved(arm64.operands[0].reg);
+        // the locals: below x29, and above the frame record of MSVC below the top of the locals (x29 offsets)
+        const auto isLocal = [&rebase](int64 offset) { return offset < 0 || (rebase.has_value() && offset >= 16 && offset < rebase.value()); };
         for (uint8 index = 0; index < arm64.op_count; index++) {
             const cs_arm64_op& op = arm64.operands[index];
             if (op.type == ARM64_OP_REG && (op.access & CS_AC_WRITE) && op.reg == ARM64_REG_X29)
                 writesFrameRegister = true;
-            if (op.type != ARM64_OP_MEM || op.mem.index != ARM64_REG_INVALID || arm64.writeback || savesRegisters || accessSize == 0)
+            if (op.type != ARM64_OP_MEM || op.mem.index != ARM64_REG_INVALID || arm64.writeback || accessSize == 0)
                 continue;
             int64 offset = 0;
             if (op.mem.base == ARM64_REG_X29 && !stackOnly)
                 offset = op.mem.disp;
             else if (op.mem.base == ARM64_REG_SP) {
                 // the slots addressed through sp are kept in x29 offsets: sp stays the same in the body of the function
+                if (!bodyStackPointer.has_value() && restoresRegisters)
+                    continue;
                 if (!bodyStackPointer.has_value())
                     bodyStackPointer = stackPointer;
                 if (stackPointer != bodyStackPointer.value())
@@ -1266,9 +1721,9 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
         if ((current.id == ARM64_INS_ADD || current.id == ARM64_INS_SUB) && arm64.op_count == 3 && immediateAt(2) &&
             !isRegister(0, ARM64_REG_SP) && !isRegister(0, ARM64_REG_X29)) {
             const int64 value = current.id == ARM64_INS_SUB ? -immediateAt(2).value() : immediateAt(2).value();
-            if (isRegister(1, ARM64_REG_X29) && value < 0 && !stackOnly)
+            if (isRegister(1, ARM64_REG_X29) && isLocal(value) && !stackOnly)
                 accesses.push_back({ static_cast<int32>(value), 0 });
-            else if (isRegister(1, ARM64_REG_SP) && bodyStackPointer.value_or(stackPointer) == stackPointer && value + stackPointer < 0) {
+            else if (isRegister(1, ARM64_REG_SP) && bodyStackPointer.value_or(stackPointer) == stackPointer && isLocal(value + stackPointer)) {
                 if (!bodyStackPointer.has_value())
                     bodyStackPointer = stackPointer;
                 accesses.push_back({ static_cast<int32>(value + stackPointer), 0 });
@@ -1284,29 +1739,263 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
         const auto operands = GetArm64OperandsInfo(current);
         if ((flow == X86Flow::ConditionalJump || flow == X86Flow::Jump) && operands.directTarget.has_value()) {
             const uint64 target = operands.directTarget.value();
-            if (target > current.address && target < limitAddress)
+            if (target > current.address && target < limitAddress) {
                 furthestBranchTarget = std::max(furthestBranchTarget, target);
+                branchDepths.emplace(target, stackPointer);
+            }
         }
         const bool noReturnCall = flow == X86Flow::Call && callNoReturn && callNoReturn(current); // bl abort
-        if ((flow == X86Flow::Return || flow == X86Flow::Jump || noReturnCall) && furthestBranchTarget < address)
+        afterFlowEnd            = flow == X86Flow::Return || flow == X86Flow::Jump || noReturnCall;
+        if (afterFlowEnd && furthestBranchTarget < address && address >= pathsEnd)
             break;
     }
-    if (!hasFrame || !CompactAccesses(accesses))
+    if (!hasFrame)
+        return false;
+    // the slots of the variadic registers in the offsets of the frame (before the rebase of MSVC's frame record below the locals)
+    std::unordered_map<int32, uint32> homes;
+    for (const auto& [slot, number] : variadicHomes) {
+        const int32 offset = static_cast<int32>(slot - (stackOnly ? 0 : frameRegisterAtEntry));
+        homes.emplace(offset, number);
+        accesses.push_back({ offset, 8 });
+    }
+    if (!CompactAccesses(accesses))
         return false;
     frame.stackOffset       = static_cast<int32>(bodyStackPointer.value_or(stackPointer));
     frame.usesFrameRegister = !stackOnly;
+    if (rebase.has_value() && !stackOnly) {
+        const int32 base = static_cast<int32>(rebase.value());
+        for (auto& access : accesses)
+            access.frameOffset -= base;
+        for (auto& delta : frame.stackDeltas)
+            delta.second -= base;
+        frame.stackOffset -= base;
+        frame.savedRegistersOffset -= base;
+        frame.frameRegisterOffset = -base;
+    }
     frame.variables.reserve(accesses.size());
+    const int32 homeBase = rebase.has_value() && !stackOnly ? static_cast<int32>(rebase.value()) : 0;
+    if (!variadicHomes.empty()) { // the first variadic register: its home is the va_list (ARM64EC: x4)
+        const auto first =
+              std::min_element(variadicHomes.begin(), variadicHomes.end(), [](const auto& left, const auto& right) { return left.second < right.second; });
+        const int32 offset = static_cast<int32>(first->first - (stackOnly ? 0 : frameRegisterAtEntry)) - homeBase;
+        frame.variadic     = DissasmFunctionFrame::VariadicHomes{ static_cast<uint8>(first->second), offset, movesStackArguments };
+    }
     for (const auto& access : accesses) {
+        if (frame.IsSavedRegisterSlot(access.frameOffset))
+            continue; // ldr x19, [sp, #0x10] of the epilogue: the slot of a saved register (var_s0)
         DissasmLocalVariable variable{ access.frameOffset, access.size, {} };
-        FormatDefaultLocalVariableName(access.frameOffset, true, variable.name);
+        if (const auto home = homes.find(access.frameOffset + homeBase); home != homes.end()) {
+            variable.name   = "va_x" + std::to_string(home->second); // the home of x3 of a variadic function: va_x3
+            variable.origin = "the variadic x" + std::to_string(home->second);
+        } else
+            FormatDefaultLocalVariableName(access.frameOffset, true, variable.name);
         frame.variables.push_back(std::move(variable));
     }
     return true;
 }
 
+bool GView::View::DissasmViewer::AddArm64FuncletSlots(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, DissasmFunctionFrame& frame)
+{
+    if (!code || codeSize < 4 || !frame.usesFrameRegister)
+        return true;
+    const std::unique_ptr<cs_insn, CsInsnDeleter> insn(cs_malloc(detailHandle));
+    if (!insn || !insn->detail)
+        return true;
+    std::vector<FrameAccess> accesses;
+    const uint8* data = code;
+    size_t size       = codeSize;
+    uint64 address    = codeAddress;
+    while (size >= 4 && cs_disasm_iter(detailHandle, &data, &size, &address, insn.get())) {
+        const cs_arm64& arm64 = insn->detail->arm64;
+        bool isPair           = false;
+        const uint16 access   = Arm64AccessSize(*insn, isPair);
+        const auto flow       = GetArm64Flow(*insn);
+        bool endsFrame        = flow == X86Flow::Return || flow == X86Flow::Jump;
+        for (uint8 index = 0; index < arm64.op_count; index++) {
+            const cs_arm64_op& op = arm64.operands[index];
+            // the frame the unwinder gives (mov x29, x1) keeps it; another write of x29 (ldp x29, x30 of the epilogue) ends it
+            if (op.type == ARM64_OP_REG && op.reg == ARM64_REG_X29 && (op.access & CS_AC_WRITE) &&
+                !(insn->id == ARM64_INS_MOV && arm64.op_count == 2 && arm64.operands[1].type == ARM64_OP_REG && arm64.operands[1].reg == ARM64_REG_X1))
+                endsFrame = true;
+            if (op.type != ARM64_OP_MEM || op.mem.base != ARM64_REG_X29 || op.mem.index != ARM64_REG_INVALID || arm64.writeback || access == 0)
+                continue;
+            if (op.mem.disp >= 0 && op.mem.disp < 16)
+                continue; // the frame record of the function
+            const int64 offset = op.mem.disp + frame.frameRegisterOffset;
+            if (offset < -MAX_FRAME_DISPLACEMENT || offset > MAX_FRAME_DISPLACEMENT)
+                continue;
+            accesses.push_back({ static_cast<int32>(offset), access });
+            if (isPair)
+                accesses.push_back({ static_cast<int32>(offset + access), access });
+        }
+        if (endsFrame)
+            break;
+    }
+    if (!CompactAccesses(accesses))
+        return false;
+    std::vector<DissasmLocalVariable> added;
+    for (const auto& slot : accesses) {
+        if (frame.IsSavedRegisterSlot(slot.frameOffset) || frame.FindVariableContaining(slot.frameOffset))
+            continue;
+        DissasmLocalVariable variable{ slot.frameOffset, slot.size, {} };
+        FormatDefaultLocalVariableName(slot.frameOffset, true, variable.name);
+        added.push_back(std::move(variable));
+    }
+    return added.empty() || MergeFrameVariables(frame, std::move(added));
+}
+
+bool GView::View::DissasmViewer::AddArm64ChunkSlots(
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      DissasmFunctionFrame& frame,
+      const std::function<bool(const cs_insn& call)>& callMovesStack)
+{
+    if (!code || codeSize < 4)
+        return true;
+    const std::unique_ptr<cs_insn, CsInsnDeleter> insn(cs_malloc(detailHandle));
+    if (!insn || !insn->detail)
+        return true;
+    std::vector<FrameAccess> accesses;
+    const uint8* data = code;
+    size_t size       = codeSize;
+    uint64 address    = codeAddress;
+    while (size >= 4 && cs_disasm_iter(detailHandle, &data, &size, &address, insn.get())) {
+        const cs_arm64& arm64 = insn->detail->arm64;
+        bool isPair           = false;
+        const uint16 access   = Arm64AccessSize(*insn, isPair);
+        // ldp x19, x20, [sp], #0x40 of an epilogue; bl __security_pop_cookie
+        bool endsDepth = arm64.writeback || (callMovesStack && GetArm64Flow(*insn) == X86Flow::Call && callMovesStack(*insn));
+        for (uint8 index = 0; index < arm64.op_count; index++) {
+            const cs_arm64_op& op = arm64.operands[index];
+            if (op.type == ARM64_OP_REG && (op.access & CS_AC_WRITE) && (op.reg == ARM64_REG_SP || op.reg == ARM64_REG_X29))
+                endsDepth = true; // add sp, sp, #0x40 / ldp x29, x30: the depth of the body ends
+            if (op.type != ARM64_OP_MEM || op.mem.index != ARM64_REG_INVALID || arm64.writeback || access == 0)
+                continue;
+            int64 offset = 0;
+            if (op.mem.base == ARM64_REG_SP)
+                offset = op.mem.disp + frame.stackOffset;
+            else if (op.mem.base == ARM64_REG_X29 && frame.usesFrameRegister && !(op.mem.disp >= 0 && op.mem.disp < 16))
+                offset = op.mem.disp + frame.frameRegisterOffset;
+            else
+                continue;
+            if (offset < -MAX_FRAME_DISPLACEMENT || offset > MAX_FRAME_DISPLACEMENT || (!frame.usesFrameRegister && offset >= 0))
+                continue; // a function without a frame register: the slots of its caller
+            accesses.push_back({ static_cast<int32>(offset), access });
+            if (isPair)
+                accesses.push_back({ static_cast<int32>(offset + access), access });
+        }
+        if (endsDepth)
+            break;
+    }
+    if (!CompactAccesses(accesses))
+        return false;
+    std::vector<DissasmLocalVariable> added;
+    for (const auto& slot : accesses) {
+        if (frame.IsSavedRegisterSlot(slot.frameOffset) || frame.FindVariableContaining(slot.frameOffset))
+            continue;
+        DissasmLocalVariable variable{ slot.frameOffset, slot.size, {} };
+        FormatDefaultLocalVariableName(slot.frameOffset, true, variable.name);
+        added.push_back(std::move(variable));
+    }
+    return added.empty() || MergeFrameVariables(frame, std::move(added));
+}
+
+std::optional<int32> GView::View::DissasmViewer::Arm64HelperStackChange(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress)
+{
+    constexpr uint32 MAX_HELPER_INSTRUCTIONS = 16;
+    constexpr int64 MAX_HELPER_STACK_CHANGE  = 0x1000;
+    if (!code || codeSize < 4)
+        return std::nullopt;
+    const std::unique_ptr<cs_insn, CsInsnDeleter> insn(cs_malloc(detailHandle));
+    if (!insn || !insn->detail)
+        return std::nullopt;
+    const uint8* data = code;
+    size_t size       = codeSize;
+    uint64 address    = codeAddress;
+    int64 change      = 0;
+    for (uint32 decoded = 0; decoded < MAX_HELPER_INSTRUCTIONS && size >= 4 && cs_disasm_iter(detailHandle, &data, &size, &address, insn.get()); decoded++) {
+        const cs_arm64& arm64 = insn->detail->arm64;
+        const auto flow       = GetArm64Flow(*insn);
+        if (flow == X86Flow::Return)
+            return change % 16 == 0 && change >= -MAX_HELPER_STACK_CHANGE && change <= MAX_HELPER_STACK_CHANGE
+                         ? std::optional<int32>(static_cast<int32>(change))
+                         : std::nullopt;
+        if (flow != X86Flow::None && flow != X86Flow::ConditionalJump)
+            return std::nullopt; // a call, a branch away: not a helper
+        // sub sp, sp, #0x10 / add sp, sp, #0x10 (the immediate shifted: #1, lsl #12); any other write of sp (a writeback, mov sp, x29)
+        const bool spOperands = arm64.op_count == 3 && arm64.operands[0].type == ARM64_OP_REG && arm64.operands[0].reg == ARM64_REG_SP &&
+                                arm64.operands[1].type == ARM64_OP_REG && arm64.operands[1].reg == ARM64_REG_SP && arm64.operands[2].type == ARM64_OP_IMM;
+        if ((insn->id == ARM64_INS_SUB || insn->id == ARM64_INS_ADD) && spOperands) {
+            const int64 value = arm64.operands[2].imm
+                                << (arm64.operands[2].shift.type == ARM64_SFT_LSL && arm64.operands[2].shift.value <= 12 ? arm64.operands[2].shift.value : 0);
+            change += insn->id == ARM64_INS_SUB ? -value : value;
+            continue;
+        }
+        // the registers it writes: x16 / x17 only (a writeback: its base)
+        const auto scratch = [](unsigned int reg) {
+            return reg == ARM64_REG_X16 || reg == ARM64_REG_X17 || reg == ARM64_REG_W16 || reg == ARM64_REG_W17 || reg == ARM64_REG_XZR || reg == ARM64_REG_WZR;
+        };
+        if (arm64.writeback)
+            for (uint8 index = 0; index < arm64.op_count; index++)
+                if (arm64.operands[index].type == ARM64_OP_MEM && !scratch(arm64.operands[index].mem.base))
+                    return std::nullopt;
+        for (uint8 index = 0; index < arm64.op_count; index++)
+            if (arm64.operands[index].type == ARM64_OP_REG && (arm64.operands[index].access & CS_AC_WRITE) && !scratch(arm64.operands[index].reg))
+                return std::nullopt;
+    }
+    return std::nullopt;
+}
+
 bool GView::View::DissasmViewer::FindArm64FrameOperand(std::string_view operands, Arm64FrameOperand& result)
 {
     return FindArmFrameOperand(operands, "x29", result);
+}
+
+bool GView::View::DissasmViewer::FindArmAddressOperand(std::string_view operands, std::string_view frameRegister, Arm64FrameOperand& result)
+{
+    const size_t comma = operands.find(", ");
+    if (comma == std::string_view::npos)
+        return false;
+    const std::string_view destination = operands.substr(0, comma);
+    if (destination == "sp" || destination == frameRegister)
+        return false;
+    for (int pass = 0; pass < 2; pass++) {
+        const std::string_view base = pass == 0 ? frameRegister : std::string_view("sp");
+        size_t position             = comma + 2;
+        if (operands.substr(position, base.size()) != base || operands.substr(position + base.size(), 3) != ", #")
+            continue;
+        position += base.size() + 3;
+        const size_t replaceStart = position;
+        const bool isHex          = operands.substr(position, 2) == "0x";
+        if (isHex)
+            position += 2;
+        uint64 value  = 0;
+        uint32 digits = 0;
+        for (; position < operands.size(); position++, digits++) {
+            const char c = operands[position];
+            uint32 digit = 0;
+            if (c >= '0' && c <= '9')
+                digit = static_cast<uint32>(c - '0');
+            else if (isHex && c >= 'a' && c <= 'f')
+                digit = static_cast<uint32>(c - 'a' + 10);
+            else
+                return false; // a shifted immediate (#1, lsl #12)
+            value = value * (isHex ? 16 : 10) + digit;
+            if (value > 0x7FFFFFFF)
+                return false;
+        }
+        if (digits == 0)
+            return false;
+        result.replaceStart        = static_cast<uint32>(replaceStart);
+        result.replaceEnd          = static_cast<uint32>(position);
+        result.displacement        = static_cast<int32>(value);
+        result.isStackPointerBased = pass == 1;
+        result.needsSeparator      = false;
+        return true;
+    }
+    return false;
 }
 
 bool GView::View::DissasmViewer::FindArmFrameOperand(std::string_view operands, std::string_view frameRegister, Arm64FrameOperand& result)

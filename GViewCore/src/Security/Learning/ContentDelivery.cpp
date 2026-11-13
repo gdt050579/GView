@@ -8,6 +8,15 @@
 #    define WIN32_LEAN_AND_MEAN
 #    define NOMINMAX
 #    include <Windows.h>
+#    include <shlobj.h> // SHGetKnownFolderPath
+#    ifdef _MSC_VER
+#        pragma comment(lib, "shell32.lib")
+#        pragma comment(lib, "ole32.lib") // CoTaskMemFree
+#    endif
+#elif !defined(BUILD_FOR_WASM)
+#    include <cerrno>
+#    include <pwd.h>
+#    include <unistd.h>
 #endif
 
 namespace GView::Security::Learning
@@ -185,29 +194,71 @@ std::string PathToUtf8(const std::filesystem::path& p)
     return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
 }
 
-std::filesystem::path DefaultDownloadFolder(std::string_view configuredFolder, std::string_view weekName)
+namespace
 {
-    std::filesystem::path base;
+    // The documents folder of the account, asked from the OS rather than read from the environment (USERPROFILE / HOME
+    // can be set to anything by whoever starts GView; the OS also knows a Documents folder that was redirected). Empty
+    // when the OS does not know one.
+    std::filesystem::path UserDocumentsFolder()
+    {
+#if defined(BUILD_FOR_WINDOWS)
+        PWSTR known = nullptr;
+        std::filesystem::path result;
+        // DONT_VERIFY: a Documents folder that does not exist yet is still the right place (it is created on first write)
+        if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, KF_FLAG_DONT_VERIFY, nullptr, &known)) && known != nullptr)
+            result = std::filesystem::path(known);
+        CoTaskMemFree(known);
+        return result;
+#elif defined(BUILD_FOR_WASM)
+        // the in-memory file system of the page: its home folder is fixed by the runtime and kept by BrowserStorage
+        return App::Browser::HomeFolder() / "Documents";
+#else
+        long bufSize = sysconf(_SC_GETPW_R_SIZE_MAX);
+        if (bufSize <= 0 || bufSize > 1024 * 1024)
+            bufSize = 16 * 1024;
+        std::vector<char> buf(static_cast<size_t>(bufSize));
+        passwd pwd{};
+        passwd* found = nullptr;
+        int err       = 0;
+        while ((err = getpwuid_r(geteuid(), &pwd, buf.data(), buf.size(), &found)) == ERANGE && buf.size() < 1024 * 1024)
+            buf.resize(buf.size() * 2);
+        if (err != 0 || found == nullptr || found->pw_dir == nullptr || found->pw_dir[0] != '/')
+            return {};
+        return std::filesystem::path(found->pw_dir) / "Documents";
+#endif
+    }
+
+    // A base folder is used only when it is rooted ("C:\x", "\\server\share\x", "/x"; "\x" on Windows: the root of the
+    // current drive) and has no ".." left once normalised; anything else (relative, "C:x", empty) is refused.
+    bool IsUsableBaseFolder(const std::filesystem::path& p)
+    {
+        if (p.empty() || !p.has_root_directory())
+            return false;
+        for (const auto& part : p)
+            if (part == "..")
+                return false;
+        return true;
+    }
+} // namespace
+
+std::filesystem::path DownloadBaseFolder(std::string_view configuredFolder)
+{
     if (!configuredFolder.empty())
     {
-        base = PathFromUtf8(configuredFolder);
+        auto configured = PathFromUtf8(configuredFolder).lexically_normal();
+        if (IsUsableBaseFolder(configured))
+            return configured;
+        // a relative [GView] LearningDownloadFolder would depend on the current folder: use the default instead
     }
-    else
+    auto base = UserDocumentsFolder();
+    if (!base.empty())
+        base = (base / "GView").lexically_normal();
+    if (!IsUsableBaseFolder(base))
     {
-#ifdef BUILD_FOR_WINDOWS
-        wchar_t profile[MAX_PATH] = {};
-        const DWORD n             = GetEnvironmentVariableW(L"USERPROFILE", profile, MAX_PATH);
-        if (n > 0 && n < MAX_PATH)
-            base = std::filesystem::path(profile) / "Documents" / "GView";
-#else
-        if (const char* home = std::getenv("HOME"); home != nullptr && home[0] == '/')
-            base = std::filesystem::path(home) / "Documents" / "GView";
-#endif
-        if (base.empty())
-            base = std::filesystem::current_path() / "GView";
+        std::error_code ec;
+        base = (std::filesystem::current_path(ec) / "GView").lexically_normal();
     }
-    const std::string week = SanitizeFileName(weekName.empty() ? std::string_view("Course") : weekName);
-    return base / PathFromUtf8(week);
+    return base;
 }
 
 Utils::GStatus WriteFileAtomic(
@@ -227,6 +278,10 @@ Utils::GStatus WriteFileAtomic(
             return Utils::GStatus::Error("invalid file name");
         partPath = finalPath;
         partPath += ".part";
+        // a link (or a stale file) left at the temporary name is removed, never written through
+        if (const auto type = std::filesystem::symlink_status(partPath, ec).type();
+            !ec && type != std::filesystem::file_type::not_found && type != std::filesystem::file_type::directory)
+            std::filesystem::remove(partPath, ec);
         {
             std::ofstream f(partPath, std::ios::binary | std::ios::trunc);
             if (!f.is_open())

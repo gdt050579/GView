@@ -10,6 +10,9 @@ namespace GView::View::DissasmViewer
 using X86FrameHelperCheck = std::function<bool(const cs_insn& call)>;
 // true when the callee of a call never returns (exit, abort, __stack_chk_fail): the path of the function ends with the call
 using X86CallNoReturn = std::function<bool(const cs_insn& call)>;
+// the cases of the switch an indirect jump dispatches (jmp rax / jmp dword ptr [eax*4 + table]), relative addresses; none when the jump is
+// not a switch: the walks of the frames go on with the code of its cases, reached from the jump with its stack
+using X86SwitchCases = std::function<const std::vector<uint64>*(const cs_insn& jump)>;
 
 // Recognizes a frame based function (push ebp; mov ebp, esp / push rbp; mov rbp, rsp / enter; 32 bit: push 0x10; push offset scopetable;
 // call __SEH_prolog4 / push 8; mov eax, offset handler; call __EH_prolog3 / mov eax, offset handler; call _EH_prolog, when `frameHelper`
@@ -28,7 +31,24 @@ bool AnalyzeX86FunctionFrame(
       bool is64,
       DissasmFunctionFrame& frame,
       const X86FrameHelperCheck& frameHelper = {},
-      const X86CallNoReturn& callNoReturn    = {});
+      const X86CallNoReturn& callNoReturn    = {},
+      const X86SwitchCases& switchCases      = {});
+
+// The code run with the frame register of its function (32 bit MSVC: a catch block, an unwind funclet of the C++ exception handling, a
+// filter / a __finally / an __except block of SEH4, all with the ebp of the function; a chunk of a frame register function: its cold code),
+// from `codeAddress`, no prologue: frame.variables receives its slots through ebp / rbp in the offsets of the frame of that function (the
+// fields of its SEH record named when `sehRecord`), frame.endAddress its end (as AnalyzeX86FunctionFrame: a flow end no forward branch
+// passes, a write of the frame register, `limitAddress`)
+bool AnalyzeX86FuncletFrame(
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      uint64 limitAddress,
+      bool is64,
+      bool sehRecord,
+      DissasmFunctionFrame& frame,
+      const X86CallNoReturn& callNoReturn = {});
 
 // 32 bit code: the bytes a callee pops from the stack of its caller (stdcall / thiscall: ret 8; cdecl: 0), none when it is not known
 using X86CalleeStackPurge = std::function<std::optional<uint32>(const cs_insn& call)>;
@@ -51,7 +71,8 @@ bool AnalyzeX86StackFrame(
       bool is64,
       DissasmFunctionFrame& frame,
       const X86CalleeStackPurge& calleePurge = {},
-      const X86CallNoReturn& callNoReturn    = {});
+      const X86CallNoReturn& callNoReturn    = {},
+      const X86SwitchCases& switchCases      = {});
 
 // x64 structured exception handling: a filter / a __finally funclet receives the establisher frame of its function in rdx and keeps it in
 // rbp (mov rbp, rdx / lea rbp, [rdx + 0x20], in its prologue, before rdx is written): the alias of rbp from there until rbp is written
@@ -61,6 +82,26 @@ std::optional<DissasmFunctionFrame::StackAlias> FindX64EstablisherFrameAlias(csh
 // the frame of the function of the funclet) added to the variables of `frame` that it does not have (a slot only the catch block or the
 // __finally uses: the exception code a filter keeps, an object its unwind funclet destroys). False when the frame would have too many
 bool AddX64FuncletSlots(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, const DissasmFunctionFrame::StackAlias& alias, DissasmFunctionFrame& frame);
+// ARM64 SEH / C++ EH: a funclet (code at `codeAddress`) runs with the x29 of its function (the unwinder gives it: mov x29, x1, or x29 as it
+// is): the slots it uses through x29 added to the variables of `frame` (the frame of its function) that it does not have; read up to its
+// ret, an unconditional branch or another write of x29. False when the frame would have too many
+bool AddArm64FuncletSlots(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, DissasmFunctionFrame& frame);
+// ARM64: a cold chunk of a function (DetectColdBlocks: MSVC's separated code, run on the frame of the function at the depth of its body):
+// the slots it uses through sp (frame.stackOffset) and x29 added to the variables of `frame` that it does not have; read up to a write of
+// sp or x29 (an epilogue) or a call that moves sp (`callMovesStack`: the cookie helpers of MSVC). False when the frame would have too many
+bool AddArm64ChunkSlots(
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      DissasmFunctionFrame& frame,
+      const std::function<bool(const cs_insn& call)>& callMovesStack = {});
+// ARM64: a helper of the compiler that keeps the registers of its caller but x16 / x17 (the scratch registers of the calls) and may move its
+// sp (MSVC /GS: __security_push_cookie is sub sp, sp, #0x10; stores the cookie; ret, its pop add sp, sp, #0x10; ret after the check;
+// __chkstk probes the stack and keeps sp): its code at `codeAddress` read up to its ret (16 instructions at most, the conditional branches
+// not taken), the sp it leaves (a multiple of 16: -0x10 for the push, 0); none for a function that writes another register, calls or
+// branches away, or writes sp otherwise
+std::optional<int32> Arm64HelperStackChange(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress);
 // a chunk of an x64 function without a frame register (its cold code: the chained unwind data elsewhere): its stack from `entryDelta` (the
 // depth of the body of the function), with the callee saved aliases of the function live there (`entryAliases`: the biased rbp of MSVC);
 // frame.variables receives its slots (in the offsets of the frame of the function, named as the ones of the function). False when its
@@ -75,6 +116,22 @@ bool AnalyzeX64ChunkFrame(
       const std::vector<DissasmFunctionFrame::StackAlias>& entryAliases,
       DissasmFunctionFrame& frame,
       const X86CallNoReturn& callNoReturn = {});
+// a chunk of a frame register function (its cold code, reached by a jump of the body): its stack pointer from `entryDelta` (the depth at the
+// jump, from the stack pointer of the entry), the frame register an alias of it (`frameRegisterDelta`, from the same); frame receives its
+// depths and its slots in the offsets of the frame register (as MergeStackPointerSlots: [esp + 0x20] of an aligned frame). False when its
+// stack pointer is not followed
+bool AnalyzeFrameRegisterChunk(
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      uint64 limitAddress,
+      bool is64,
+      int32 entryDelta,
+      int32 frameRegisterDelta,
+      DissasmFunctionFrame& frame,
+      const X86CalleeStackPurge& calleePurge = {},
+      const X86CallNoReturn& callNoReturn    = {});
 // a frame register function (push rbp; mov rbp, rsp) with its stack pointer followed (`stackFrame`: AnalyzeX86StackFrame of the same code,
 // the frame register an alias of the stack pointer there): frame.stackDeltas receives rsp - rbp, the slots of the stack pointer the frame
 // does not have become variables in the offsets of the frame register (the arguments stored for the calls, the locals of an aligned frame:
@@ -106,7 +163,10 @@ bool FindX86StackOperand(std::string_view operands, X86FrameOperand& result, std
 // through x29 ([x29, #-0x8] -> var_8) and the ones addressed through sp, kept in x29 offsets (frame.stackOffset: sp - x29 in the body of
 // the function). The saved registers (the frame record, stp x20, x19, ...) are not variables. A function without x29 that reserves stack
 // (sub sp, sp, #N) has its slots relative to the sp of its entry (frame.usesFrameRegister = false). False when it has neither.
-// `callNoReturn`: a call that does not return ends a path (as a ret), the code after it belongs to the function only through a branch
+// `callNoReturn`: a call that does not return ends a path (as a ret), the code after it belongs to the function only through a branch;
+// `pathsEnd` (the end of the paths of the function: its switch cases): the code after a ret before it is the function's too, at the depth
+// of the branches to it or of the body (0: only through a direct branch); `callStackChange`: the sp a call leaves (Arm64HelperStackChange
+// of its callee: bl __security_push_cookie moves sp by -0x10 in the setup of the frame, the pop gives it back before the epilogue)
 bool AnalyzeArm64FunctionFrame(
       csh detailHandle,
       const uint8* code,
@@ -114,7 +174,9 @@ bool AnalyzeArm64FunctionFrame(
       uint64 codeAddress,
       uint64 limitAddress,
       DissasmFunctionFrame& frame,
-      const std::function<bool(const cs_insn& call)>& callNoReturn = {});
+      const std::function<bool(const cs_insn& call)>& callNoReturn     = {},
+      uint64 pathsEnd                                                  = 0,
+      const std::function<int32(const cs_insn& call)>& callStackChange = {});
 
 struct Arm64FrameOperand {
     uint32 replaceStart; // first character after "#"
@@ -127,6 +189,9 @@ struct Arm64FrameOperand {
 // [sp], #0x10); `frameRegister`: x29, fp (r11) or r7
 bool FindArm64FrameOperand(std::string_view operands, Arm64FrameOperand& result);
 bool FindArmFrameOperand(std::string_view operands, std::string_view frameRegister, Arm64FrameOperand& result);
+// Finds the address of a slot in the operands of an add: x0, sp, #0x10 / x1, x29, #0x18 (not a shifted immediate; not sp or the frame
+// register as the destination: the frame setup add x29, sp, #0x10, the release add sp, sp, #0x40)
+bool FindArmAddressOperand(std::string_view operands, std::string_view frameRegister, Arm64FrameOperand& result);
 
 // 32 bit ARM (the mode of the function: `thumb`): push {..., r11, lr}; mov r11, sp / add r11, sp, #M (ARM) or push {r7, lr}; mov r7, sp
 // (Thumb), then the slots of the frame register and of sp (in frame register offsets), as AnalyzeArm64FunctionFrame; a function without

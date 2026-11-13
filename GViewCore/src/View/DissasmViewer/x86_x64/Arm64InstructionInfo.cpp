@@ -267,11 +267,22 @@ void Arm64AdrpTracker::Reset()
     registers.fill({});
     compared.reset();
     bound.reset();
+    inheritedBound.reset();
+    heldBound.reset();
+}
+
+void Arm64AdrpTracker::AddCaseBound(AppCUI::uint64 target, AppCUI::uint32 count, int indexRegister)
+{
+    constexpr size_t MAX_CASES = 0x10000;
+    if (indexRegister >= 0 && caseBounds.size() < MAX_CASES)
+        caseBounds.try_emplace(target, CaseBound{ count, indexRegister });
 }
 
 std::optional<Arm64AdrpTracker::Result> Arm64AdrpTracker::Next(const cs_insn& insn, bool atBlockStart)
 {
     jumpTable.reset();
+    anchor.reset();
+    farJump.reset();
     if (insn.id == ARM64_INS_INVALID || !insn.detail) {
         Reset(); // a data line: the code before it is another block
         return {};
@@ -279,6 +290,10 @@ std::optional<Arm64AdrpTracker::Result> Arm64AdrpTracker::Next(const cs_insn& in
     const cs_arm64& arm64 = insn.detail->arm64;
     std::optional<Result> result;
     int kept = -1; // the register this instruction sets to a known value
+    // the block a bounded branch goes to: its bound
+    if (!caseBounds.empty())
+        if (const auto known = caseBounds.find(insn.address); known != caseBounds.end())
+            inheritedBound = known->second;
     const auto registerOf = [&arm64](uint8 index) { return index < arm64.op_count && arm64.operands[index].type == ARM64_OP_REG ? Arm64RegisterIndex(arm64.operands[index].reg) : -1; };
     const auto isImmediate = [&arm64](uint8 index) { return index < arm64.op_count && arm64.operands[index].type == ARM64_OP_IMM; };
 
@@ -326,6 +341,7 @@ std::optional<Arm64AdrpTracker::Result> Arm64AdrpTracker::Next(const cs_insn& in
             const auto entry       = registers[second].entry.value();
             Arm64JumpTable table{ entry.table, entry.size, entry.isSigned || signExtends, registers[first].address.value(),
                                   static_cast<uint8>(operand.shift.value), 0 };
+            table.indexRegister    = entry.index;
             registers[target]      = {};
             registers[target].jump = table;
             kept                   = target;
@@ -353,7 +369,7 @@ std::optional<Arm64AdrpTracker::Result> Arm64AdrpTracker::Next(const cs_insn& in
                     const bool isSigned = insn.id == ARM64_INS_LDRSB || insn.id == ARM64_INS_LDRSH || insn.id == ARM64_INS_LDRSW;
                     const uint64 table  = registers[base].address.value();
                     registers[target]       = {};
-                    registers[target].entry = TableEntry{ table, size, isSigned };
+                    registers[target].entry = TableEntry{ table, size, isSigned, Arm64RegisterIndex(op.mem.index) };
                     kept                    = target;
                 }
                 break;
@@ -382,15 +398,44 @@ std::optional<Arm64AdrpTracker::Result> Arm64AdrpTracker::Next(const cs_insn& in
         if (target >= 0 && insn.id == ARM64_INS_BR && registers[target].jump.has_value() && bound.has_value()) {
             jumpTable        = registers[target].jump;
             jumpTable->count = bound.value();
+        } else if (
+              target >= 0 && insn.id == ARM64_INS_BR && registers[target].jump.has_value() && inheritedBound.has_value() &&
+              registers[target].jump->indexRegister == inheritedBound->indexRegister) {
+            jumpTable        = registers[target].jump; // a switch inside a case, on the same index
+            jumpTable->count = inheritedBound->count;
+        }
+        if (target >= 0 && insn.id == ARM64_INS_BR && registers[target].jump.has_value() && registers[target].jump->base != registers[target].jump->table)
+            anchor = registers[target].jump->base;
+        if (target >= 0 && insn.id == ARM64_INS_BR && registers[target].address.has_value()) {
+            farJump = registers[target].address;
+            if (const auto carried = heldBound.has_value() ? heldBound : inheritedBound; carried.has_value())
+                AddCaseBound(farJump.value(), carried->count, carried->indexRegister); // through a veneer
         }
     } else if (insn.id == ARM64_INS_CMP && arm64.op_count == 2 && isImmediate(1)) {
-        compared = static_cast<uint64>(arm64.operands[1].imm); // cmp w0, #11
+        compared         = static_cast<uint64>(arm64.operands[1].imm); // cmp w0, #11
+        comparedRegister = registerOf(0);
     } else if (insn.id == ARM64_INS_B && compared.has_value() && (arm64.cc == ARM64_CC_HI || arm64.cc == ARM64_CC_HS)) {
         // b.hi default: the cases are 0 .. N (b.hs: 0 .. N - 1)
         constexpr uint64 MAX_CASES = 4096;
         const uint64 count         = arm64.cc == ARM64_CC_HI ? compared.value() + 1 : compared.value();
-        if (count > 0 && count <= MAX_CASES)
+        if (count > 0 && count <= MAX_CASES) {
             bound = static_cast<uint32>(count);
+            if (comparedRegister >= 0)
+                heldBound = CaseBound{ static_cast<uint32>(count), comparedRegister };
+        }
+    } else if (insn.id == ARM64_INS_B && compared.has_value() && (arm64.cc == ARM64_CC_LS || arm64.cc == ARM64_CC_LO) && isImmediate(0)) {
+        // b.ls switch: the cases 0 .. N at the target (b.lo: 0 .. N - 1), a block after the default; a table indexed by the register
+        // compared
+        constexpr uint64 MAX_CASES = 4096;
+        const uint64 count         = arm64.cc == ARM64_CC_LS ? compared.value() + 1 : compared.value();
+        const uint64 target        = static_cast<uint64>(arm64.operands[0].imm);
+        if (count > 0 && count <= MAX_CASES && target > insn.address)
+            AddCaseBound(target, static_cast<uint32>(count), comparedRegister);
+    } else if (insn.id == ARM64_INS_B && (arm64.cc == ARM64_CC_INVALID || arm64.cc == ARM64_CC_AL) && isImmediate(0)) {
+        // b switch: the bound goes with the jump
+        const uint64 target = static_cast<uint64>(arm64.operands[0].imm);
+        if (const auto carried = heldBound.has_value() ? heldBound : inheritedBound; carried.has_value() && target > insn.address)
+            AddCaseBound(target, carried->count, carried->indexRegister);
     }
 
     // the registers written by the instruction do not hold the page / slot any more
@@ -400,6 +445,10 @@ std::optional<Arm64AdrpTracker::Result> Arm64AdrpTracker::Next(const cs_insn& in
             const int target = Arm64RegisterIndex(op.reg);
             if (target >= 0 && target != kept)
                 registers[target] = {};
+            if (inheritedBound.has_value() && target == inheritedBound->indexRegister)
+                inheritedBound.reset(); // the index changes: not the one bounded any more
+            if (heldBound.has_value() && target == heldBound->indexRegister)
+                heldBound.reset();
         } else if (op.type == ARM64_OP_MEM && arm64.writeback) {
             const int base = Arm64RegisterIndex(op.mem.base);
             if (base >= 0)
@@ -413,6 +462,7 @@ std::optional<Arm64AdrpTracker::Result> Arm64AdrpTracker::Next(const cs_insn& in
         registers[30] = {};
         compared.reset();
         bound.reset();
+        heldBound.reset();
     } else if (flow == X86Flow::Jump || flow == X86Flow::Return)
         Reset(); // the next instruction starts another block
     return result;

@@ -89,6 +89,15 @@ struct DissasmEdit {
 struct DissasmEditHistory {
     std::vector<DissasmEdit> undo, redo;
 };
+struct DissasmCodeZone;
+// Told about every edit of the user of a zone (the replay journal, DissasmReplayRecorder): a new edit (before it enters the history: the lines
+// of a collapsible zone are still decodable), an undo / a redo once it was applied. The replay of a journal applies its edits without it.
+struct DissasmEditObserver {
+    virtual ~DissasmEditObserver() = default;
+    virtual void OnEdit(DissasmCodeZone& zone, const DissasmEdit& edit) = 0;
+    virtual void OnUndo(DissasmCodeZone& zone, const DissasmEdit& edit) = 0;
+    virtual void OnRedo(DissasmCodeZone& zone, const DissasmEdit& edit) = 0;
+};
 struct DissasmReanalysis; // DissasmAnnotations.hpp
 // where an undone / redone edit is (relative address of a line, or a line of the expanded layout): the cursor goes there
 struct DissasmEditPlace {
@@ -196,6 +205,10 @@ struct DissasmCodeZone : public ParseZone {
     bool hasDecoder          = false;       // the language is known: capstoneArch and internalArchitecture are set
     bool isInit              = false;
     bool systemVCalls        = false; // x64 code of an ELF / Mach-O file: the System V calling convention (GetX64ArgumentSlot)
+    // the variadic arguments of the calls: in the stack only for the ARM64 code of a Mach-O file (Apple), a double of an ELF / Mach-O file in a
+    // vector register (System V, AAPCS64), in the integer ones for a PE (Windows x64 / ARM64) (AnnounceCallInstruction)
+    bool variadicArgumentsInStack = false;
+    bool variadicFloatsInVectors  = false;
     bool initTried           = false; // InitZone ran (it may have failed): the zones prepared in the background are not tried again
 
     // x86/x64: decoded instructions count (the zone lines are the instructions plus the annotations of the root type)
@@ -242,6 +255,9 @@ struct DissasmCodeZone : public ParseZone {
     uint64 GetFunctionEnd(uint64 functionStart) const;
     // the chunks of the functions (DissasmFunctionChunk), sorted by start; the chunk that contains an address
     std::vector<DissasmFunctionChunk> functionChunks;
+    // the last instruction of every chunk (relative, its padding excluded) -> its function: the listing ends the chunk there (IDA: END OF
+    // FUNCTION CHUNK FOR sub_X)
+    std::unordered_map<uint64, uint64> chunkEnds;
     // the categories of the APIs every function of functionStarts calls / jumps to directly (DissasmApiCategory, the same index)
     std::vector<uint32> functionApiCategories;
     // 32 bit x86: the bytes the functions take from the stack of their callers (ret 8 -> 8; 0: a function that reads no stack argument),
@@ -392,10 +408,21 @@ struct DissasmCodeZone : public ParseZone {
     // have no name. Register conventions (x64 Windows / System V, ARM64, ARM); by start. Recomputed by the deep scan, not saved
     std::map<uint64, std::shared_ptr<const DissasmUserPrototype>> inferredPrototypes;
     const AsmFunctionDetails* FindInferredPrototype(uint64 functionStart) const;
+    // GCC: the methods of the zone the demangled names of which do not tell their arguments, told by their code (MakeGccMethodPrototype); by
+    // the name of the function, found by the names of its thunks too (j_std::istream::ignore(long)). Recomputed by the deep scan, not saved
+    std::map<std::string, std::shared_ptr<const DissasmUserPrototype>, std::less<>> methodPrototypes;
+    const AsmFunctionDetails* FindMethodPrototype(std::string_view name) const;
+    // the prototype of a function of the zone by its name (a call target): the import of its thunk, its label as an API (a static binary's
+    // getenv), a demangled C++ name (std::locale::~locale(), the methods of MSVC), a method of GCC its code tells; null otherwise
+    const AsmFunctionDetails* FindNamedPrototype(uint64 functionStart) const;
     // the constants the value an API returned is compared with, named after the API (FormatApiReturnConstant: cmp eax, 0x102 after
     // WaitForSingleObject -> WAIT_TIMEOUT, cmp eax, 0xb7 after GetLastError -> ERROR_ALREADY_EXISTS); by the address of the cmp. Recomputed by
     // the deep scan (the walks of InferPrototypes), not saved
     std::unordered_map<uint64, std::string> returnValueConstants;
+    // the writes of argument registers that reach a call only through a jump (mov rcx, rbx; jmp loc_X ... loc_X: call CloseHandle; a tail
+    // jump): the function and the parameter they are (CollectArgumentDefinitions), by the address of the write; the display names them as
+    // the arguments of the block of a call (AnnounceCallInstruction). Recomputed by the deep scan, not saved
+    std::unordered_map<uint64, std::pair<std::string, std::string>> argumentDefinitions;
     // the methods of the COM interfaces the calls reach (beyond IDA): the interface of an object from the API that gives it (CoCreateInstance
     // with IID_IWbemLocator, QueryInterface, a method that gives another: ConnectServer -> IWbemServices), followed through the variables,
     // its vtable and the slot of the call (call [rax + 0x18], the CFG dispatch) -> "IWbemLocator::ConnectServer"; by the address of the
@@ -404,15 +431,17 @@ struct DissasmCodeZone : public ParseZone {
     // x64 structured exception handling (Settings::AddExceptionScopes, as IDA): the __try scopes marked on their first instruction
     // (__try { // __except at loc_X / __try { // __finally(sub_X$fin$0)), their last one (} // starts at sub_X+0x24) and the __except block
     // (__except(sub_X$filt$0) // owned by sub_X+0x24); the C++ ones (Settings::AddExceptionFunclets): a range of a try (try {, } // starts
-    // at) and its catch blocks on their funclet (catch(std::bad_alloc &) // owned by sub_X+0x24); by relative address. Recomputed by the
-    // deep scan, not saved
+    // at) and its catch blocks on their funclet (catch(std::bad_alloc &) // owned by sub_X+0x24); the call sites of GCC / clang
+    // (Settings::AddLandingPads: try {, } // starts at) and their landing pads (catch(MyError) / cleanup() // owned by sub_X+0x24); by
+    // relative address. Recomputed by the deep scan, not saved
     struct ExceptionMark {
-        enum class Kind : uint8 { TryBegin, TryEnd, Except, CppTryBegin, Catch, Finally, Filter }; // Finally / Filter: the blocks of x86
+        // Finally / Filter: the blocks of x86; Cleanup: a landing pad of GCC
+        enum class Kind : uint8 { TryBegin, TryEnd, Except, CppTryBegin, Catch, Finally, Filter, Cleanup };
         Kind kind;
         uint64 begin;                  // the first instruction of the scope (of the first range of the try of a catch)
         std::optional<uint64> handler; // the filter / the __finally funclet; none: the constant filter EXCEPTION_EXECUTE_HANDLER
         std::optional<uint64> target;  // the __except block; none: a __finally
-        std::string catchType;         // a catch: the type it takes ("..." for all)
+        std::string catchType{};       // a catch: the type it takes ("..." for all)
         bool owned = true;             // a catch / a handler: false when its scope has no range in the function (no owner shown)
     };
     std::unordered_map<uint64, std::vector<ExceptionMark>> exceptionMarks;
@@ -470,6 +499,9 @@ struct DissasmCodeZone : public ParseZone {
     // or it can not be applied any more (its place has changed)
     std::optional<DissasmEditPlace> UndoEdit();
     std::optional<DissasmEditPlace> RedoEdit();
+    // told about the edits, the undos and the redos (Instance::InitDissasmCodeZone: the replay recorder of the view); none in the tests and
+    // the headless runs
+    DissasmEditObserver* editObserver = nullptr;
     bool CanUndoEdit() const
     {
         return !undoEdits.empty();
@@ -679,9 +711,18 @@ struct DissasmCodeZone : public ParseZone {
         DissasmCommentAnchor first;
         DissasmCommentAnchor last;
         std::string name;
-        bool isCollapsed;
+        bool isCollapsed = false;
+        bool operator==(const CollapsibleZoneAnchors&) const = default;
     };
     std::vector<CollapsibleZoneAnchors> GetCollapsibleZoneAnchors();
+    // the anchors of one zone (expanded lines); none when its lines can not be decoded
+    std::optional<CollapsibleZoneAnchors> GetAnchorsOfCollapsibleZone(const DissasmCollapsibleZone& zone);
+    // the replay of an edit of a collapsible zone (DissasmReplayController): the zone of the anchors added (placed on the lines of its
+    // anchors) or removed (the zone of these lines); false when this analysis has no such lines / no such zone
+    bool ApplyReplayZoneEdit(const CollapsibleZoneAnchors& anchors, bool add);
+    // the replay of an edit (DissasmReplayController): applied as an undo (forward false) / a redo, without the history of the edits and
+    // without the observer; false for the edits of the collapsible zones (ApplyReplayZoneEdit) and when the edit can not be applied
+    bool ApplyReplayEdit(const DissasmEdit& edit, bool forward);
     // the zones placed on the lines of their anchors (the ones that can not be placed are ignored); true when the shown lines changed
     bool ApplyCollapsibleZoneAnchors(const std::vector<CollapsibleZoneAnchors>& zones);
     // the expanded line of an anchor; none when this analysis has no such line
@@ -696,6 +737,8 @@ struct DissasmCodeZone : public ParseZone {
     bool CanPlaceZone(const DissasmCollapsibleZone& zone) const;
     void InsertZone(DissasmCollapsibleZone zone);
 
+    // the anchors of a zone without the reset of the decoding position (the callers reset it once)
+    CollapsibleZoneAnchors BuildCollapsibleZoneAnchors(const DissasmCollapsibleZone& zone);
     mutable csh decodeHandle = 0; // GetDecodeHandle: opened at the first use
     std::vector<DissasmEdit> undoEdits, redoEdits;
     void RecordEdit(DissasmEdit edit);

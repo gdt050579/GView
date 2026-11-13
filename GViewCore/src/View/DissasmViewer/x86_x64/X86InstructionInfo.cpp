@@ -236,6 +236,24 @@ std::optional<uint8> GView::View::DissasmViewer::GetArgumentSlot(const cs_insn& 
     return {};
 }
 
+std::optional<uint8> GView::View::DissasmViewer::GetArm64ArgumentPairSlot(const cs_insn& insn)
+{
+    constexpr int64 MAX_STACK_ARG = 16;
+    if (insn.id != ARM64_INS_STP || !insn.detail)
+        return {};
+    const cs_arm64& arm64 = insn.detail->arm64;
+    if (arm64.op_count != 3 || arm64.writeback || arm64.operands[2].type != ARM64_OP_MEM)
+        return {};
+    for (uint8 index = 0; index < 2; index++) // two 64 bit registers (a stp of w registers fills the halves of one slot)
+        if (arm64.operands[index].type != ARM64_OP_REG ||
+            !((arm64.operands[index].reg >= ARM64_REG_X0 && arm64.operands[index].reg <= ARM64_REG_X28) || arm64.operands[index].reg == ARM64_REG_XZR))
+            return {};
+    const auto& mem = arm64.operands[2].mem;
+    if (mem.base != ARM64_REG_SP || mem.index != ARM64_REG_INVALID || mem.disp < 0 || mem.disp % 8 != 0 || mem.disp + 8 >= 8 * MAX_STACK_ARG)
+        return {};
+    return static_cast<uint8>(8 + mem.disp / 8);
+}
+
 X86InstructionKind GView::View::DissasmViewer::GetX86InstructionKind(unsigned int id, std::string_view mnemonic)
 {
     switch (id) {

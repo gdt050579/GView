@@ -194,7 +194,11 @@ namespace
                 item.me.attempts         = attempts < 0 ? 0 : static_cast<uint32>(std::min<int64>(attempts, UINT32_MAX));
                 item.me.pointsAwarded    = GetInt(*me, "pointsAwarded");
                 item.me.firstDeliveredAt = GetUInt(*me, "firstDeliveredAt");
+                item.me.workSavedAt      = GetUInt(*me, "workSavedAt");
+                item.me.workRevision     = std::max<int64>(GetInt(*me, "workRevision"), 0);
             }
+            item.solutionAvailable = GetBool(j, "solutionAvailable");
+            item.solutionHasReplay = item.solutionAvailable && GetBool(j, "solutionHasReplay");
         }
         else
         {
@@ -230,45 +234,98 @@ namespace
         });
     }
 
-    void AppendJsonString(SecureString& out, std::string_view s)
+    // "audiences": the known names, deduplicated, All first (always present); unknown entries dropped
+    std::vector<NoteAudience> ParseAudienceList(const json& arr, uint32* rejected)
     {
-        static constexpr char HEX[] = "0123456789abcdef";
-        out.push_back('"');
-        for (unsigned char c : s)
+        std::vector<NoteAudience> r{ NoteAudience::All };
+        if (!arr.is_array())
         {
-            switch (c)
-            {
-            case '"':
-                out.append("\\\"");
-                break;
-            case '\\':
-                out.append("\\\\");
-                break;
-            case '\n':
-                out.append("\\n");
-                break;
-            case '\r':
-                out.append("\\r");
-                break;
-            case '\t':
-                out.append("\\t");
-                break;
-            default:
-                if (c < 0x20)
-                {
-                    out.append("\\u00");
-                    out.push_back(HEX[c >> 4]);
-                    out.push_back(HEX[c & 0xF]);
-                }
-                else
-                    out.push_back(static_cast<char>(c));
-            }
+            if (rejected != nullptr)
+                (*rejected)++;
+            return r;
         }
-        out.push_back('"');
+        size_t seen = 0;
+        for (const auto& a : arr)
+        {
+            if (++seen > 64)
+                break; // defensive: three audiences exist
+            const auto v = a.is_string() ? ParseNoteAudience(a.get_ref<const std::string&>()) : std::nullopt;
+            if (!v.has_value())
+            {
+                if (rejected != nullptr)
+                    (*rejected)++;
+                continue;
+            }
+            if (std::find(r.begin(), r.end(), *v) == r.end())
+                r.push_back(*v);
+        }
+        return r;
     }
 } // namespace
 
 // ============================================================================ general helpers
+void AppendJsonString(SecureString& out, std::string_view s)
+{
+    static constexpr char HEX[] = "0123456789abcdef";
+    out.push_back('"');
+    for (unsigned char c : s)
+    {
+        switch (c)
+        {
+        case '"':
+            out.append("\\\"");
+            break;
+        case '\\':
+            out.append("\\\\");
+            break;
+        case '\n':
+            out.append("\\n");
+            break;
+        case '\r':
+            out.append("\\r");
+            break;
+        case '\t':
+            out.append("\\t");
+            break;
+        default:
+            if (c < 0x20)
+            {
+                out.append("\\u00");
+                out.push_back(HEX[c >> 4]);
+                out.push_back(HEX[c & 0xF]);
+            }
+            else
+                out.push_back(static_cast<char>(c));
+        }
+    }
+    out.push_back('"');
+}
+
+std::string_view NoteAudienceName(NoteAudience a) noexcept
+{
+    switch (a)
+    {
+    case NoteAudience::All:
+        return "all";
+    case NoteAudience::G1:
+        return "G1";
+    case NoteAudience::G2:
+        return "G2";
+    }
+    return "all";
+}
+
+std::optional<NoteAudience> ParseNoteAudience(std::string_view name) noexcept
+{
+    if (name == "all")
+        return NoteAudience::All;
+    if (name == "G1")
+        return NoteAudience::G1;
+    if (name == "G2")
+        return NoteAudience::G2;
+    return std::nullopt;
+}
+
 std::string_view FindHeader(const HeaderMap& headers, std::string_view lowerName) noexcept
 {
     for (const auto& [k, v] : headers)
@@ -663,6 +720,91 @@ std::string BuildConnectionString(std::string_view token, std::string_view serve
     return Base64Encode(BufferView(inner));
 }
 
+std::string ServerOrigin(std::string_view url)
+{
+    std::string normalized;
+    if (!ValidateServerUrl(url, true, normalized).ok)
+        return {};
+    const size_t schemeEnd = normalized.find("://");
+    if (schemeEnd == std::string::npos)
+        return {};
+    const size_t pathStart = normalized.find('/', schemeEnd + 3);
+    std::string origin     = normalized.substr(0, pathStart);
+    // URL.origin omits the default port of the scheme
+    const std::string_view defaultPort = normalized.starts_with("https://") ? ":443" : ":80";
+    if (origin.size() > defaultPort.size() && origin.ends_with(defaultPort))
+        origin.resize(origin.size() - defaultPort.size());
+    return origin;
+}
+
+Utils::GStatus ValidateLaunchConnectionString(std::string_view cs, std::string_view serverOrigin, bool allowPlainHttpLocalhost, ConnectionInfo& out)
+{
+    const std::string expected = ServerOrigin(serverOrigin);
+    if (expected.empty())
+        return Utils::GStatus::Error("the launch link names an invalid course server");
+    ConnectionInfo info;
+    auto st = ParseConnectionString(cs, allowPlainHttpLocalhost, info);
+    if (!st.ok)
+        return Utils::GStatus::Error("invalid connection string: " + st.message);
+    if (info.version != 2 || info.publicKey.size() != 32)
+        return Utils::GStatus::Error("the connection string carries no policy public key (version 2 is required)");
+    // the code was redeemed at `expected`: a connection string for another server is refused (the trust prompt names
+    // the server the code was redeemed at)
+    if (ServerOrigin(info.serverUrl) != expected)
+        return Utils::GStatus::Error("the connection string is for another server than " + expected);
+    out = std::move(info);
+    return Utils::GStatus::Ok();
+}
+
+namespace
+{
+    std::vector<std::string_view> SplitOriginList(std::string_view list)
+    {
+        std::vector<std::string_view> r;
+        size_t i = 0;
+        while (i < list.size())
+        {
+            while (i < list.size() && (list[i] == ' ' || list[i] == ',' || list[i] == '\t'))
+                i++;
+            const size_t start = i;
+            while (i < list.size() && list[i] != ' ' && list[i] != ',' && list[i] != '\t')
+                i++;
+            if (i > start)
+                r.push_back(list.substr(start, i - start));
+        }
+        return r;
+    }
+} // namespace
+
+bool OriginListContains(std::string_view list, std::string_view origin)
+{
+    if (origin.empty())
+        return false;
+    for (auto entry : SplitOriginList(list))
+        if (entry == origin)
+            return true;
+    return false;
+}
+
+std::string OriginListAdd(std::string_view list, std::string_view origin)
+{
+    auto entries = SplitOriginList(list);
+    // only origins as produced by ServerOrigin (no path, no separator) are kept
+    const bool valid = !origin.empty() && ServerOrigin(origin) == origin;
+    if (valid && !OriginListContains(list, origin))
+        entries.push_back(origin);
+    if (entries.size() > MAX_TRUSTED_LAUNCH_ORIGINS)
+        entries.erase(entries.begin(), entries.begin() + static_cast<std::ptrdiff_t>(entries.size() - MAX_TRUSTED_LAUNCH_ORIGINS));
+    std::string r;
+    for (auto e : entries)
+    {
+        if (!r.empty())
+            r.push_back(' ');
+        r.append(e);
+    }
+    return r;
+}
+
 std::string SubjectForToken(const SecureString& token)
 {
     uint8 hash[32];
@@ -683,38 +825,143 @@ bool IsValidItemName(std::string_view name) noexcept
     return true;
 }
 
+namespace
+{
+    // length of the valid UTF-8 sequence starting at text[pos], 0 when it is invalid (overlong, surrogate, > U+10FFFF)
+    size_t Utf8SequenceLength(std::string_view text, size_t pos) noexcept
+    {
+        const auto at = [&](size_t i) { return static_cast<unsigned char>(text[i]); };
+        const unsigned char c = at(pos);
+        if (c < 0x80)
+            return 1;
+        size_t len;
+        uint32 cp;
+        if ((c & 0xE0) == 0xC0)
+            len = 2, cp = c & 0x1F;
+        else if ((c & 0xF0) == 0xE0)
+            len = 3, cp = c & 0x0F;
+        else if ((c & 0xF8) == 0xF0)
+            len = 4, cp = c & 0x07;
+        else
+            return 0;
+        if (pos + len > text.size())
+            return 0;
+        for (size_t i = 1; i < len; i++)
+        {
+            if ((at(pos + i) & 0xC0) != 0x80)
+                return 0;
+            cp = (cp << 6) | (at(pos + i) & 0x3F);
+        }
+        static constexpr uint32 MIN_FOR_LENGTH[] = { 0, 0, 0x80, 0x800, 0x10000 };
+        if (cp < MIN_FOR_LENGTH[len] || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF))
+            return 0;
+        return len;
+    }
+
+    // longest prefix of s that is at most maxBytes long and does not end inside a UTF-8 sequence
+    std::string_view Utf8Prefix(std::string_view s, size_t maxBytes) noexcept
+    {
+        if (s.size() <= maxBytes)
+            return s;
+        size_t end = maxBytes;
+        while (end > 0 && (static_cast<unsigned char>(s[end]) & 0xC0) == 0x80)
+            end--;
+        return s.substr(0, end);
+    }
+
+    void TrimDotsAndSpaces(std::string& r)
+    {
+        size_t start = 0;
+        while (start < r.size() && (r[start] == '.' || r[start] == ' '))
+            start++;
+        r.erase(0, start);
+        while (!r.empty() && (r.back() == '.' || r.back() == ' '))
+            r.pop_back();
+    }
+
+    // Windows device names, checked on the part before the first dot ("nul.txt" is the device too)
+    bool IsWindowsDeviceName(std::string_view name)
+    {
+        std::string base(name.substr(0, name.find('.')));
+        while (!base.empty() && base.back() == ' ')
+            base.pop_back();
+        std::transform(base.begin(), base.end(), base.begin(), [](char c) { return ToLowerAscii(c); });
+        static constexpr std::string_view RESERVED[] = { "con", "prn", "aux", "nul", "conin$", "conout$" };
+        if (std::find(std::begin(RESERVED), std::end(RESERVED), base) != std::end(RESERVED))
+            return true;
+        return base.size() == 4 && (base.starts_with("com") || base.starts_with("lpt")) && base[3] >= '0' && base[3] <= '9';
+    }
+} // namespace
+
+std::string SanitizePathComponent(std::string_view text, std::string_view fallback, size_t maxBytes)
+{
+    if (maxBytes < 8)
+        maxBytes = 8;
+    text = text.substr(0, std::min<size_t>(text.size(), 4096)); // hostile input: bound the work
+    std::string r;
+    r.reserve(std::min(text.size(), maxBytes + 8));
+    for (size_t i = 0; i < text.size();)
+    {
+        const unsigned char c = static_cast<unsigned char>(text[i]);
+        const size_t len      = Utf8SequenceLength(text, i);
+        if (len == 0)
+        {
+            r.push_back('_'); // invalid UTF-8 (Windows cannot convert it to a wide path)
+            i++;
+            continue;
+        }
+        if (len == 1 && (c < 0x20 || c == 0x7F || c == '/' || c == '\\' || c == '<' || c == '>' || c == ':' || c == '"' || c == '|' ||
+                         c == '?' || c == '*'))
+            r.push_back('_');
+        else
+            r.append(text.substr(i, len));
+        i += len;
+    }
+    TrimDotsAndSpaces(r);
+    if (r.size() > maxBytes)
+    {
+        // keep a short extension ("very long name....exe"): it decides how the file is opened
+        const size_t dot = r.rfind('.');
+        const bool keepExt = dot != std::string::npos && dot > 0 && r.size() - dot <= 16 && r.size() - dot <= maxBytes / 2;
+        std::string ext    = keepExt ? r.substr(dot) : std::string();
+        std::string stem(Utf8Prefix(std::string_view(r).substr(0, r.size() - ext.size()), maxBytes - ext.size()));
+        TrimDotsAndSpaces(stem);
+        r = stem.empty() ? std::string(Utf8Prefix(r, maxBytes)) : stem + ext;
+        TrimDotsAndSpaces(r);
+    }
+    if (!r.empty() && IsWindowsDeviceName(r))
+    {
+        r.insert(r.begin(), '_');
+        if (r.size() > maxBytes)
+        {
+            r = std::string(Utf8Prefix(r, maxBytes));
+            TrimDotsAndSpaces(r);
+        }
+    }
+    if (r.empty())
+        return std::string(fallback);
+    return r;
+}
+
 std::string SanitizeFileName(std::string_view name)
 {
     const size_t sep = name.find_last_of("/\\");
     if (sep != std::string_view::npos)
         name = name.substr(sep + 1);
-    std::string r;
-    r.reserve(std::min<size_t>(name.size(), 128));
-    for (unsigned char c : name)
-    {
-        if (r.size() >= 128)
-            break;
-        if (c < 0x20 || c == 0x7F || c == '<' || c == '>' || c == ':' || c == '"' || c == '|' || c == '?' || c == '*')
-            r.push_back('_');
-        else
-            r.push_back(static_cast<char>(c));
-    }
-    while (!r.empty() && (r.front() == '.' || r.front() == ' '))
-        r.erase(r.begin());
-    while (!r.empty() && (r.back() == '.' || r.back() == ' '))
-        r.pop_back();
-    if (r.empty())
-        return "task.bin";
-    // Windows reserved device names (checked on the part before the first dot)
-    std::string base = r.substr(0, r.find('.'));
-    std::transform(base.begin(), base.end(), base.begin(), [](char c) { return ToLowerAscii(c); });
-    static constexpr std::string_view RESERVED[] = { "con", "prn", "aux", "nul" };
-    bool reserved = std::find(std::begin(RESERVED), std::end(RESERVED), base) != std::end(RESERVED);
-    if (!reserved && base.size() == 4 && (base.starts_with("com") || base.starts_with("lpt")) && base[3] >= '0' && base[3] <= '9')
-        reserved = true;
-    if (reserved)
-        r.insert(r.begin(), '_');
-    return r;
+    return SanitizePathComponent(name, "task.bin", 128);
+}
+
+std::string ServerFolderName(std::string_view serverUrl)
+{
+    std::string_view host = serverUrl;
+    if (const size_t scheme = host.find("://"); scheme != std::string_view::npos)
+        host = host.substr(scheme + 3);
+    host = host.substr(0, host.find_first_of("/?#"));
+    if (const size_t at = host.rfind('@'); at != std::string_view::npos)
+        host = host.substr(at + 1); // never put user info in a folder name
+    std::string h(host);
+    std::transform(h.begin(), h.end(), h.begin(), [](char c) { return ToLowerAscii(c); });
+    return SanitizePathComponent(h, "server", 64); // the ':' before a port becomes '_'
 }
 
 std::string SanitizeDisplayText(std::string_view text, size_t maxLen, bool multiline)
@@ -766,6 +1013,10 @@ std::string_view ErrorCodeName(ErrorCode code) noexcept
         return "UNSUPPORTED_CLIENT";
     case ErrorCode::ServerError:
         return "SERVER_ERROR";
+    case ErrorCode::Conflict:
+        return "CONFLICT";
+    case ErrorCode::PayloadTooLarge:
+        return "PAYLOAD_TOO_LARGE";
     case ErrorCode::Transport:
         return "TRANSPORT_ERROR";
     case ErrorCode::Protocol:
@@ -794,7 +1045,10 @@ ServerError ParseErrorEnvelope(long httpStatus, BufferView body, std::string_vie
         e.code = ErrorCode::NotFound;
         break;
     case 409:
-        e.code = ErrorCode::AlreadySolved;
+        e.code = ErrorCode::AlreadySolved; // SubmitFlag; the note endpoints map 409 to Conflict (LearningNotes.cpp)
+        break;
+    case 413:
+        e.code = ErrorCode::PayloadTooLarge;
         break;
     case 426:
         e.code = ErrorCode::UnsupportedClient;
@@ -827,6 +1081,8 @@ ServerError ParseErrorEnvelope(long httpStatus, BufferView body, std::string_vie
                     { "ITEM_DISABLED", ErrorCode::ItemDisabled },
                     { "UNSUPPORTED_CLIENT", ErrorCode::UnsupportedClient },
                     { "SERVER_ERROR", ErrorCode::ServerError },
+                    { "CONFLICT", ErrorCode::Conflict },
+                    { "PAYLOAD_TOO_LARGE", ErrorCode::PayloadTooLarge },
                 };
                 const auto& code = c->get_ref<const std::string&>();
                 for (const auto& [name, value] : CODES)
@@ -896,6 +1152,18 @@ std::string DescribeError(const ServerError& err)
         break;
     case ErrorCode::ServerError:
         msg = "The server encountered an error.";
+        break;
+    case ErrorCode::Conflict:
+        msg = "The item was changed elsewhere in the meantime.";
+        break;
+    case ErrorCode::PayloadTooLarge:
+        msg = "The request is too large for the server.";
+        break;
+    case ErrorCode::Forbidden:
+        msg = "The server refused the request.";
+        break;
+    case ErrorCode::BadRequest:
+        msg = "The server rejected the request.";
         break;
     case ErrorCode::Transport:
         msg = "Could not reach the server.";
@@ -974,6 +1242,11 @@ Utils::GStatus ParseConnectResponse(BufferView body, ConnectResponse& out)
         {
             r.displayName = GetText(*user, "displayName", 128, false);
             r.score       = GetInt(*user, "score");
+            // additive (spec §10.12); a wrong type is ignored like a missing field (GetWork is authoritative)
+            if (auto c = user->find("canPublishSolutions"); c != user->end() && c->is_boolean())
+                r.canPublishSolutions = c->get<bool>();
+            if (auto a = user->find("audiences"); a != user->end() && a->is_array())
+                r.audiences = ParseAudienceList(*a, nullptr);
         }
         out = std::move(r);
         return Utils::GStatus::Ok();

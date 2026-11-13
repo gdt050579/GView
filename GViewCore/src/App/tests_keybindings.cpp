@@ -134,6 +134,33 @@ TEST_CASE("Registry resolves overrides, unassigned keys and legacy values", "[Ke
     REQUIRE(registry.Resolve("View.Buffer", "ChangeColumnsCount", Key::F6) == Key::F6);
 }
 
+TEST_CASE("Registry ignores the legacy values equal to a moved default (the Dissasm F3 / F7 / F8)", "[KeyBindings]")
+{
+    IniObject ini;
+    REQUIRE(ini.CreateFromString("[View.Dissasm]\n"
+                                 "Key.ShowOnlyDissasm = F7\n"
+                                 "Key.AsmExportToFile = Alt+F8\n" // not the old default: a choice of the user
+                                 "Key.ChangeAddressMode = F3\n"
+                                 "[View.Buffer]\n"
+                                 "Key.GoToEntryPoint = F9\n"));
+    Registry registry;
+    registry.Load(ini);
+
+    REQUIRE(registry.Resolve("View.Dissasm", "ShowOnlyDissasm", Key::F3) == Key::F3);
+    REQUIRE(registry.Resolve("View.Dissasm", "ChangeAddressMode", Key::Ctrl | Key::F3) == Key::F3); // never a default: a user's value
+    REQUIRE(registry.Resolve("View.Dissasm", "AsmExportToFile", Key::Ctrl | Key::F8) == (Key::Alt | Key::F8));
+    REQUIRE(registry.Resolve("View.Buffer", "GoToEntryPoint", Key::F7) == Key::F9); // other viewers: unchanged
+    REQUIRE_FALSE(registry.GetOverride("View.Dissasm", "ShowOnlyDissasm").has_value());
+
+    // saving: the old defaults are not promoted to overrides, the user's values are
+    registry.Save(ini);
+    REQUIRE_FALSE(ini.GetSection("View.Dissasm").HasValue("Key.ShowOnlyDissasm"));
+    REQUIRE_FALSE(ini.GetSection("Keys.View.Dissasm").HasValue("ShowOnlyDissasm"));
+    REQUIRE(ini.GetSection("Keys.View.Dissasm").GetValue("ChangeAddressMode").AsKey() == Key::F3);
+    REQUIRE(ini.GetSection("Keys.View.Dissasm").GetValue("AsmExportToFile").AsKey() == (Key::Alt | Key::F8));
+    REQUIRE(ini.GetSection("Keys.View.Buffer").GetValue("GoToEntryPoint").AsKey() == Key::F9);
+}
+
 TEST_CASE("Registry save writes only overrides and drops the legacy values", "[KeyBindings]")
 {
     IniObject ini;
@@ -296,4 +323,32 @@ TEST_CASE("Conflicts take the context of the keys into account", "[KeyBindings]"
     REQUIRE(rows[10].conflictWith == -1);
     REQUIRE(rows[11].conflictWith == -1);
     REQUIRE(rows[12].conflictWith == -1);
+}
+
+TEST_CASE("The course keys win over the type plugin and panel keys of a course window", "[KeyBindings]")
+{
+    std::vector<Row> rows = {
+        MakeRow("GView", "", "LearningSubmitFlag", Key::F10),       // 0
+        MakeRow("Type.PDF", "Panels", "PanelTextViewer", Key::F10), // 1 panel: the course key wins
+        MakeRow("Type.PE", "", "PluginOnF10", Key::F10),            // 2 type plugin command: the course key wins
+        MakeRow("GView", "", "LearningCourse", Key::F12),           // 3
+    };
+    ComputeConflicts(rows);
+    for (const auto& r : rows)
+        REQUIRE(r.conflictWith == -1);
+
+    // a viewer handles its keys before the window, the GView and generic plugin keys are always active: conflicts
+    std::vector<Row> others = {
+        MakeRow("GView", "", "LearningSubmitFlag", Key::F10),   // 0
+        MakeRow("Generic.Dropper", "", "Dropper", Key::F10),    // 1
+        MakeRow("GView", "", "LearningCourse", Key::F12),       // 2
+        MakeRow("View.Buffer", "", "SomethingOnF12", Key::F12), // 3
+        MakeRow("GView", "", "Other", Key::Ctrl | Key::F12),    // 4 another key
+    };
+    ComputeConflicts(others);
+    REQUIRE(others[0].conflictWith == 1);
+    REQUIRE(others[1].conflictWith == 0);
+    REQUIRE(others[2].conflictWith == 3);
+    REQUIRE(others[3].conflictWith == 2);
+    REQUIRE(others[4].conflictWith == -1);
 }

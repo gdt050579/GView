@@ -6,6 +6,9 @@
 #include "X86InstructionInfo.hpp"
 #include "DissasmAnnotations.hpp"
 #include "DissasmSignatures.hpp"
+#include "DissasmReplayRecorder.hpp"
+#include "DissasmReplayController.hpp"
+#include "DissasmWorkDocument.hpp"
 #include <capstone/capstone.h>
 #include <cassert>
 #include <ranges>
@@ -461,6 +464,8 @@ static std::optional<uint64> TranslateOperandAddressToFileOffset(SettingsData* s
 // RVA of the first decoded instruction (cachedCodeOffsets[0]): the decoded addresses are relative to it
 static uint64 GetCodeStartRVA(SettingsData* settings, const DissasmCodeZone* zone)
 {
+    if (!settings->offsetTranslateCallback.IsValid()) // a plugin without an offset translation: the file offset
+        return zone->cachedCodeOffsets[0].offset;
     return settings->offsetTranslateCallback->TranslateFromFileOffset(zone->cachedCodeOffsets[0].offset, static_cast<uint32>(DissasmPEConversionType::RVA));
 }
 
@@ -513,14 +518,30 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     std::string_view joiner = " + "; // [ebp + var_8]; ARM64: [x29, #var_8]; x64 without a frame register: [rsp + 0x38 + var_18]
     std::string stackJoiner;
     bool alignedStackOffset = false; // through esp in an aligned frame (and esp, -8): not the saved registers / the return address
+    bool armStackOperand    = false; // ARM: a slot of the frame found in the operands
+    bool armAddress         = false; // ARM64: add x0, sp, #0x10: the address of the slot
     if (zone && !zone->localVariables.Empty() && zone->IsArmCode()) {
         // ARM: [x29, #var_8] / [fp, #var_8] / [r7, #var_8] / [sp, #var_10] / [sp] -> [sp, #var_18]
         function = zone->FindFrameOfAddress(address); // a chunk: the frame of its function
         Arm64FrameOperand slot{};
         const std::string_view frameRegister =
               zone->IsArm64Code() ? std::string_view("x29") : (function && function->frameRegister == 11 ? std::string_view("fp") : std::string_view("r7"));
-        if (function && FindArmFrameOperand(text, frameRegister, slot) && (slot.isStackPointerBased || function->usesFrameRegister)) {
-            frameOperand = { slot.replaceStart, slot.replaceEnd, slot.isStackPointerBased ? slot.displacement + function->stackOffset : slot.displacement };
+        // the address of a slot (ARM64: add x0, sp, #0x10), as the lea of x86
+        armAddress                   = function && zone->IsArm64Code() && strcmp(mnemonic, "add") == 0 && FindArmAddressOperand(text, frameRegister, slot);
+        const bool frameOperandFound = function && (armAddress || FindArmFrameOperand(text, frameRegister, slot));
+        // an ARM64 funclet: its x29 is the frame of its function, its slots the variables of that frame
+        if (frameOperandFound && !slot.isStackPointerBased && function->frameRegisterOf.has_value())
+            if (const auto* owner = zone->localVariables.FindFunctionByStart(function->frameRegisterOf.value()))
+                function = owner;
+        if (frameOperandFound && (slot.isStackPointerBased || function->usesFrameRegister)) {
+            // sp: its depth at the instruction when the frame has them (ARM64: the prologue before the last sub sp), else the one of the body
+            int32 depth = function->stackOffset;
+            if (address >= function->startAddress && address < function->endAddress)
+                depth = function->StackDeltaAt(address).value_or(depth);
+            frameOperand    = { slot.replaceStart,
+                                slot.replaceEnd,
+                             slot.isStackPointerBased ? slot.displacement + depth : slot.displacement + function->frameRegisterOffset };
+            armStackOperand = true;
             variable     = function->FindVariableContaining(frameOperand.frameOffset);
             joiner       = slot.needsSeparator ? std::string_view(", #") : std::string_view();
         }
@@ -528,8 +549,9 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
                                          ? zone->FindFrameOfAddress(address) // a chunk: the frame of its function
                                          : nullptr;
                framed && framed->usesFrameRegister) {
-        function = framed;
-        variable = function->FindVariableContaining(frameOperand.frameOffset);
+        // a funclet of the 32 bit exception handling (a catch block, an unwind funclet): the ebp of its function, its variables
+        function = framed->variablesOf.has_value() ? zone->localVariables.FindFunctionByStart(framed->variablesOf.value()) : framed;
+        variable = function ? function->FindVariableContaining(frameOperand.frameOffset) : nullptr;
     } else if (const auto* stackFunction = zone && !zone->localVariables.Empty() ? zone->localVariables.FindFunctionByAddress(address) : nullptr;
                stackFunction && (!stackFunction->usesFrameRegister || !stackFunction->stackDeltas.empty())) {
         // without a frame register: [rsp + 0x20] -> [rsp + 0x38 + var_18] (IDA), the slot from the stack pointer of the entry; an alias of
@@ -571,11 +593,15 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     // its slot named; at the stack pointer of the entry, above the saved frame register. The slots of the registers the prologue pushed
     // (IDA: var_s0 the lowest, var_s8): not variables either (the epilogue of MSVC x64: lea r11, [rsp + 0x80 + var_s0]; GCC: mov rbx,
     // qword ptr [rbp + var_s0])
-    const bool namesSlot = !variable && function && zone && !zone->IsArmCode() && decimalMask == 0 && !alignedStackOffset;
+    // ARM64: the registers its prologue saves (stp x29, x30, [sp, #var_s10]), in the code of the function itself (a funclet saves its own on
+    // its own stack, its x29 the frame of its function); no return address on the stack
+    const bool armCode   = zone && zone->IsArmCode();
+    const bool armSlot   = armCode && zone->IsArm64Code() && armStackOperand && function && address >= function->startAddress && address < function->endAddress;
+    const bool namesSlot = !variable && function && zone && (!armCode || armSlot) && decimalMask == 0 && !alignedStackOffset && !armAddress;
     char savedSlot[24]   = {};
     if (namesSlot && function->IsSavedRegisterSlot(frameOperand.frameOffset))
         snprintf(savedSlot, sizeof(savedSlot), "var_s%X", static_cast<unsigned int>(frameOperand.frameOffset - function->savedRegistersOffset));
-    if (namesSlot && (savedSlot[0] != 0 || frameOperand.frameOffset == (function->usesFrameRegister ? (zone->Is64BitCode() ? 8 : 4) : 0))) {
+    if (namesSlot && (savedSlot[0] != 0 || (!armCode && frameOperand.frameOffset == (function->usesFrameRegister ? (zone->Is64BitCode() ? 8 : 4) : 0)))) {
         std::string rewritten(text.substr(0, frameOperand.replaceStart));
         rewritten.append(joiner);
         rewritten.append(savedSlot[0] != 0 ? savedSlot : "retaddr");
@@ -614,7 +640,7 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     std::string name = variable->name;
     if (variable->structure)
         name += FormatApiStructureMember(
-              *variable->structure, static_cast<uint32>(frameOperand.frameOffset - variable->frameOffset), strcmp(mnemonic, "lea") != 0);
+              *variable->structure, static_cast<uint32>(frameOperand.frameOffset - variable->frameOffset), strcmp(mnemonic, "lea") != 0 && !armAddress);
     std::string rewritten;
     rewritten.reserve(text.size() + name.size() + 3u);
     rewritten.append(text.substr(0, frameOperand.replaceStart));
@@ -971,13 +997,43 @@ static void AnnounceKnownFunctionCall(DissasmInsnExtractLineParams& params, cons
 {
     if (params.asmData->functions.empty() || !details)
         return;
-    // x64 / ARM: the registers; x86: the pushes and mov [esp + n]
-    params.zone->asmPreCacheData.AnnounceCallInstruction(details, params.zone->Is64BitCode() || params.zone->IsArmCode());
+    // x64 / ARM: the registers; x86: the pushes and mov [esp + n]; the arguments after a format on x86 / x64 / ARM64 (not the ARM64 code of
+    // Mach-O: Apple passes the variadic ones in the stack; not 32 bit ARM: a double there takes an even pair of registers)
+    const bool formatArguments = !params.zone->IsArmCode() || (params.zone->IsArm64Code() && !params.zone->variadicArgumentsInStack);
+    // ARM64EC (the code before the call): the variadic arguments after the fourth are in the stack x4 points to
+    const auto& lines = params.zone->asmPreCacheData.cachedAsmLines;
+    const bool ec     = params.zone->IsArm64Code() && !lines.empty() && params.settings && !params.zone->cachedCodeOffsets.empty() &&
+                    params.settings->IsArm64ECCode(params.zone->cachedCodeOffsets[0].offset + lines.back().address);
+    params.zone->asmPreCacheData.AnnounceCallInstruction(
+          details,
+          params.zone->Is64BitCode() || params.zone->IsArmCode(),
+          params.zone->systemVCalls,
+          formatArguments,
+          params.zone->Is64BitCode() && params.zone->variadicFloatsInVectors,
+          ec ? 4 : 0xFF);
 }
 
 static void AnnounceKnownFunctionCall(DissasmInsnExtractLineParams& params, std::string_view functionName)
 {
-    AnnounceKnownFunctionCall(params, FindApiPrototype(functionName));
+    const auto* prototype = FindApiPrototype(functionName);
+    AnnounceKnownFunctionCall(params, prototype ? prototype : params.zone->FindMethodPrototype(functionName)); // GCC: a method its code tells
+}
+
+// the prototype of a call target of a code zone (relative), as its calls name their arguments: the one the user gave (Y), the API of its
+// import thunk or of its name (a static binary's getenv, libc's own closedir), the inferred one, a method of GCC its code tells (its name)
+static const AsmFunctionDetails* FindCallTargetPrototype(const DissasmCodeZone* zone, uint64 target, const std::string& labelName)
+{
+    if (const auto* user = zone->FindUserPrototype(target))
+        return user;
+    if (const auto thunk = zone->thunkImports.find(target); thunk != zone->thunkImports.end()) {
+        const auto* api = FindApiPrototype(thunk->second);
+        return api ? api : zone->FindMethodPrototype(thunk->second);
+    }
+    if (const auto* api = labelName.empty() ? nullptr : FindApiPrototype(labelName))
+        return api;
+    if (const auto* inferred = zone->FindInferredPrototype(target))
+        return inferred;
+    return labelName.empty() ? nullptr : zone->FindMethodPrototype(labelName);
 }
 
 // the label of an address (VA) in another code zone of the file; empty when no analyzed zone has a label there
@@ -1080,8 +1136,12 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     const auto operands = params.zone->GetOperandsInfo(*insn);
     {
         // mov rcx, ... / mov [rsp + 0x20], ... / mov x0, ... / mov r1, ... / mov [esp + 4], ...: an argument of the next call
-        const auto slot = GetArgumentSlot(*insn, params.zone->GetArchAt(insn->address), params.zone->systemVCalls);
-        argumentSlot    = slot.has_value() ? slot.value() : NO_ARGUMENT;
+        const auto arch = params.zone->GetArchAt(insn->address);
+        const auto slot = GetArgumentSlot(*insn, arch, params.zone->systemVCalls);
+        // stp x8, x9, [sp, #8]: two stack arguments
+        const auto pair = arch == DissasmArch::Arm64 && !slot.has_value() ? GetArm64ArgumentPairSlot(*insn) : std::nullopt;
+        argumentSlot    = slot.has_value() ? slot.value() : (pair.has_value() ? pair.value() : NO_ARGUMENT);
+        argumentPair    = pair.has_value();
     }
     calleePushes    = NO_PUSHES;
     constantComment = false;
@@ -1127,6 +1187,9 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         DropCommentShownInOperands();
 #endif
         AddConstantComment(*this, *insn, operands, params);
+        // an argument of a call that the block of the write jumps to (CollectArgumentDefinitions): named as the walk of the call names its block
+        if (const auto definition = params.zone->argumentDefinitions.find(insn->address); definition != params.zone->argumentDefinitions.end())
+            NameArgumentLine(*this, definition->second.first, definition->second.second.c_str());
         return true;
     }
 
@@ -1179,9 +1242,14 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
                 const uint64 addressMask = params.zone->Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull; // 32 bit addresses wrap around
                 const uint64 targetVA = (params.zone->labelAddressBase + operands.directTarget.value()) & addressMask;
                 target.SetFormat("0x%llx", static_cast<unsigned long long>(targetVA));
-                // another code zone of the file (a call from .text to PAGE): the label there, once that zone is analyzed
+                // another code zone of the file (a call from .text to PAGE): the label there, once that zone is analyzed; the prototype of the
+                // target as that zone knows it (the user's, the inferred one) when it is the code of the same instruction set (not the ARM64 code
+                // an x64 zone of an ARM64X image calls: by its name only)
                 const std::string otherLabel = FindLabelInOtherZones(params.settings, params.zone, targetVA);
-                if (shouldConsiderCall && !otherLabel.empty())
+                const auto* other            = otherLabel.empty() ? nullptr : params.zone->FindCodeZoneOfAddress(targetVA);
+                if (shouldConsiderCall && other && other->GetArchAt(targetVA - other->labelAddressBase) == params.zone->GetArchAt(address))
+                    AnnounceKnownFunctionCall(params, FindCallTargetPrototype(other, targetVA - other->labelAddressBase, otherLabel));
+                else if (shouldConsiderCall && !otherLabel.empty())
                     AnnounceKnownFunctionCall(params, otherLabel); // a PLT stub of another section: j_getenv
                 SetOperands((GetArm64BranchOperandsPrefix(*insn, params.zone) + (otherLabel.empty() ? std::string(target.GetText()) : otherLabel)).c_str(), params.zone);
             } else {
@@ -1196,13 +1264,9 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         // a call through an import thunk (call j_CreateFileW): the arguments of the import
         std::string labelName = params.zone->GetLabelNameAt(operands.directTarget.value());
         if (shouldConsiderCall) {
-            const auto thunk = params.zone->thunkImports.find(operands.directTarget.value());
-            if (const auto* user = params.zone->FindFunctionPrototype(operands.directTarget.value()))
-                AnnounceKnownFunctionCall(params, user); // the prototype the user gave (Y), else the inferred one
-            else if (thunk != params.zone->thunkImports.end())
-                AnnounceKnownFunctionCall(params, thunk->second);
-            else if (!labelName.empty())
-                AnnounceKnownFunctionCall(params, labelName); // a function of the file named so (a static binary: getenv)
+            // the prototype the user gave (Y), else the one of the API the function is (an import thunk; a function of the file named so: a
+            // static binary's getenv, libc's own closedir), else the inferred one
+            AnnounceKnownFunctionCall(params, FindCallTargetPrototype(params.zone, operands.directTarget.value(), labelName));
         }
 
         // the label of the target with its current name (renamed, an export, a function reached by a jmp keeps its sub_ label); a target
@@ -1218,6 +1282,10 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         SetSymbolicOperands(*insn, operands, params); // push offset aText
         DropCommentShownInOperands();
     }
+    // an argument of a call that the block of the push jumps to (CollectX86JumpedPushes), once its operands give its value
+    if (flags == DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
+        if (const auto definition = params.zone->argumentDefinitions.find(insn->address); definition != params.zone->argumentDefinitions.end())
+            NameArgumentLine(*this, definition->second.first, definition->second.second.c_str());
     return true;
 }
 
@@ -1664,6 +1732,7 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo* dli, DissasmCodeZone* zone)
 
     if (!zone->InitZone(initData))
         return false;
+    zone->editObserver = replay.get(); // the edits of the user go to the replay journal
     if (initData.hasAdjustedSize)
         AdjustZoneExtendedSize(zone, initData.adjustedZoneSize);
     if (zone->IsDeepScanPending())
@@ -1722,6 +1791,9 @@ void GView::View::DissasmViewer::PrepareCodeZoneInitData(SettingsData* settings,
     initData.globalOffsetTable     = settings->globalOffsetTable;
     initData.armCodeModes          = &settings->armCodeModes;
     initData.relocatedPointers     = &settings->relocatedPointers;
+    initData.codeLocations         = &settings->codeLocations;
+    initData.landingPads           = &settings->landingPads;
+    initData.codeRanges            = &settings->codeRanges;
     initData.memoryMappings        = &settings->memoryMappings;
     initData.dataFields            = &settings->dataFields;
     if (!settings->memoryMappings.empty()) {
@@ -1754,8 +1826,10 @@ void Instance::EndDeepScan(DissasmCodeZone* zone, bool cancel)
         zone->pendingReanalysisAddress.reset();
         AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // +1 for the title
         zone->asmPreCacheData.Clear();
-        if (address.has_value())
+        if (address.has_value()) {
+            DissasmReplaySuspendScope suspendRecording(replay.get()); // the cursor goes back to the edit: not a jump of the user
             MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + address.value(), false);
+        }
         if (!zone->zoneDetails.isData)
             RefreshDataZones(); // their labels are the places this code refers to
         ForgetLinesReferringTo(zone);
@@ -1894,6 +1968,9 @@ bool Instance::OnFrameUpdate()
     frameUpdatesSeen   = true;
     bool repaintAsked  = repaintRequested;
     repaintRequested   = false;
+    replay->Poll(); // a keyboard move that rested: a visit of the replay journal
+    if (ApplyPendingWorkDocument()) // the work document the window was opened with, once its zones are analysed
+        repaintAsked = true;
     if (aiNaming.zone && !HasPendingDeepScans()) { // the requests of the assistant (the labels must be known)
         const uint32 answered = aiNaming.answered;
         if (!RunAINamingStep(false) || aiNaming.answered != answered) {
@@ -2132,11 +2209,16 @@ void Instance::ImportAnnotations()
     DissasmAnnotationsImport result;
     std::string error;
     FinishDeepScans(); // the labels of the analysis receive the names
-    // the zones whose data (D / A) changed are analyzed again (at once: the names of the document go to the new labels)
-    if (!ImportAnnotationsDocument(document, zones, result, error, [this](DissasmCodeZone& zone) { return ReanalyzeZone(&zone, std::nullopt, false); })) {
-        Dialogs::MessageBox::ShowError("Error", error);
-        return;
+    {
+        // the replay journal: one Import event (not the new analyses of the zones it causes)
+        DissasmReplaySuspendScope suspendRecording(replay.get());
+        // the zones whose data (D / A) changed are analyzed again (at once: the names of the document go to the new labels)
+        if (!ImportAnnotationsDocument(document, zones, result, error, [this](DissasmCodeZone& zone) { return ReanalyzeZone(&zone, std::nullopt, false); })) {
+            Dialogs::MessageBox::ShowError("Error", error);
+            return;
+        }
     }
+    replay->OnImport(DissasmReplayImportSource::File);
     for (auto* zone : result.zonesWithNewLines) // a collapsed zone was placed
         AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u);
     RefreshDrawnLines();
@@ -2156,6 +2238,164 @@ void Instance::ImportAnnotations()
           result.suggestedNames + result.aiComments,
           result.skipped > 0 ? " (some entries do not match this analysis: skipped)" : "");
     Dialogs::MessageBox::ShowNotification("Annotations", summary.GetText());
+}
+
+std::string Instance::BuildWorkDocumentText(const DissasmWorkMeta& meta, bool includeReplay)
+{
+    FinishDeepScans(); // the names are the labels of the analysis
+    const auto zones = GetAnalysedCodeZones(settings.get());
+    if (zones.empty())
+        return {};
+    const std::filesystem::path filePath = obj->GetPath();
+    const auto fileName                  = filePath.filename().u8string();
+    const DissasmReplayJournal noJournal;
+    const auto document = BuildWorkDocument(
+          zones, std::string_view(reinterpret_cast<const char*>(fileName.data()), fileName.size()), includeReplay ? replay->Journal() : noJournal, meta);
+    return document.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace); // compact: it is sent to the course server
+}
+
+bool Instance::ApplyWorkDocument(std::string_view json, DissasmReplayImportSource source, std::string* summary)
+{
+    const auto fail = [summary](std::string reason) {
+        if (summary)
+            *summary = std::move(reason);
+        return false;
+    };
+    const auto document = nlohmann::json::parse(json.begin(), json.end(), nullptr, false);
+    if (document.is_discarded())
+        return fail("The work document is not a valid JSON document!");
+    DissasmWorkDocument work;
+    std::string error;
+    if (!ParseWorkDocument(document, work, error))
+        return fail(error);
+    const size_t steps = work.journal.events.size();
+    if (role == GView::Security::Learning::WorkspaceRole::Replay) {
+        // the window of a replay starts empty: the journal is played back step by step (CreateReplayController)
+        replay->ReplaceJournal(std::move(work.journal));
+        if (summary)
+            *summary = "Replay: " + std::to_string(steps) + " steps" + (work.skipped > 0 ? " (" + std::to_string(work.skipped) + " skipped)" : "");
+        return true;
+    }
+    FinishDeepScans(); // the labels of the analysis receive the names
+    const auto zones = GetAnalysedCodeZones(settings.get());
+    if (zones.empty())
+        return fail("The dissasm zones are not analysed yet!");
+    DissasmAnnotationsImport result;
+    {
+        DissasmReplaySuspendScope suspendRecording(replay.get()); // one Import event below, not the new analyses it causes
+        if (!ImportAnnotationsDocument(document, zones, result, error, [this](DissasmCodeZone& zone) { return ReanalyzeZone(&zone, std::nullopt, false); }))
+            return fail(error);
+    }
+    for (auto* zone : result.zonesWithNewLines) // a collapsed zone was placed
+        AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u);
+    RefreshDrawnLines();
+    navigationBandKey = 0; // the bookmarks of the document
+    // the journal of the document goes on in this window (the work of the student continues where it was saved); a document saved
+    // without its replay keeps the journal of this window
+    if (work.hasReplay && !work.journal.events.empty())
+        replay->ReplaceJournal(std::move(work.journal));
+    replay->OnImport(source);
+    if (summary) {
+        LocalString<256> text;
+        text.SetFormat(
+              "Imported: %u names, %u comments, %u variables, %u zones, %u bookmarks; replay: %u steps%s",
+              result.names,
+              result.comments + result.repeatableComments,
+              result.variables,
+              result.collapsibleZones,
+              result.bookmarks,
+              static_cast<uint32>(steps),
+              result.skipped + work.skipped > 0 ? " (some entries do not match this analysis: skipped)" : "");
+        *summary = text.GetText();
+    }
+    return true;
+}
+
+bool Instance::HasAnalysedCodeZones() const
+{
+    return !GetAnalysedCodeZones(settings.get()).empty();
+}
+
+void Instance::QueueWorkDocument(std::string json)
+{
+    pendingWorkDocument = std::move(json);
+    workDocumentError.clear();
+}
+
+bool Instance::ApplyPendingWorkDocument()
+{
+    if (!pendingWorkDocument.has_value())
+        return false;
+    // the zones are analysed when they are drawn: the document waits for the first paint
+    if (GetAnalysedCodeZones(settings.get()).empty())
+        return false;
+    const std::string text = std::move(pendingWorkDocument.value());
+    pendingWorkDocument.reset();
+    const bool solution = role == GView::Security::Learning::WorkspaceRole::Solution || role == GView::Security::Learning::WorkspaceRole::Replay;
+    workDocumentError.clear();
+    if (!ApplyWorkDocument(text, solution ? DissasmReplayImportSource::ServerSolution : DissasmReplayImportSource::ServerWork, &workDocumentError))
+        return false;
+    workDocumentError.clear();
+    replay->ClearDirty(); // the window shows what the server has: nothing to save yet
+    return true;
+}
+
+DissasmCodeZone* Instance::FindZone(uint64 fileOffset)
+{
+    for (const auto& zone : settings->parseZones) {
+        if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        auto* codeZone = static_cast<DissasmCodeZone*>(zone.get());
+        if (codeZone->zoneDetails.startingZonePoint == fileOffset && codeZone->CanReachAsmLines())
+            return codeZone;
+    }
+    return nullptr;
+}
+
+bool Instance::MoveCursor(DissasmCodeZone& zone, const DissasmCommentAnchor& anchor)
+{
+    const auto expandedLine = zone.GetExpandedLineOfAnchor(anchor);
+    if (!expandedLine.has_value())
+        return false;
+    // the line of the anchor, a few lines below the top of the view (a hidden line: the line of the collapsed zone that hides it)
+    const uint32 zoneLine = zone.ExpandedToDisplay(expandedLine.value()) + 2u; // +1 for the title, +1 for the columns header
+    Cursor.lineInView     = std::min<uint32>(5, zoneLine);
+    Cursor.startViewLine  = zoneLine + zone.startLineIndex - Cursor.lineInView;
+    Cursor.hasMovedView   = true;
+    return true;
+}
+
+void Instance::ZoneLinesChanged(DissasmCodeZone& zone)
+{
+    // as UndoOrRedo after an edit: the size of the zone (a collapsible zone added / removed), its prepared lines and what shows them
+    AdjustZoneExtendedSize(&zone, zone.GetDisplayLinesCount() + 1u); // +1 for the title
+    zone.asmPreCacheData.Clear();
+    ForgetLinesReferringTo(&zone); // the other zones name its labels
+    drawnLinesGeneration++;
+    cursorLineNumbers.computed = false;
+    navigationBandKey          = 0;
+}
+
+void Instance::Reanalyze(DissasmCodeZone& zone, std::optional<uint64> keepAddress)
+{
+    ReanalyzeZone(&zone, keepAddress, true); // as UndoOrRedo: a big zone continues in the frame updates
+    navigationBandKey = 0;
+}
+
+DissasmReplayController* Instance::CreateReplayController(DissasmReplayJournal journal)
+{
+    if (!replayController)
+        replay->Suspend(true); // the playback is not recorded
+    replayController = std::make_unique<DissasmReplayController>(std::move(journal), static_cast<DissasmReplayHost&>(*this));
+    return replayController.get();
+}
+
+void Instance::CloseReplayController()
+{
+    if (!replayController)
+        return;
+    replayController.reset();
+    replay->Suspend(false);
 }
 
 void Instance::CreateSignatures()
@@ -2278,6 +2518,8 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     // learning telemetry: source address + mnemonic of a followed jump/call (never operands or bytes)
     uint64 jumpFromAddress = 0;
     char jumpMnemonic[16]  = {};
+    // the replay journal: what makes the jump (the mnemonic is given once the instruction is decoded)
+    DissasmReplayJumpScope jumpScope(replay.get(), offsetToReach ? DissasmReplayJumpKind::Entry : DissasmReplayJumpKind::Follow);
     if (!zone->CanReachAsmLines()) {
         Dialogs::MessageBox::ShowNotification("Warning", "This dissasm zone is not an initialized code zone!");
         return;
@@ -2316,6 +2558,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
         jumpFromAddress = zone->GetFileOffsetOfAddress(insn->address).value_or(0);
         for (size_t i = 0; i + 1 < sizeof(jumpMnemonic) && insn->mnemonic[i] != 0; i++)
             jumpMnemonic[i] = insn->mnemonic[i];
+        replay->BeginJump(DissasmReplayJumpKind::Follow, jumpMnemonic);
         const auto operands     = zone->GetOperandsInfo(*insn);
         const auto target       = operands.directTarget;
         const auto targetOffset = target.has_value() ? zone->GetFileOffsetOfAddress(target.value()) : std::nullopt;
@@ -2489,11 +2732,14 @@ void Instance::RefreshCursorLineNumbers()
     const std::string_view lineOperands(asmLine.op_str, asmLine.op_str_size);
     const auto lineKind = static_cast<X86InstructionKind>(asmLine.instructionKind);
     if (cursorLineNumbers.instruction.empty() && (lineKind == X86InstructionKind::Call || lineKind == X86InstructionKind::Jump) &&
-        asmLine.branchTarget.has_value())
+        asmLine.branchTarget.has_value()) {
         if (const auto* user = zone->FindUserPrototype(asmLine.branchTarget.value())) // the prototype the user gave (Y)
             cursorLineNumbers.instruction = std::string(user->prototype);
         else if (const auto* inferred = zone->FindInferredPrototype(asmLine.branchTarget.value())) // the one inferred from its calls
             cursorLineNumbers.instruction = std::string(inferred->prototype) + " (inferred)";
+        else if (const auto* named = zone->FindNamedPrototype(asmLine.branchTarget.value())) // its name: a C++ one (its spaces and parentheses)
+            cursorLineNumbers.instruction = std::string(named->prototype);
+    }
     if (cursorLineNumbers.instruction.empty() && (lineKind == X86InstructionKind::Call || lineKind == X86InstructionKind::Jump)) {
         // the last name of the operands: call CreateFileW / call cs:__imp_CreateFileW / jmp j_connect
         size_t end = lineOperands.size();
@@ -3074,6 +3320,7 @@ class BookmarksWindow : public AppCUI::Controls::Window
     }
 
   public:
+    // onDelete empty: read only (a window of a teacher's solution), no Delete button
     BookmarksWindow(const std::vector<std::array<std::string, 3>>& rows, std::function<void(size_t)> onDelete)
         : Window("Bookmarks", "d:c,w:90%,h:60%", WindowFlags::Sizeable), deleteRow(std::move(onDelete)), rows(rows), deleted(rows.size(), false)
     {
@@ -3081,7 +3328,8 @@ class BookmarksWindow : public AppCUI::Controls::Window
               this, "l:1,t:1,r:1,b:3", { "n:Description,w:50", "n:Address,w:20", "n:Location,w:40" }, ListViewFlags::PopupSearchBar | ListViewFlags::Sortable);
         FillList();
         Factory::Button::Create(this, "&Go", "l:1,b:0,w:10", BTN_GO);
-        Factory::Button::Create(this, "&Delete", "l:13,b:0,w:12", BTN_DELETE);
+        if (deleteRow)
+            Factory::Button::Create(this, "&Delete", "l:13,b:0,w:12", BTN_DELETE);
         Factory::Button::Create(this, "&Close", "r:1,b:0,w:10", BTN_CLOSE);
         list->SetFocus();
     }
@@ -3097,7 +3345,7 @@ class BookmarksWindow : public AppCUI::Controls::Window
             Exit(selectedRow.has_value() ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
             return true;
         }
-        if (eventType == Event::ButtonClicked && ID == BTN_DELETE) {
+        if (eventType == Event::ButtonClicked && ID == BTN_DELETE && deleteRow) {
             auto item = list->GetCurrentItem();
             if (const size_t row = item.IsValid() ? static_cast<size_t>(item.GetData(UINT64_MAX)) : rows.size(); row < rows.size()) {
                 deleteRow(row);
@@ -3143,15 +3391,19 @@ void Instance::ShowBookmarks()
         Dialogs::MessageBox::ShowNotification("Bookmarks", "There is no bookmark: Alt+M bookmarks the line of the cursor!");
         return;
     }
-    BookmarksWindow window(rows, [&places](size_t row) {
-        if (row < places.size())
-            places[row].zone->bookmarks.erase(places[row].address);
-    });
+    std::function<void(size_t)> onDelete;
+    if (!IsReadOnlyRole()) // a teacher's solution: the bookmarks are only listed
+        onDelete = [&places](size_t row) {
+            if (row < places.size())
+                places[row].zone->bookmarks.erase(places[row].address);
+        };
+    BookmarksWindow window(rows, std::move(onDelete));
     const bool go = window.Show() == Dialogs::Result::Ok && window.GetSelectedRow().has_value();
     navigationBandKey = 0; // the dots of the band
     if (!go || window.GetSelectedRow().value() >= places.size())
         return;
     const auto& place = places[window.GetSelectedRow().value()];
+    DissasmReplayJumpScope jumpScope(replay.get(), DissasmReplayJumpKind::Bookmark);
     if (place.zone->CanReachAsmLines())
         MoveCursorToZoneFileOffset(place.zone, place.zone->cachedCodeOffsets[0].offset + place.address, true);
 }
@@ -3183,6 +3435,7 @@ void Instance::SetFunctionPrototype()
     std::string name = zone->GetLabelNameAt(function.value());
     if (name.empty())
         name = zone->GetLabelName("sub_", function.value());
+    name = EditablePrototypeName(name); // a demangled C++ name: without its parameters
     std::string text;
     if (const auto user = zone->userPrototypes.find(function.value()); user != zone->userPrototypes.end())
         text = user->second;
@@ -3196,11 +3449,8 @@ void Instance::SetFunctionPrototype()
             text += parameter.empty() ? "int a" + std::to_string(index + 1) : std::string(inferred->params[index].type) + " " + std::string(parameter);
         }
         text += ")";
-    }
-    else if (const auto thunk = zone->thunkImports.find(function.value()); thunk != zone->thunkImports.end() && FindApiPrototype(thunk->second))
-        text = std::string(FindApiPrototype(thunk->second)->prototype);
-    else if (const auto* api = FindApiPrototype(name))
-        text = std::string(api->prototype);
+    } else if (const auto* named = zone->FindNamedPrototype(function.value())) // the API of its thunk / its name, a C++ name (its types)
+        text = named->demangled ? FormatEditablePrototype(*named) : std::string(named->prototype);
     else
         text = "int " + name + "()";
     for (;;) {
@@ -3240,6 +3490,8 @@ bool Instance::ReanalyzeZone(DissasmCodeZone* zone, std::optional<uint64> keepAd
         Dialogs::MessageBox::ShowError("Error", "The dissasm zone could not be analyzed again!");
         return false;
     }
+    if (!zone->zoneDetails.isData)
+        replay->OnReanalysis(*zone); // a marker of the journal (the data zones follow their code zones: RefreshDataZones)
     AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // +1 for the title
     zone->asmPreCacheData.Clear();
     drawnLinesGeneration++;
@@ -3255,8 +3507,10 @@ bool Instance::ReanalyzeZone(DissasmCodeZone* zone, std::optional<uint64> keepAd
             RefreshDataZones(); // their labels are the places this code refers to
         ForgetLinesReferringTo(zone);
     }
-    if (keepAddress.has_value())
+    if (keepAddress.has_value()) {
+        DissasmReplaySuspendScope suspendRecording(replay.get()); // the cursor stays on the edit: not a jump of the user
         MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + keepAddress.value(), false);
+    }
     return true;
 }
 
@@ -3629,6 +3883,7 @@ void Instance::ShowXrefsTo(
     const auto selected = dlg.GetSelectedRow();
     if (selected.has_value() && selected.value() < rows.size()) {
         const auto& row = rows[selected.value()];
+        DissasmReplayJumpScope jumpScope(replay.get(), DissasmReplayJumpKind::Xref);
         MoveCursorToZoneFileOffset(row.zone, row.zone->cachedCodeOffsets[0].offset + row.from, false);
     }
 }
@@ -4005,6 +4260,7 @@ bool Instance::RunSearch(const DissasmSearch& search, bool showErrors)
         return &params;
     });
     bool found = false;
+    DissasmReplayJumpScope jumpScope(replay.get(), DissasmReplayJumpKind::Search);
     if (hit.has_value() && search.kind == DissasmSearchKind::Text) {
         // the found line gets the cursor, a few lines below the top of the view
         const uint32 zoneLine = static_cast<uint32>(hit->position) + 2u;
@@ -4143,7 +4399,8 @@ void Instance::UndoOrRedo(bool redo)
     AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // +1 for the title: a zone added / removed changes the lines
     zone->asmPreCacheData.Clear();
 
-    // the cursor goes to the edit
+    // the cursor goes to the edit (the undo / redo is in the replay journal: the move is not a jump of the user)
+    DissasmReplaySuspendScope suspendRecording(replay.get());
     if (place->address.has_value()) {
         MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + place->address.value(), place->onLabel);
     } else if (place->expandedLine.has_value()) {
@@ -4473,10 +4730,13 @@ void Instance::StartAINaming()
         Dialogs::MessageBox::ShowNotification("Info", "The functions are found by the deep scan of a shown disassembly zone!");
         return;
     }
-    if (!queryInterface || !queryInterface->GetSmartAssistantInterface()) {
+    if (!queryInterface) {
         Dialogs::MessageBox::ShowNotification("Warning", "There is no digital assistant available!");
         return;
     }
+    // GetSmartAssistantInterface explains itself when none is configured; nullptr is also a cancelled pick (no message)
+    if (!queryInterface->GetSmartAssistantInterface())
+        return;
     // the function of the cursor and the functions it calls; only the ones with an automatic name and no suggestion yet
     uint64 functionStart  = zone->functionStarts.front();
     const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
@@ -5421,11 +5681,14 @@ void Instance::QuerySmartAssistantX86X64(
             displayPrompt.AddFormat("%s", data.mnemonic);
     }
 
-    const auto assistantInterface = queryInterface ? queryInterface->GetSmartAssistantInterface() : nullptr;
-    if (!assistantInterface) {
+    if (!queryInterface) {
         Dialogs::MessageBox::ShowNotification("Warning", "There is no digital assistant available!");
         return;
     }
+    // GetSmartAssistantInterface explains itself when none is configured; nullptr is also a cancelled pick (no message)
+    const auto assistantInterface = queryInterface->GetSmartAssistantInterface();
+    if (!assistantInterface)
+        return;
 
     // the code starts below the function label, or at the first selected line
     const uint32 firstLine      = queryParams.startsAtSelectedLine ? line : line + 1u;

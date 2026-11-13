@@ -81,6 +81,34 @@ macOS and Linux terminals
   the key (a letter, or ``1``-``0`` for ``F1``-``F10``). ``Space`` keeps the combo mode active, ``Escape`` leaves it.
 * The command bar of a terminal only shows the commands without modifiers - use ``F1`` to see all of them.
 
+Learning and Evaluation Mode keys
+---------------------------------
+
+=================== ============================== ==============================================================================
+Key                 Command (section)              What it does
+=================== ============================== ==============================================================================
+``F12``             ``LearningCourse``             *Course* menu of a task window opened from the course catalogue: save /
+                    (``Keys.GView``)               resume the work, the teacher's solution, publish (course staff). With no
+                                                   window opened: *SeeServerWindow*, the Learning and Evaluation Mode window
+``F10``             ``LearningSubmitFlag``         Submit the flag of the student's task window
+                    (``Keys.GView``)
+``Alt+Left``        ``ReplayBack``                 Replay of a teacher's solution: one step back
+                    (``Keys.View.Dissasm``)
+``Alt+Right``       ``ReplayForward``              Replay: one step forward
+``Alt+Home``        ``ReplayToStart``              Replay: back to the start
+``Alt+End``         ``ReplayToEnd``                Replay: to the end
+(none)              ``EditReplayJournal``          The replay journal editor of the disassembly view (also from the command
+                    (``Keys.View.Dissasm``)        palette, ``Ctrl+P``)
+=================== ============================== ==============================================================================
+
+The replay keys are on the command bar only in a window that plays a teacher's solution back.
+
+The course keys are bare function keys because a terminal shows only the keys without a modifier on the command
+bar. They work only in a window of the course, where they take precedence over a command of the type plugin or a key
+of a panel (e.g. the ``F10`` of the PDF *Objects* panel), so the **Keyboard shortcuts** window does not report those
+as conflicts; a viewer key on the same key is still a conflict (the viewer handles it first). ``F11`` is not used: Windows Terminal, the Windows console, GNOME Terminal and macOS keep it for
+themselves (full screen, show desktop).
+
 Settings file
 -------------
 

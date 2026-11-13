@@ -6,6 +6,7 @@
 #include <utility>
 #include <deque>
 #include <optional>
+#include <set>
 #include <chrono>
 #include <list>
 #include <cassert>
@@ -16,6 +17,7 @@
 #include "DissasmDataTypes.hpp"
 #include "Config.hpp"
 #include "DissasmCache.hpp"
+#include "DissasmReplayHost.hpp"
 
 class DissasmTestInstance;
 
@@ -145,7 +147,7 @@ namespace View
             uint64 size;
             uint64 entryPoint; // NO_ENTRY_POINT: the zone has none
             DisassemblyLanguage language;
-            std::string name; // shown in the title of the zone (a section name), not saved in the cache
+            std::string name{};  // shown in the title of the zone (a section name), not saved in the cache
             bool isData = false; // a data zone (AddDataZone): no instructions, its bytes are data lines
             // an uninitialized data zone (AddUninitializedDataZone): its VA, its file offset is from DISSASM_UNINITIALIZED_ZONES_BASE
             bool isUninitialized  = false;
@@ -291,6 +293,7 @@ namespace View
             // the argument of the x64 calling convention written by the instruction (GetX64ArgumentSlot)
             static constexpr uint8 NO_ARGUMENT = 0xFF;
             uint8 argumentSlot                 = NO_ARGUMENT;
+            bool argumentPair                  = false; // ARM64: stp x8, x9, [sp, #8]: the slot after argumentSlot too
             // 32 bit: a call to a function of the zone that pops its arguments (ret 8): the pushes it takes (DissasmCodeZone::calleeStackPurges)
             static constexpr uint8 NO_PUSHES = 0xFF;
             uint8 calleePushes               = NO_PUSHES;
@@ -374,6 +377,7 @@ namespace View
                 shouldAddButton        = other.shouldAddButton;
                 isZoneCollapsed        = other.isZoneCollapsed;
                 argumentSlot           = other.argumentSlot;
+                argumentPair           = other.argumentPair;
                 calleePushes           = other.calleePushes;
                 constantComment        = other.constantComment;
                 localVariableKind      = other.localVariableKind;
@@ -398,10 +402,15 @@ namespace View
             std::string_view returnType; // "HANDLE"; empty for void
             std::string_view returnName; // the name of a variable that holds its return value when not the one of its name (GetReturnValueName):
                                          // an inferred wrapper, the one of the API it returns (File for the wrapper of CreateFileW)
+            bool callerCleansStack = false; // 32 bit x86: cdecl whatever its name (a demangled C++ function of GCC or __cdecl)
+            bool demangled         = false; // told by a demangled C++ name: its types, no names for the inference
         };
         // the prototypes of the common APIs (Windows, the C run-time / POSIX; DissasmApiPrototypes.cpp): by the name of an import / a function
         // (the import prefixes, the version / stdcall suffixes, the underscore of Mach-O, Zw for Nt); null when it is not known
         const AsmFunctionDetails* FindApiPrototype(std::string_view name);
+        // the name of an argument added to a line before its generated text (lpFileName "C:\file.txt"), a constant with its symbolic name
+        // (dwDesiredAccess = GENERIC_READ): AnnounceCallInstruction, the writes of DissasmCodeZone::argumentDefinitions
+        void NameArgumentLine(DissasmAsmPreCacheLine& line, std::string_view functionName, const char* name);
         size_t GetApiPrototypesCount();
         void ForEachApiPrototype(const std::function<void(const AsmFunctionDetails&)>& callback);
         // the type a pointer parameter points to (the variable whose address is passed): PHKEY / LPDWORD / HMODULE* / REFIID -> HKEY / DWORD /
@@ -463,8 +472,35 @@ namespace View
             AsmFunctionDetails details;
         };
         std::shared_ptr<const DissasmUserPrototype> ParseUserPrototype(std::string_view text);
+        // the name of a function in a prototype of the user: a demangled name without its parameters, its qualifiers and the return type of a
+        // template (std::locale::~locale()_1: std::locale::~locale)
+        std::string EditablePrototypeName(std::string_view name);
+        // the text Y proposes for a prototype told by a demangled name (ParseUserPrototype accepts it): void when it returns nothing, every
+        // parameter named (the ones without a name a2, a3, ...: their types kept, void* when not known)
+        std::string FormatEditablePrototype(const AsmFunctionDetails& details);
         // a prototype of the tables (the COM methods: IWbemLocator::ConnectServer), parsed as the ones of the APIs (not strict)
         std::shared_ptr<const DissasmUserPrototype> ParseApiPrototype(std::string_view text);
+        // GCC (System V x64): a demangled C++ name that is no constructor / destructor (std::istream::ignore(long)): the integer eightbytes
+        // its parameters take, in registers then in the stack (a float none, std::error_code two; none known: another class by value,
+        // variadic, a name of MSVC)
+        std::optional<uint32> GetGccMethodParameters(std::string_view name);
+        // a qualified name of a constructor / destructor of C++ (std::locale::~locale, Foo::Foo<int>)
+        bool IsCxxConstructorOrDestructor(std::string_view functionName);
+        // the arguments a format string passes after it (printf, DbgPrintEx, scanf): one text per argument slot, the conversion that takes it
+        // (%s, %08x); `slotsOf4Bytes`: 32 bit x86 (a value of 8 bytes takes two slots), `floatsInXmm`: System V / AAPCS64 (no slot for a double)
+        std::vector<std::string> GetFormatArgumentTexts(std::string_view format, bool scanf, bool slotsOf4Bytes, bool floatsInXmm);
+        // GCC: the class of a demangled name of a method (std::istream for std::istream::ignore(long)); empty for a function without a scope or of
+        // a namespace (IsGccNamespace)
+        std::string GetGccMethodClass(std::string_view name);
+        // GCC: an operator of a class (std::istream::operator>>(int&), Foo::operator=(Foo const&), a conversion): never static (but new / delete,
+        // and since C++23 () / [])
+        bool IsGccMemberOperator(std::string_view name);
+        // its prototype once the code of the function tells the highest argument register it reads (0: rdi .. 5: r9): one more than its
+        // parameters (this for a const method, the address of what a function returns, else one of them: this when the entry reads memory
+        // through it first, `readsFirstArgument`: a result is written first), two more (that address, then this); null otherwise. A static
+        // method (`staticMethod`: its callers tell it) takes its parameters alone: the highest register read is the last of them
+        std::shared_ptr<const DissasmUserPrototype> MakeGccMethodPrototype(
+              std::string_view name, int32 highestRead, bool readsFirstArgument = false, bool staticMethod = false);
         // a type of parameter that takes 8 bytes of the stack in 32 bit code (__int64, double, LARGE_INTEGER, ...): two pushes
         bool IsWideX86Type(std::string_view type);
         // 32 bit: the pushes a known API takes from the stack when it returns (stdcall: its parameters, 8 byte ones twice); none for the C
@@ -553,8 +589,17 @@ namespace View
 
             // the arguments of a known API: the names of its parameters are added to the automatic comments of the pushes placed before the call
             // the arguments of a call to a known function, on the lines prepared before it: the pushes (x86) or the instructions that write
-            // the argument registers / stack slots (x64)
-            void AnnounceCallInstruction(const AsmFunctionDetails* functionDetails, bool registerArguments);
+            // the argument registers / stack slots (x64; System V: the pushes of the arguments after the sixth); `formatArguments`: the arguments
+            // after the format of a variadic function too, by the conversions of the string it shows (`variadicFloatsApart`: a double in a vector
+            // register, not in the integer ones: System V, AAPCS64; `variadicSlots`: the registers they can take, ARM64EC: x0 .. x3, the others in the stack x4
+            // points to)
+            void AnnounceCallInstruction(
+                  const AsmFunctionDetails* functionDetails,
+                  bool registerArguments,
+                  bool systemVPushes       = false,
+                  bool formatArguments     = false,
+                  bool variadicFloatsApart = false,
+                  uint8 variadicSlots      = 0xFF);
         };
 
         // The lines of a x86/x64 code zone in the expanded layout (every line shown, no zone collapsed): the labels and the local variable
@@ -571,7 +616,7 @@ namespace View
         struct DissasmCollapsibleZone {
             uint32 start = 0;
             uint32 end   = 0; // exclusive
-            std::string name;
+            std::string name{};
             bool isCollapsed = false;
 
             bool Contains(uint32 line) const
@@ -590,13 +635,14 @@ namespace View
             bool isExport = false; // the name is the name of an export
             // x64 structured exception handling (Settings::AddExceptionScopes): the __try scopes of the function and its frame in the
             // unwind data (the prologue size, the frame register and its offset / 16)
-            std::vector<ExceptionScope> exceptionScopes;
+            std::vector<ExceptionScope> exceptionScopes{};
             uint8 prologSize    = 0;
             uint8 frameRegister = 0;
             uint8 frameOffset   = 0;
-            std::vector<ExceptionFunclet> exceptionFunclets; // the C++ exception handling (Settings::AddExceptionFunclets)
-            std::vector<std::pair<uint64, uint64>> chunks;   // its chunks (Settings::AddFunctionChunk): file offset, size
-            std::vector<ExceptionObject> exceptionObjects;   // the objects its unwinding destroys (Settings::AddExceptionObjects)
+            std::vector<ExceptionFunclet> exceptionFunclets{}; // the C++ exception handling (Settings::AddExceptionFunclets)
+            std::vector<std::pair<uint64, uint64>> chunks{};   // its chunks (Settings::AddFunctionChunk): file offset, size
+            std::vector<ExceptionObject> exceptionObjects{};   // the objects its unwinding destroys (Settings::AddExceptionObjects)
+            bool exceptionData = false;                      // an entry of the exception data (.pdata): its size covers its code only
         };
 
         struct DissasmCodeZoneInitData {
@@ -622,6 +668,12 @@ namespace View
             const std::map<uint64, ArmCodeMode>* armCodeModes = nullptr;
             // the pointers the loader writes, by file offset (SettingsData::relocatedPointers); can be null
             const std::map<uint64, uint64>* relocatedPointers = nullptr;
+            // the places inside the functions that are never function starts, by file offset (SettingsData::codeLocations); can be null
+            const std::set<uint64>* codeLocations = nullptr;
+            // the call sites of the exception handling of GCC / clang (SettingsData::landingPads); can be null
+            const std::vector<LandingPad>* landingPads = nullptr;
+            // the code of one function or fragment, by file offset -> size (SettingsData::codeRanges); can be null
+            const std::map<uint64, uint64>* codeRanges = nullptr;
             // the fields of the structures of the data, by VA; can be null
             const std::map<uint64, DissasmDataField>* dataFields = nullptr;
             // the named places of the plugin (imports, Objective-C references), keyed by RVA (by VA without an offset translation); can be null
@@ -671,9 +723,18 @@ namespace View
             std::unordered_map<uint64, MemoryMappingEntry> memoryMappings; // memory locations to functions
             std::map<uint64, DissasmFunctionEntry> functionEntries;         // the known function starts, by file offset
             std::vector<uint64> instructionBoundaries;                      // the file offsets where an instruction starts (sections)
+            std::map<uint64, uint64> arm64ECCode;                           // Settings::AddArm64ECCode: file offset -> end
+            bool IsArm64ECCode(uint64 fileOffset) const
+            {
+                const auto range = arm64ECCode.upper_bound(fileOffset);
+                return range != arm64ECCode.begin() && fileOffset < std::prev(range)->second;
+            }
             std::optional<uint64> globalOffsetTable;                         // 32 bit x86 PIC: the value of ebx in the PLT stubs
             std::map<uint64, ArmCodeMode> armCodeModes;                     // 32 bit ARM: the mode from a file offset on
             std::map<uint64, uint64> relocatedPointers;                     // the pointers the loader writes (file offset -> VA)
+            std::set<uint64> codeLocations;                                 // Settings::AddCodeLocation: never function starts (file offsets)
+            std::vector<LandingPad> landingPads;                            // Settings::AddLandingPads: the call sites of GCC / clang
+            std::map<uint64, uint64> codeRanges;                            // Settings::AddCodeRange: the FDEs (file offset -> size)
             // Mach-O LC_DYLD_CHAINED_FIXUPS (Settings::AddChainedFixups): decoded into relocatedPointers / memoryMappings when the viewer
             // (or the headless analysis) takes the settings
             std::vector<uint8> chainedFixups;
@@ -885,7 +946,16 @@ namespace View
 
         enum class CollapsibleZoneOperation : uint8 { Add, Expand, Collapse, Remove };
 
-        class Instance : public View::ViewControl
+        // the replay journal (DissasmReplay.hpp, DissasmReplayRecorder.hpp, DissasmReplayController.hpp, DissasmWorkDocument.hpp): they need
+        // the zones, which need this header
+        class DissasmReplayRecorder;
+        class DissasmReplayController;
+        struct DissasmReplayJournal;
+        struct DissasmWorkMeta;
+        enum class DissasmReplayImportSource : uint8;
+
+        // DissasmReplayHost: the playback of a replay journal in this view (CreateReplayController)
+        class Instance : public View::ViewControl, private DissasmReplayHost
         {
             enum class MouseLocation : uint8 { OnView, OnHeader, Outside };
             struct MousePositionInfo {
@@ -1103,8 +1173,8 @@ namespace View
             bool RunSearch(const DissasmSearch& search, bool showErrors);
             // moves the cursor to the instruction at the file offset (and to the labels above it); recorded in the jumps history
             bool MoveCursorToZoneFileOffset(DissasmCodeZone* zone, uint64 fileOffset, bool landOnLabels);
-            // the deep scans that did not end in InitZone continue in the frame updates; their end adds the labels (the lines change)
-            bool HasPendingDeepScans() const;
+            // the deep scans that did not end in InitZone continue in the frame updates; their end adds the labels (the lines change):
+            // HasPendingDeepScans (public)
             void EndDeepScan(DissasmCodeZone* zone, bool cancel);
             void FinishDeepScans(); // the actions that need the labels (rename, comments, cache, export) end the pending scans first
             void CancelDeepScans();
@@ -1162,9 +1232,107 @@ namespace View
             void LoadCacheData();
             void SaveCacheData();
 
+            // the replay journal of the file: recorded while the user works (the observer of the edits of the zones), saved in the cache
+            // file; muted in the windows of a solution (Solution / Replay roles)
+            std::unique_ptr<DissasmReplayRecorder> replay;
+            // the playback of a journal in this view (CreateReplayController)
+            std::unique_ptr<DissasmReplayController> replayController;
+            // the role of the window in a course (OnStart: the binding of the object); Solution / Replay never read nor write the cache
+            GView::Security::Learning::WorkspaceRole role = GView::Security::Learning::WorkspaceRole::Normal;
+            // a work document handed to the window (Hooks::TakePendingWorkDocument): applied once the zones are analysed
+            std::optional<std::string> pendingWorkDocument;
+            std::string workDocumentError; // why the pending work document could not be applied (empty: it was applied / there was none)
+            uint64 courseWorkRevision  = 0; // the revision of the course server the work was last saved as / loaded from (0: none)
+            bool mouseClickInProgress  = false; // a click moves the cursor (MoveScrollTo): a visit at once
+            uint64 readOnlyNoticeMs    = 0;     // the last "read only" notification (one per READ_ONLY_NOTICE_MS)
+            bool replayWaitingForAnalysis = false; // a replay step was asked while the analysis runs (the status line says so)
+            // "Replay: step 12/57 - comment added at 0x401040" (empty without a replay)
+            std::string ReplayStatusText() const;
+            // the read-only menu of the windows of a solution (selections, collapsible zones: no edit)
+            Menu readOnlyRightClickMenu;
+            // a command / key that changes the annotations (or exports / imports them): refused in the windows of a solution
+            static bool IsAnnotationEditCommand(uint32 commandId);
+            // read-only window and an edit command: one throttled notification, true (the command is refused)
+            bool RefuseInReadOnly(uint32 commandId);
+            // the replay journal editor of the window (DissasmReplayEditor.cpp): refused in the windows of a solution, and in a student's task
+            // window unless the token is course staff
+            void ShowReplayJournalEditor();
+            // the replay buttons (Back / Forward / To start / To end): one step, then the view is drawn again
+            void RunReplayCommand(uint32 commandId);
+            // the code zone and the anchor of the line of the cursor / of a saved cursor; none for a line that is not a line of an analysed code
+            // zone (a title, a structure, a text zone)
+            std::optional<std::pair<DissasmCodeZone*, DissasmCommentAnchor>> ResolveCursorPlace() const;
+            std::optional<std::pair<DissasmCodeZone*, DissasmCommentAnchor>> ResolvePlace(const CursorState& state) const;
+            // DissasmReplayHost
+            DissasmCodeZone* FindZone(uint64 fileOffset) override;
+            bool MoveCursor(DissasmCodeZone& zone, const DissasmCommentAnchor& anchor) override;
+            void ZoneLinesChanged(DissasmCodeZone& zone) override;
+            void Reanalyze(DissasmCodeZone& zone, std::optional<uint64> keepAddress) override;
+
           public:
             Instance(Reference<GView::Object> obj, Settings* settings);
             virtual ~Instance() override;
+
+            // the course work of the window (Learning mode): an edit / an event of the journal since the last MarkCourseWorkSaved
+            bool HasUnsavedCourseChanges() const;
+            void MarkCourseWorkSaved(uint64 revision);
+            uint64 GetCourseWorkRevision() const
+            {
+                return courseWorkRevision;
+            }
+            // nothing to lose when a saved work is loaded into the window: no cache file was loaded, the journal is empty, no edit was made
+            bool IsCourseStateEmpty() const;
+            DissasmReplayRecorder* GetReplayRecorder()
+            {
+                return replay.get();
+            }
+            GView::Security::Learning::WorkspaceRole GetWorkspaceRole() const
+            {
+                return role;
+            }
+            // a window of a teacher's solution (Solution / Replay): the annotations are read only, nothing is written to a cache
+            bool IsReadOnlyRole() const
+            {
+                return role == GView::Security::Learning::WorkspaceRole::Solution || role == GView::Security::Learning::WorkspaceRole::Replay;
+            }
+            // the analysis of a zone runs in the frame updates (the replay buttons wait for it)
+            bool HasPendingDeepScans() const;
+            // at least one code zone is analysed (its lines were drawn once): a work document can be built / applied now
+            bool HasAnalysedCodeZones() const;
+            // a work document applied once the zones are analysed (as the one handed to the window when it was opened: ApplyPendingWorkDocument,
+            // the window is clean afterwards); it replaces a document that was waiting
+            void QueueWorkDocument(std::string json);
+            bool HasQueuedWorkDocument() const
+            {
+                return pendingWorkDocument.has_value();
+            }
+            // the replay journal editor (the course menu runs it as the viewer command does)
+            void EditReplayJournal()
+            {
+                ShowReplayJournalEditor();
+            }
+            // the work document of the analysed zones (DissasmWorkDocument.hpp) with the journal of the recorder (includeReplay), compact JSON;
+            // empty when no zone is analysed yet (the pending deep scans end first)
+            std::string BuildWorkDocumentText(const DissasmWorkMeta& meta, bool includeReplay = true);
+            // a work document applied as ImportAnnotations does (the document wins, nothing is deleted), then its journal replaces the journal
+            // of the recorder and an Import event is recorded; the Replay role keeps only the journal. False and the reason in `summary` when it
+            // is not a work document / no zone is analysed; `summary`: what was imported
+            bool ApplyWorkDocument(std::string_view json, DissasmReplayImportSource source, std::string* summary = nullptr);
+            // the document handed to the window when it was opened, once the zones are analysed; true when it was applied now (the window
+            // is then clean: it shows what the server has). No dialog from here (it runs in the frame updates): GetWorkDocumentError
+            bool ApplyPendingWorkDocument();
+            const std::string& GetWorkDocumentError() const
+            {
+                return workDocumentError;
+            }
+            // the playback of a journal in this view (owned by the view, it replaces the previous one): the recorder is suspended while it
+            // exists; CloseReplayController ends it
+            DissasmReplayController* CreateReplayController(DissasmReplayJournal journal);
+            DissasmReplayController* GetReplayController()
+            {
+                return replayController.get();
+            }
+            void CloseReplayController();
 
             virtual void Paint(AppCUI::Graphics::Renderer& renderer) override;
             // IDA's navigation band in the last column of the view (the functions colored by what their APIs do, the shown lines marked); a
