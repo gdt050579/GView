@@ -522,7 +522,10 @@ namespace
             }
         }
 
-        std::string storageMode = "file";
+        // absent (or null) storageMode: "file", except for a schema 2 policy that declares contentEncryption (see below)
+        const auto storageModeIt      = j.find("storageMode");
+        const bool storageModePresent = storageModeIt != j.end() && !storageModeIt->is_null();
+        std::string storageMode       = "file";
         POLICY_TRY(ReadString(j, "storageMode", storageMode, false, 16));
         if (storageMode == "file")
             p.storageMode = StorageMode::File;
@@ -606,6 +609,10 @@ namespace
         }
         if (!p.contentEncryption.empty() && p.contentEncryption != CONTENT_ENCRYPTION_V1)
             return Fail("POLICY_MALFORMED", "unsupported contentEncryption");
+        // a current server always declares contentEncryption; when it leaves storageMode out, the safer mode applies
+        // (memory: task content is never written to disk). An explicit storageMode is always kept as sent.
+        if (v2 && !storageModePresent && !p.contentEncryption.empty())
+            p.storageMode = StorageMode::Memory;
         if (v2 && p.storageMode == StorageMode::Memory && (p.contentEncryption.empty() || p.contentKeyId.empty()))
             return Fail("POLICY_MALFORMED", "memory storage mode requires contentEncryption and contentKeyId");
         if (!p.contentEncryption.empty() && p.contentKeyId.empty())

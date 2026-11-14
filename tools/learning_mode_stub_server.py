@@ -8,8 +8,10 @@ Implements the server side of docs/source/learning_mode_protocol.rst for end-to-
   POST /GView/Connect                 signed policy (Ed25519 over the exact bytes, schema 2, digest, subject, server)
   POST /GView/GetWeeks                catalogue: week 1 (problems + resources); a disabled item and a week that is not
                                       visible yet are never sent
-  POST /GView/GetProblems/<name>      task content with the delivery headers (GVE1 = HKDF + AES-256-GCM in memory mode)
-  POST /GView/GetResource/<name>      resource content
+  POST /GView/GetProblems/<name>      task content with the delivery headers, always GVE1 (HKDF + AES-256-GCM,
+                                      X-GView-Encrypted: 1) in both delivery modes; X-GView-Delivery is "file" only
+                                      when the policy storageMode is file AND the item is a file item
+  POST /GView/GetResource/<name>      resource content (file / text kinds), encrypted the same way
   POST /GView/SubmitFlag              grading with idempotency keys (a resent clientSubmissionId answers duplicate:true)
   POST /GView/Telemetry               batches, de-duplicated on (sessionId, seq): {"accepted": n, "duplicates": m}
   POST /GView/WebLaunch               one-click launch of the web build (--launch-code): {"code"} -> the connection
@@ -43,8 +45,15 @@ prevent screenshots), or a 426 UNSUPPORTED_CLIENT with --refuse-platform web-was
   python tools/learning_mode_stub_server.py --http --cors-origin http://127.0.0.1:8765 --launch-code <32-64 chars>
       then open http://127.0.0.1:8765/GView.html#launch=<code>&server=http%3A%2F%2F127.0.0.1%3A8443
 
-Fault injection: --tamper-policy (signature does not verify), --corrupt-blob (GCM tag fails), --delay-ms (slow
-server: responsiveness and cancellation). The signing key is derived from a public seed: FOR TESTS ONLY.
+Every policy carries contentEncryption + contentKeyId (also with --storage-mode file); the catalogue deliveryMode
+follows the same rule as X-GView-Delivery.
+
+Fault injection: --tamper-policy (signature does not verify), --corrupt-blob (GCM tag fails, both delivery modes),
+--delay-ms (slow server: responsiveness and cancellation), --legacy-policy-once (the first Connect of each token gets a
+policy issued "before content encryption": no contentEncryption / contentKeyId, storageMode file; while that policy is
+the token's current one, GetProblems/<name> and GetResource/<name> answer 403 POLICY_EXPIRED; every later Connect
+gets the normal policy - the client reconnects once and retries). The signing key is derived from a public seed: FOR
+TESTS ONLY.
 
 Course notes: --notes on|off|absent (the policy's "notes" object; off = the student note endpoints answer 403, absent =
 a server without notes), --notes-forbidden (the policy says on, the endpoints answer 403: notes turned off after
@@ -209,6 +218,9 @@ class StubState:
         self.solutions = {}           # (problem, audience) -> solution
         self.solution_last_update = {}  # id -> (base revision, content) of the last applied update
         self.next_solution_id = 1
+        # --legacy-policy-once: tokens that already got their legacy policy / whose current policy is the legacy one
+        self.legacy_issued = set()
+        self.legacy_current = set()
 
     def is_staff(self, token: str) -> bool:
         return self.args.staff or (self.staff_token is not None and token == self.staff_token)
@@ -221,12 +233,14 @@ class StubState:
         return HKDF(algorithm=hashes.SHA256(), length=32, salt=self.policy_id(token).encode(),
                     info=b"GView-Content-v1").derive(token.encode())
 
-    def policy_bytes(self, platform: str, token: str) -> bytes:
+    def policy_bytes(self, platform: str, token: str, legacy: bool = False) -> bytes:
+        """legacy: a policy issued before content encryption (--legacy-policy-once): no contentEncryption /
+        contentKeyId and storageMode file (a memory policy without encryption is POLICY_MALFORMED for the client)"""
         web = platform.startswith("web-")
         now = int(time.time())
         policy = {
             "schema": 2,
-            "id": self.policy_id(token),
+            "id": self.policy_id(token) + ("_old" if legacy else ""),
             "digest": "",
             "purpose": "GView learning stub server",
             "issuedAt": now,
@@ -246,6 +260,10 @@ class StubState:
             "contentEncryption": "aes-256-gcm-hkdf-v1",
             "contentKeyId": hashlib.sha256(self.content_key(token)).hexdigest()[:16],
         }
+        if legacy:
+            policy["storageMode"] = "file"
+            del policy["contentEncryption"]
+            del policy["contentKeyId"]
         if self.args.notes != "absent":
             policy["notes"] = {"enabled": self.args.notes == "on", "maxChars": self.args.notes_max_chars}
         if self.args.work != "absent":
@@ -255,7 +273,15 @@ class StubState:
         return json.dumps(policy, sort_keys=True, separators=(",", ":")).encode()
 
     def connect_response(self, platform: str, token: str) -> dict:
-        data = self.policy_bytes(platform, token)
+        legacy = False
+        if self.args.legacy_policy_once and token not in self.legacy_issued:
+            self.legacy_issued.add(token)
+            legacy = True
+        if legacy:
+            self.legacy_current.add(token)
+        else:
+            self.legacy_current.discard(token)
+        data = self.policy_bytes(platform, token, legacy)
         signature = self.key.sign(data)
         if self.args.tamper_policy:
             data = data.replace(b'"stub-course"', b'"stub-coursX"')  # one byte changed after signing
@@ -277,7 +303,7 @@ class StubState:
         problems, resources = [], []
         staff = self.is_staff(token)
         for order, (name, it) in enumerate(self.items.items()):
-            entry = {"name": name, "title": it["title"], "order": order, "deliveryMode": it["mode"],
+            entry = {"name": name, "title": it["title"], "order": order, "deliveryMode": self.delivery_mode(it),
                      "fileName": it["fileName"], "size": len(it["content"]),
                      "sha256": hashlib.sha256(it["content"]).hexdigest()}
             if it["problem"]:
@@ -300,23 +326,24 @@ class StubState:
         return {"status": "ok", "weeks": [{"id": 1, "name": "Week 1", "title": "Getting started", "order": 1,
                                            "problems": problems, "resources": resources}]}
 
+    def delivery_mode(self, it: dict) -> str:
+        """catalogue deliveryMode and X-GView-Delivery: "file" only when the policy stores files AND the teacher set
+        the item to file"""
+        return "file" if self.args.storage_mode == "file" and it["mode"] == "file" else "memory"
+
     def delivery(self, name: str, token: str):
+        """every body is GVE1 (X-GView-Encrypted: 1), whatever the delivery mode"""
         it = self.items[name]
         plaintext = it["content"]
-        memory = it["mode"] == "memory" or self.args.storage_mode == "memory"
-        headers = {"X-GView-Delivery": "memory" if memory else "file",
+        headers = {"X-GView-Delivery": self.delivery_mode(it),
                    "X-GView-SHA256": hashlib.sha256(plaintext).hexdigest(),
-                   "X-GView-Filename": it["fileName"], "X-GView-Item-Version": "1"}
-        if memory:
-            iv = os.urandom(12)
-            aad = name.encode() + b"\x00" + self.policy_id(token).encode()
-            body = b"GVE1" + iv + AESGCM(self.content_key(token)).encrypt(iv, plaintext, aad)
-            if self.args.corrupt_blob:
-                body = body[:-1] + bytes([body[-1] ^ 0x01])
-            headers["X-GView-Encrypted"] = "1"
-        else:
-            body = plaintext
-            headers["X-GView-Encrypted"] = "0"
+                   "X-GView-Filename": it["fileName"], "X-GView-Item-Version": "1",
+                   "X-GView-Encrypted": "1"}
+        iv = os.urandom(12)
+        aad = name.encode() + b"\x00" + self.policy_id(token).encode()
+        body = b"GVE1" + iv + AESGCM(self.content_key(token)).encrypt(iv, plaintext, aad)
+        if self.args.corrupt_blob:
+            body = body[:-1] + bytes([body[-1] ^ 0x01])
         return body, headers
 
     def connection_string(self, token: str = None, server_url: str = None) -> str:
@@ -435,6 +462,9 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/GView/GetWeeks":
                 self.reply_json(200, st.weeks(token))
             elif path.startswith("/GView/GetProblems/") or path.startswith("/GView/GetResource/"):
+                if token in st.legacy_current:
+                    self.error(403, "POLICY_EXPIRED", "policy issued before content encryption; reconnect")
+                    return
                 name = path.rsplit("/", 1)[1]
                 it = st.items.get(name)
                 if it is None or name in st.disabled or it["problem"] != path.startswith("/GView/GetProblems/"):
@@ -1047,7 +1077,10 @@ def main():
     ap.add_argument("--policy-minutes", type=int, default=240)
     ap.add_argument("--flush-interval", type=int, default=15, help="telemetry.flushIntervalSeconds of the policy")
     ap.add_argument("--tamper-policy", action="store_true", help="send a policy whose signature does not verify")
-    ap.add_argument("--corrupt-blob", action="store_true", help="flip a bit in encrypted deliveries")
+    ap.add_argument("--corrupt-blob", action="store_true", help="flip a bit in encrypted deliveries (every delivery)")
+    ap.add_argument("--legacy-policy-once", action="store_true",
+                    help="the first Connect of each token gets a policy without contentEncryption (storageMode file); "
+                         "its downloads answer 403 POLICY_EXPIRED until the next Connect")
     ap.add_argument("--delay-ms", type=int, default=0, help="wait this long before answering every POST")
     ap.add_argument("--launch-code", help="one-time code of POST /GView/WebLaunch (one-click launch of the web build): "
                                           "answered once with a connection string, then with 401")

@@ -225,8 +225,8 @@ Fields (unknown top-level fields are ignored; a *present* field with a wrong typ
      - []
      - <= 256 names ``[A-Za-z0-9_.-]{1,64}``; applies when ``Plugins`` is disabled; matched case-insensitively
    * - ``storageMode``
-     - ``file``
-     - ``file`` or ``memory``
+     - ``file`` (``memory`` when absent and ``contentEncryption`` is set)
+     - ``file`` or ``memory``; an explicit value is always kept as sent
    * - ``watermark``
      - ""
      - <= 128 chars, shown in every file window title
@@ -271,7 +271,8 @@ Fields (unknown top-level fields are ignored; a *present* field with a wrong typ
      - clamped to [100, 100000]; ``GetNotes.maxChars`` (request time) replaces it once received
    * - ``contentEncryption``
      - ""
-     - "" or ``aes-256-gcm-hkdf-v1``; **required** when ``storageMode=memory``
+     - "" or ``aes-256-gcm-hkdf-v1``; present in every policy issued by current servers; **required** when
+       ``storageMode=memory``; when present, every content body must be encrypted (both delivery modes)
    * - ``contentKeyId``
      - ""
      - 16 lowercase hex; **required** with ``contentEncryption``
@@ -306,8 +307,16 @@ Effective mode = most restrictive of ``policy.storageMode``, the catalogue ``del
    aad   = UTF8(itemName) || 0x00 || UTF8(policy.id)
    blob  = "GVE1" || iv(12) || ciphertext || tag(16)
 
-Rules: an encrypted blob requires an active policy; a memory delivery that is **not** encrypted is refused when the
-policy declares ``contentEncryption``; the SHA-256 of the plaintext is verified in all v2 cases.
+Rules: an encrypted blob requires an active policy; a delivery that is **not** encrypted is refused (in both
+``memory`` and ``file`` mode) when the policy declares ``contentEncryption`` - only a policy without
+``contentEncryption`` (older servers) or a legacy session without a policy accepts a body in clear; the SHA-256 of
+the plaintext is verified in all v2 cases. A ``file`` item is decrypted in memory and only then written to the task
+folder.
+
+Current servers send every problem / file / text body encrypted, and answer ``403 POLICY_EXPIRED`` to a download made
+with a policy issued before content encryption (no ``contentEncryption``). The Learning window then reconnects once
+with the connection string it holds, refreshes the catalogue and retries the same item once (never in a loop); if the
+reconnect fails it asks the student to press Reconnect.
 
 Memory mode: the blob is decrypted directly into a ``LockedBuffer`` (``VirtualAlloc`` + ``VirtualLock`` - the
 working set is grown if needed - / ``mmap`` + ``mlock`` + ``MADV_DONTDUMP``), the HTTP buffers use an allocator that
@@ -627,7 +636,8 @@ All of these are additional strictness or clarifications; ``plans/LEARNING_MODE_
 2. Course-server policies must be ``schema: 2`` (schema 1 is only accepted by the file-based ``LoadPolicyFromFiles``).
 3. ``storageMode: memory`` requires ``contentEncryption`` and ``contentKeyId``; ``contentEncryption`` requires
    ``contentKeyId``; present fields with wrong JSON types are rejected (fail closed).
-4. Unencrypted ``memory`` deliveries are refused when the policy declares ``contentEncryption``; ``X-GView-SHA256``
+4. Unencrypted deliveries (``memory`` and ``file``) are refused when the policy declares ``contentEncryption``; a
+   schema 2 policy without ``storageMode`` that declares ``contentEncryption`` is treated as ``memory``; ``X-GView-SHA256``
    and ``X-GView-Delivery`` are mandatory in protocol 2.
 5. Telemetry: explicit per-event field whitelist (table above); ``note_add`` counter; ``eventLevel:false`` means
    counters only; item events only for catalogue windows; ``policy_rejected`` only with prior consent.
@@ -727,6 +737,39 @@ so its network jobs complete only when it becomes visible again.
 under a non-extractable key (*File > Stored files > Forget Learning connection*). Learning task files saved in
 ``file`` mode land in the home folder and are kept like any other file; ``memory`` content is never written to the
 file system and therefore never stored.
+
+**Downloads.** Every file GView hands to the browser (File dialog *Download*, the download that follows a *Save*,
+*Stored files > Download*) goes through the ``onDownload`` hook of the page, which asks GView first
+(``GViewCore/src/App/BrowserDownloadGate.cpp``). Refused:
+
+* everything while Learning and Evaluation Mode is in use: any session state but ``Disconnected`` (``Active``,
+  ``Expired``, ``Legacy``, ``Error``, ...) - *End session* first;
+* everything while the policy restricts ``Export``;
+* any file whose SHA-256 is in the **denylist** of delivered items: the SHA-256 of every Learning item delivered in
+  this browser (problems and file / text resources, any delivery mode, recorded before the item is opened; also a
+  local copy opened without a download), kept encrypted by the page as the secret ``learning.taskHashes`` (the newest
+  900 entries; clearing the site data removes it, together with every stored file);
+* any file whose bytes are those of a regular file (same size and SHA-256) under a task folder:
+  ``$HOME/Documents/GView``, the configured ``LearningDownloadFolder`` and every folder of the home folder that holds
+  a task manifest (``.gview-items.json``). Links are not followed; a scan of a task folder that fails or reaches its
+  bounds (20000 entries, depth 16) refuses; the search for manifests is best effort within the same bounds.
+
+*Stored files > Download* also refuses the paths under those folders, with or without a session.
+
+What this covers: the cleartext of a task file (or an identical copy, under any name) does not reach the file system
+of the machine through a browser download. It is not data loss prevention: a copy whose bytes were modified (a single
+byte is enough) is not recognised, and the screen, the clipboard and the developer tools of the browser are out of its
+scope.
+
+A refusal is shown only in the status line of the page: AppCUI hands the file to the page without waiting for an
+answer and reports the download as done to GView (an AppCUI change - a return value or a veto callback - is needed to
+show it inside GView; follow-up).
+
+Task files of earlier sessions restored from the storage of the browser are kept (encrypted at rest in OPFS, in clear
+only in the in-memory file system of the page) and are not downloadable through the rules above; they are not deleted
+automatically (the student can delete them in *Stored files*); *Open* from *Stored files* still works. Side effect:
+while Learning and Evaluation Mode is in use, no *Save As* export (annotations, ``.asm``, PDF text, ...) reaches the
+machine of the user; the file stays in the home folder (kept encrypted in OPFS).
 
 17. One-click launch of the web build
 -------------------------------------

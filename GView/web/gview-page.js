@@ -4,6 +4,7 @@
 //   * starts GView (GView.mjs) on the AppCUI canvas host (appcui-host.js)
 //   * gives the files dropped on the page / picked with "Open files..." to GView and keeps them in the storage
 //   * tells GView when the page is hidden (Learning and Evaluation Mode sends its pending telemetry)
+//   * asks GView before any file of GView is downloaded by the browser (onDownload: Learning task files never are)
 //   * one-click launch of Learning and Evaluation Mode (<page>#launch=<code>&server=<url>): redeems the one-time code
 //     while GView.wasm downloads, and gives the connection string to GView (GViewCore/src/App/BrowserLaunch.cpp)
 
@@ -151,8 +152,72 @@ setStatus('Starting GView...');
 // must exist before the module starts: GView waits for it to restore the files of the previous visits
 globalThis.gviewStorage = new GViewStorage(setStatus);
 
+// ------------------------------------------------------------------------------------------------ downloads
+// Every file GView hands to the browser (File dialog > Download, the download after a Save, Stored files > Download)
+// goes through onDownload; GView decides first (GViewCore/src/App/BrowserDownloadGate.cpp): Learning task files, and
+// anything while a Learning session exists or exports are restricted, never leave the page. Fails closed (no module,
+// no memory, an exception => refused). Names and bytes are never written to the console.
+function downloadVerdict(name, data) {
+  const h = window.appcuiHost; // assigned once startAppCUI resolved: read at call time
+  const mod = h && h.mod;
+  if (!mod || h.exited || typeof mod._gview_browser_download_allowed !== 'function') {
+    return { ok: false, reason: 'GView is not running' };
+  }
+  const nameBytes = new TextEncoder().encode(name);
+  let namePtr = 0, dataPtr = 0, handedOver = false;
+  try {
+    namePtr = nameBytes.length ? (mod._gview_browser_alloc(nameBytes.length) >>> 0) : 0;
+    dataPtr = data.length ? (mod._gview_browser_alloc(data.length) >>> 0) : 0;
+    if (namePtr === 0 || (data.length && dataPtr === 0)) {
+      return { ok: false, reason: 'not enough memory to check the file' }; // released by the finally block
+    }
+    mod.HEAPU8.set(nameBytes, namePtr); // HEAPU8 is re-read after the allocations (memory may have grown)
+    if (data.length) mod.HEAPU8.set(data, dataPtr);
+    // from here on the module owns both buffers: it wipes and frees them, whatever its answer
+    handedOver = true;
+    if (mod._gview_browser_download_allowed(namePtr, nameBytes.length, dataPtr, data.length) === 1) return { ok: true };
+    return { ok: false, reason: readCString(mod, mod._gview_browser_download_refusal() >>> 0) || 'refused' };
+  } finally {
+    // failed (or threw) after an allocation: release only - nameSize 0 makes the module refuse, the real dataSize
+    // makes it wipe the data buffer (which may already hold the bytes) before freeing it
+    if (!handedOver && (namePtr !== 0 || dataPtr !== 0)) {
+      try {
+        mod._gview_browser_download_allowed(namePtr, 0, dataPtr, dataPtr !== 0 ? data.length : 0);
+      } catch (e) { /* the module is gone: nothing to release */ }
+    }
+  }
+}
+
+// what appcui-host.js does when no onDownload option is given
+function saveToMachine(name, data) {
+  const url = URL.createObjectURL(new Blob([data], { type: 'application/octet-stream' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.style.display = 'none';
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000); // the browser may read the blob asynchronously
+}
+
+function onDownload(name, data) {
+  let verdict;
+  try {
+    verdict = downloadVerdict(name, data);
+  } catch (e) {
+    verdict = { ok: false, reason: 'the file could not be checked' };
+  }
+  if (!verdict.ok) {
+    data.fill(0); // our copy (FS.readFile): the bytes may be a task sample
+    setStatus('Download refused: ' + verdict.reason + '.');
+    return;
+  }
+  saveToMachine(name, data);
+}
+
 const host = await startAppCUI(createGViewModule, canvas, document.getElementById('term-host'),
-                               { fontFamily: '"JuliaMono", monospace', fontSizeCss: 16 });
+                               { fontFamily: '"JuliaMono", monospace', fontSizeCss: 16, onDownload });
 window.appcuiHost = host; // diagnostics / automation
 
 await globalThis.gviewStorage.ready;
