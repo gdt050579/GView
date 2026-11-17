@@ -68,11 +68,36 @@ Utils::GStatus ValidateServerUrl(std::string_view url, bool allowPlainHttpLocalh
 Utils::GStatus ParseConnectionString(std::string_view connectionString, bool allowPlainHttpLocalhost, ConnectionInfo& out);
 std::string BuildConnectionString(std::string_view token, std::string_view serverUrl, std::string_view publicKeyHex, std::string_view extraJson);
 
+// ---------------------------------------------------------------- launch link of the web build
+// <page>#launch=<one-time code>&server=<url>: the page redeems the code at POST <server>/GView/WebLaunch and gives the
+// returned connection string to GView (GView/web/gview-page.js, docs/source/learning_mode_protocol.rst).
+//
+// "scheme://host[:port]" of a server URL (lower case, default port omitted: the same text as URL.origin in a browser);
+// empty when the URL is not accepted by ValidateServerUrl (plain http is accepted here for the loopback hosts only)
+std::string ServerOrigin(std::string_view url);
+// A connection string received from a launch code redeemed at serverOrigin: the same parser and checks as a pasted one,
+// plus: version 2 with the policy public key, and its server has the origin the code was redeemed at.
+Utils::GStatus ValidateLaunchConnectionString(std::string_view connectionString, std::string_view serverOrigin, bool allowPlainHttpLocalhost, ConnectionInfo& out);
+// Space separated list of the launch servers approved in this browser ([GView] LearningTrustedLaunchOrigins)
+constexpr size_t MAX_TRUSTED_LAUNCH_ORIGINS = 32;
+bool OriginListContains(std::string_view list, std::string_view origin);
+// adds the origin (the oldest entries are dropped beyond MAX_TRUSTED_LAUNCH_ORIGINS); an invalid origin is ignored
+std::string OriginListAdd(std::string_view list, std::string_view origin);
+
 // hex(sha256(token))[0:16]
 std::string SubjectForToken(const SecureString& token);
 bool IsValidItemName(std::string_view name) noexcept;
 // basename only, no separators / reserved names / control characters; never empty
 std::string SanitizeFileName(std::string_view name);
+// A single file-system-safe path component (folder or file name) built from untrusted UTF-8 text, valid on Windows,
+// Linux and macOS: path separators, characters Windows rejects (< > : " | ? *), control characters and invalid UTF-8
+// become '_'; leading/trailing dots and spaces are removed (so "." / ".." / hidden names cannot come out of it); Windows
+// device names (CON, PRN, AUX, NUL, COM0-9, LPT0-9, with or without an extension) get a '_' prefix; a longer result is
+// cut to maxBytes (keeping a short extension) without splitting a UTF-8 sequence. Returns fallback when nothing usable
+// remains. Idempotent: sanitizing its own output returns it unchanged.
+std::string SanitizePathComponent(std::string_view text, std::string_view fallback, size_t maxBytes = 128);
+// Folder name of a course server: "https://user@Course.Example.edu:8443/api" -> "course.example.edu_8443"
+std::string ServerFolderName(std::string_view serverUrl);
 // replaces control characters (except \n and \t when multiline) and truncates
 std::string SanitizeDisplayText(std::string_view text, size_t maxLen, bool multiline);
 
@@ -90,6 +115,8 @@ enum class ErrorCode : uint8 {
     ItemDisabled,
     UnsupportedClient,
     ServerError,
+    Conflict,        // 409 of the note endpoints (compare-and-set failed, spec §10.11); SubmitFlag's 409 is AlreadySolved
+    PayloadTooLarge, // 413 (spec §10.9), mapped from the HTTP status
     Transport, // client side: no HTTP response at all
     Protocol,  // client side: response does not follow the contract
 };
@@ -106,6 +133,15 @@ std::string_view ErrorCodeName(ErrorCode code) noexcept;
 ServerError ParseErrorEnvelope(long httpStatus, BufferView body, std::string_view retryAfterHeader);
 std::string DescribeError(const ServerError& err);
 
+// JSON string literal of s (quotes included) appended to out: the hand-built request bodies (no copy of secrets in a json DOM)
+void AppendJsonString(SecureString& out, std::string_view s);
+
+// ---------------------------------------------------------------- audiences (course notes §10.11, solutions §10.12)
+enum class NoteAudience : uint8 { All, G1, G2 };
+std::string_view NoteAudienceName(NoteAudience a) noexcept; // "all", "G1", "G2"
+// the wire names above; anything else (other case, unknown group) is not an audience
+std::optional<NoteAudience> ParseNoteAudience(std::string_view name) noexcept;
+
 // ---------------------------------------------------------------- connect (spec §2.1)
 struct ConnectResponse {
     bool legacy{ false }; // empty / non-JSON 200 body from a pre-v2 server
@@ -116,6 +152,10 @@ struct ConnectResponse {
     std::vector<uint8> signature;
     std::string displayName;
     int64 score{ 0 };
+    // optional, additive (spec §10.12): course-staff tokens may publish solutions; the audiences they may publish to
+    // (All first, unknown names dropped). GetWork is authoritative; absent = not announced at connect.
+    std::optional<bool> canPublishSolutions;
+    std::optional<std::vector<NoteAudience>> audiences;
 };
 Utils::GStatus ParseConnectResponse(BufferView body, ConnectResponse& out);
 
@@ -128,6 +168,9 @@ struct MeState {
     uint32 attempts{ 0 };
     int64 pointsAwarded{ 0 };
     uint64 firstDeliveredAt{ 0 };
+    // course work saved on the server (spec §10.12): when, and its revision; 0 = none
+    uint64 workSavedAt{ 0 };
+    int64 workRevision{ 0 };
 };
 
 struct CatalogueItem {
@@ -146,6 +189,9 @@ struct CatalogueItem {
     int64 pointsCurrent{ 0 };
     int64 pointsMin{ 0 };
     bool requireExplanation{ false };
+    // a teacher solution is published for this student (spec §10.12), and it carries a replay journal
+    bool solutionAvailable{ false };
+    bool solutionHasReplay{ false };
     bool hasMe{ false };
     MeState me;
 

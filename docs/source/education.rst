@@ -16,7 +16,9 @@ Step-by-step workflow
 
 The student launches GView, selects *Options > Learning and Evaluation Mode* (or
 starts ``GView learn <connectionString>``) and pastes the connection string received from
-the teacher. The connection string contains the student's secret access token, the server
+the teacher. With the browser build, the course page can do this step for the student: its
+*Open GView in the browser* button opens GView already connected, through a one-time launch code
+(:doc:`wasm`, *Opening GView from a course page*). The connection string contains the student's secret access token, the server
 address and the public key used to verify policies. GView connects over verified TLS; if
 the server accepts the token, it returns a policy (JSON) signed with Ed25519.
 
@@ -59,6 +61,69 @@ information, they can add comments to the code.
 In an example scenario, the requirement might be to identify the value of the third
 variable from the stack. Upon inspection, the student can determine that the
 correct value is 3.
+
+**Taking notes (when the course offers course notes).**
+
+While analysing, the student can keep notes: *Notes* in the Learning window, or Ctrl+F11
+(*AddNote*) in a task window opened from the catalogue, which opens the note of that task (or
+starts one). The Notes window has two lists:
+
+* **My notes** - the student's private notes, kept by the course server and shown only to
+  their author. Each note has a title, a plain-text body (handy for assembly snippets) and a
+  scope: general, or one week, problem or resource (preselected to the open task; the notes of
+  the open task are listed first). Notes are saved automatically about two seconds after the
+  last keystroke, when the window closes and when the session ends; the status line shows
+  *Saved*, *Unsaved changes*, *Saving...* or, after a network problem, *retrying* - the text is
+  kept and sent again. If the same note was changed elsewhere in the meantime (another computer),
+  the server version is kept and the student's text is saved as a new note "... (local copy)".
+  *End session* warns if some note text could not be sent yet.
+* **Course notes** - notes written by the teachers for everyone or for one lab group, grouped by
+  week and task (the open task first). Students read them; course staff see *New course note*,
+  *Save course note* and *Delete course note* and can set the audience, the order and whether a
+  note is shown.
+
+When the teacher turns notes off (for example during an exam), the Notes window is not
+available and GView says "Course notes are disabled by your teacher". Note text is only ever
+sent to the course server: GView never writes it to disk and never puts it in telemetry (which
+only counts that a note was started). Outside Learning mode, Ctrl+F11 keeps adding the usual
+local note to the window.
+
+**Saving the work and continuing on another computer (when the course keeps course work).**
+
+The names, comments, variables and collapsible zones the student adds in the disassembly, and
+the *replay journal* of how they got there (the lines visited, the jumps followed, the edits),
+can be saved on the course server: *Course* (Ctrl+Alt+L) in the task window, then *Save work
+to course*. The dialog shows what is sent and its size; *Include replay journal* is checked by
+default. Only these changes are sent, never the task file or the local disassembly cache.
+Closing a task window with changes that are not on the server asks *Save and close*,
+*Close without saving* or *Cancel*.
+
+On another computer, opening the task from the Learning window offers to load the saved work
+(when the window is still empty); *Open with work* loads it directly, and *Resume work from
+course* in the *Course* menu adds it to a window that already has annotations (where both have
+a name or a comment, the saved one wins; nothing is deleted). If the same work was saved from
+another computer in the meantime, GView says when, and the student chooses: keep the server
+copy (it is loaded into the window) or overwrite it. The *Course* column of the Learning window
+shows when the work was last saved.
+
+**Comparing with the teacher's solution and replaying it.**
+
+When the teacher publishes a solution of a problem (for everyone or for one lab group), the
+*Course* column says *solution* (or *solution+replay*) and the *Course* menu offers:
+
+* *Compare with the teacher's solution* - a second, read-only window of the same task with the
+  teacher's names and comments, tiled next to the student's window (the student's window on the
+  left keeps the focus). It never changes the student's files or disassembly cache.
+* *Replay the teacher's solution* - a read-only window that starts without the teacher's
+  annotations and replays the teacher's steps: ``Alt+Right`` / ``Alt+Left`` one step forward /
+  back, ``Alt+End`` / ``Alt+Home`` to the end / start (the command bar shows *Forward*, *Back*,
+  *To end*, *To start*). The status line says which step is shown, e.g. "Replay: step 12/57 -
+  rename 0x401080 sub_401080 -> decrypt".
+
+*Open solution* in the Learning window opens the same window on its own. Course staff publish a
+solution from their own task window (*Course* > *Publish solution...*: audience, with or
+without the replay) and can first remove steps from the journal with *Edit replay journal...*
+(delete a step, delete the visits before a step, compact the visits).
 
 **Step 5: Submit the solution.**
 

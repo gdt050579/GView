@@ -14,6 +14,8 @@ namespace
         bool OnFrameUpdate() override
         {
             bool repaint = GView::Update::Service::OnFrame(HasFocus());
+            // the learning session's timers and completions (note autosave, retries) also while no learning window is open
+            repaint |= GView::Security::Learning::Hooks::OnDesktopFrame();
 #ifdef BUILD_FOR_WASM
             repaint |= GView::App::Browser::OnFrame(HasFocus());
 #endif

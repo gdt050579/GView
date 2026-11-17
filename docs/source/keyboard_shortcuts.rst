@@ -81,6 +81,27 @@ macOS and Linux terminals
   the key (a letter, or ``1``-``0`` for ``F1``-``F10``). ``Space`` keeps the combo mode active, ``Escape`` leaves it.
 * The command bar of a terminal only shows the commands without modifiers - use ``F1`` to see all of them.
 
+Learning and Evaluation Mode keys
+---------------------------------
+
+=================== ============================== ==============================================================================
+Key                 Command (section)              What it does
+=================== ============================== ==============================================================================
+``Ctrl+Alt+L``      ``LearningCourse``             *Course* menu of a task window opened from the course catalogue: save /
+                    (``Keys.GView``)               resume the work, the teacher's solution, publish (course staff)
+``Ctrl+Alt+F``      ``LearningSubmitFlag``         Submit the flag of the student's task window
+                    (``Keys.GView``)
+``Alt+Left``        ``ReplayBack``                 Replay of a teacher's solution: one step back
+                    (``Keys.View.Dissasm``)
+``Alt+Right``       ``ReplayForward``              Replay: one step forward
+``Alt+Home``        ``ReplayToStart``              Replay: back to the start
+``Alt+End``         ``ReplayToEnd``                Replay: to the end
+(none)              ``EditReplayJournal``          The replay journal editor of the disassembly view (also from the command
+                    (``Keys.View.Dissasm``)        palette, ``Ctrl+P``)
+=================== ============================== ==============================================================================
+
+The replay keys are on the command bar only in a window that plays a teacher's solution back.
+
 Settings file
 -------------
 

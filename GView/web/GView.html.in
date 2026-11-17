@@ -8,6 +8,8 @@
      itself only accepts for a page served from the local machine - development). -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https: http://127.0.0.1:* http://localhost:*; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>GView @GVIEW_VERSION@</title>
+<!-- X-GView-Client of the launch-link request sent by gview-page.js before GView itself has started -->
+<meta name="gview-version" content="@GVIEW_VERSION@">
 <style>
   @font-face { font-family: "JuliaMono"; src: url("JuliaMono-Regular.ttf") format("truetype"); font-display: block; }
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }

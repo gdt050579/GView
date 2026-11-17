@@ -42,6 +42,17 @@ target_sources(
 	DissasmComInterfaces.cpp
 	DissasmAssistantRequest.cpp
 	DissasmIOHelpers.hpp
+	DissasmReplay.hpp
+	DissasmReplay.cpp
+	DissasmReplayHost.hpp
+	DissasmReplayRecorder.hpp
+	DissasmReplayRecorder.cpp
+	DissasmReplayController.hpp
+	DissasmReplayController.cpp
+	DissasmWorkDocument.hpp
+	DissasmWorkDocument.cpp
+	DissasmReplayEditor.hpp
+	DissasmReplayEditor.cpp
 
 	x86_x64/DissasmX86.hpp        
 	x86_x64/DissasmX86.cpp
@@ -67,4 +78,5 @@ target_sources(
 )
 
 add_testing_sources(GViewCore tests_dissasmviewer.cpp)
+add_testing_sources(GViewCore "tests_dissasmreplay.cpp;tests_dissasm_fixture.hpp;tests_dissasm_fuzz.hpp")
 target_sources(GViewCore PRIVATE jclass/GViewJClass.natvis)

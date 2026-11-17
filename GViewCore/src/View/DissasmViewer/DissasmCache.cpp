@@ -5,6 +5,7 @@
 #include "DissasmCodeZone.hpp"
 #include "DissasmIOHelpers.hpp"
 #include "DissasmFunctionUtils.hpp"
+#include "DissasmReplayRecorder.hpp"
 #include "x86_x64/DissasmX86LocalVariables.hpp"
 
 #include <algorithm>
@@ -349,6 +350,9 @@ void Instance::LoadCacheData()
 {
     if (!config.EnableDeepScanDissasmOnStart)
         return;
+    // a solution of the teacher (the same file as the work of the student): it shows only the document of the solution
+    if (IsReadOnlyRole())
+        return;
     // memory-only task content: no disk interaction at all (a stale cache could also belong to another file)
     if (GView::Security::Learning::Hooks::IsMemoryOnlyObject(obj))
         return;
@@ -364,6 +368,7 @@ void Instance::LoadCacheData()
     cacheData.hasCache = true;
     // the records keyed by the first line of the zone (old layout) are moved to the file offset key of their zone
     MigrateLegacyCodeZoneRecords(cacheData, settings->parseZones);
+    replay->LoadFromCache(cacheData); // the replay journal of the file (one record for the file)
 }
 
 // The data defined by the user in a code zone (IDA D / A): [magic][version][count] then count x [start][end][unit], relative addresses.
@@ -764,6 +769,9 @@ void Instance::SaveCacheData()
     if (GView::Security::Learning::Hooks::IsMemoryOnlyObject(obj) ||
         GView::App::IsFeatureRestricted(GView::Security::RestrictedMode::Feature::Export))
         return;
+    // a solution of the teacher opened on the file of the student: the cache of the student is never written from it (Ctrl+S, Escape)
+    if (IsReadOnlyRole())
+        return;
     // the code zones that were not initialized in this session (never drawn) have no data of their own: their loaded records are
     // kept as they are (under the file offset key) instead of being overwritten with empty records
     LocalString<64> zoneName;
@@ -904,6 +912,9 @@ void Instance::SaveCacheData()
                 return;
         }
     }
+    // the replay journal of the file (or its record that could not be read, kept as it was)
+    if (!replay->ToCache(cacheData))
+        return;
     // the records kept aside and the legacy records of no zone
     for (auto& [name, entry] : keptRecords)
         if (entry.data)

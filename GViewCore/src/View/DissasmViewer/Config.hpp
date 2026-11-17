@@ -54,6 +54,12 @@ constexpr uint32 COMMAND_ADD_REPEATABLE_COMMENT = 147;
 constexpr uint32 COMMAND_SHOW_IMPORTS          = 148;
 constexpr uint32 COMMAND_SET_PROTOTYPE         = 149;
 constexpr uint32 COMMAND_SET_OPERAND_CONSTANT  = 150;
+// the playback of a replay journal (on the command bar only while the view plays one back) and its editor
+constexpr uint32 COMMAND_REPLAY_BACK           = 151;
+constexpr uint32 COMMAND_REPLAY_FORWARD        = 152;
+constexpr uint32 COMMAND_REPLAY_TO_START       = 153;
+constexpr uint32 COMMAND_REPLAY_TO_END         = 154;
+constexpr uint32 COMMAND_EDIT_REPLAY_JOURNAL   = 155;
 
 // navigation commands (resolved through Config::Map in OnKeyEvent)
 constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
@@ -284,6 +290,26 @@ namespace View
                 Input::Key::Ctrl | Input::Key::L, "QueryMITRETechnique", "Query Digital Assistants (if any) for MITRE Techniques", COMMAND_QUERY_MITRE_TECHNIQUE
             };
 
+            // the replay of a teacher's solution (Learning mode): on the command bar only while the view plays a journal back
+            inline static KeyboardControl ReplayBackCommand = {
+                Input::Key::Alt | Input::Key::Left, "ReplayBack", "Replay: one step back (the last step is undone)", COMMAND_REPLAY_BACK
+            };
+            inline static KeyboardControl ReplayForwardCommand = {
+                Input::Key::Alt | Input::Key::Right, "ReplayForward", "Replay: one step forward (the next visit, jump or edit)", COMMAND_REPLAY_FORWARD
+            };
+            inline static KeyboardControl ReplayToStartCommand = {
+                Input::Key::Alt | Input::Key::Home, "ReplayToStart", "Replay: back to the start (every step undone)", COMMAND_REPLAY_TO_START
+            };
+            inline static KeyboardControl ReplayToEndCommand = {
+                Input::Key::Alt | Input::Key::End, "ReplayToEnd", "Replay: to the end (every step applied)", COMMAND_REPLAY_TO_END
+            };
+            inline static KeyboardControl EditReplayJournalCommand = {
+                Input::Key::None, "EditReplayJournal", "Edit the replay journal of the file (delete steps, compact the visits)", COMMAND_EDIT_REPLAY_JOURNAL
+            };
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 4> ReplayCommands = {
+                ReplayBackCommand, ReplayForwardCommand, ReplayToStartCommand, ReplayToEndCommand
+            };
+
             inline static std::array<std::reference_wrapper<KeyboardControl>, 23> CommandBarCommands = {
                 /*AddNewTypeCommand,*/ ChangeAddressModeCommand,
                 GoToAddressCommand,
@@ -451,7 +477,7 @@ namespace View
             };
             inline static Input::KeyMap Map;
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 33> AllKeyboardCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 38> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ChangeAddressModeCommand,
                 ExportAnnotationsCommand,
                 ImportAnnotationsCommand,
@@ -484,7 +510,12 @@ namespace View
                 SaveCacheCommand,
                 ToggleNumberBaseCommand,
                 CommandQueryFunctionName,
-                CommandQueryMITRETechnique
+                CommandQueryMITRETechnique,
+                ReplayBackCommand,
+                ReplayForwardCommand,
+                ReplayToStartCommand,
+                ReplayToEndCommand,
+                EditReplayJournalCommand
             };
             bool Loaded;
 
