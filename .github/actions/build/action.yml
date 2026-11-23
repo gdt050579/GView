@@ -143,7 +143,7 @@ runs:
     # --------------------------
     - name: Setup ccache (Linux)
       if: ${{ inputs.use_ccache == 'true' && runner.os == 'Linux' }}
-      uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+      uses: hendrikmuhs/ccache-action@e91f31892a1d1b8c44424b1a94c0b7f52d337168 # v1.2.26
       with:
         key: ccache-${{ runner.os }}-${{ runner.arch }}-${{ inputs.build_type }}-tests${{ inputs.enable_tests }}
         max-size: 500M
@@ -232,7 +232,7 @@ runs:
     # --------------------------
     - name: Install cosign
       if: ${{ inputs.sign_binaries == 'true' }}
-      uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
 
     - name: Sign binaries
       if: ${{ inputs.sign_binaries == 'true' }}
