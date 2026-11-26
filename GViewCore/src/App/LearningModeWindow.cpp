@@ -5,10 +5,12 @@
 #include "Learning/LearningSession.hpp"
 #include "Learning/LearningFormat.hpp"
 #include "Learning/TaskFiles.hpp"
+#include "Learning/CatalogueView.hpp"
 #include "LearningCourse.hpp"
 
 #include <cstdio>
 #include <optional>
+#include <set>
 
 #undef MessageBox // Windows header conflict with AppCUI
 
@@ -34,6 +36,17 @@ constexpr int BTN_CLOSE   = 7;
 constexpr int BTN_NOTES   = 8;
 constexpr int BTN_OPEN_WITH_WORK = 9;
 constexpr int BTN_OPEN_SOLUTION  = 10;
+constexpr int BTN_WEEK_ORDER     = 11;
+
+constexpr std::string_view DEFAULT_HINT =
+      "Click an item to preview its description below the list; press Details for the full explanation.";
+constexpr std::string_view UPDATED_WEEK_MARK = "  [updated]";
+
+// the caption of the button says the order in use; the button switches to the other one
+std::string_view WeekOrderCaption(Learning::WeekOrder order)
+{
+    return order == Learning::WeekOrder::NewestFirst ? "Wee&ks: newest first" : "Wee&ks: oldest first";
+}
 
 // what the course server keeps for a problem (spec §10.12): "work 2026-11-08", "solution", "solution+replay"
 std::string CourseColumnText(const Learning::CatalogueItem& item)
@@ -456,17 +469,33 @@ class LearningModeWindow : public Window,
     struct RowRef {
         size_t week;
         RowKind kind;
-        size_t index; // problem / resource index (unused for a week row)
+        size_t index;    // problem / resource index (unused for a week row)
+        std::string key; // "w:<week id>" or "i:<item name>": finds the row again after a rebuild (the catalogue may have changed)
+    };
+    // a week row of the tree: what it showed, to remember its folding (Learning/CatalogueView.hpp)
+    struct ShownWeekRow {
+        TreeViewItem item;
+        int64 id;
+        std::string hash;  // WeekContentHash of the week shown
+        std::string title; // without the "updated" mark
+        bool changed;      // shown with the "updated" mark
+        bool folded;       // its folding when last seen (a fold is captured when it differs)
+        bool tracked;      // false for a second week with the same id: shown, its folding not remembered
     };
 
     Reference<TextField> connectionField;
     Reference<Label> lbMaskedConnection;
     Reference<Button> connectButton, reconnectButton, endButton, openButton, detailsButton, submitButton, refreshButton, notesButton;
-    Reference<Button> openWithWorkButton, openSolutionButton;
+    Reference<Button> openWithWorkButton, openSolutionButton, weekOrderButton;
     Reference<ColoredLine> statusLine, previewLine;
     Reference<Label> lbPolicy, lbBlocked, lbMessage, lbHint;
     Reference<TreeView> tree;
     std::vector<RowRef> rows;
+
+    // order of the weeks and the weeks folded by the student, per course server and student ([LearningCourse.*] in GView.ini)
+    Learning::WeekViewState viewState;
+    std::string viewSection; // empty: no student known yet (nothing is saved)
+    std::vector<ShownWeekRow> shownWeeks;
 
     std::string launchNotice; // web launch link: why nothing was connected (shown until the student connects)
     bool autoConnect;
@@ -506,8 +535,8 @@ class LearningModeWindow : public Window,
         lbPolicy   = Factory::Label::Create(this, "", "l:1,t:3,r:1,h:1");
         lbBlocked  = Factory::Label::Create(this, "", "l:1,t:4,r:1,h:1");
         lbMessage  = Factory::Label::Create(this, "", "l:1,t:5,r:1,h:2");
-        lbHint     = Factory::Label::Create(
-              this, "Click an item to preview its description below the list; press Details for the full explanation.", "l:1,t:7,r:1,h:1");
+        lbHint          = Factory::Label::Create(this, DEFAULT_HINT, "l:1,t:7,r:26,h:1");
+        weekOrderButton = Factory::Button::Create(this, WeekOrderCaption(viewState.order), "r:1,t:7,w:24", BTN_WEEK_ORDER, ButtonFlags::Flat);
 
         tree = Factory::TreeView::Create(
               this,
@@ -534,6 +563,14 @@ class LearningModeWindow : public Window,
     ~LearningModeWindow() override
     {
         *alive = false;
+        try
+        {
+            if (CaptureFolds()) // the folds made since the last frame (the controls are still alive here)
+                SaveViewState();
+        }
+        catch (...)
+        {
+        }
     }
 
     void OnStart() override
@@ -568,6 +605,13 @@ class LearningModeWindow : public Window,
         {
             PopulateTree();
             needsRefresh = false;
+        }
+        // AppCUI does not report a fold of the tree: compare with what was shown on every frame
+        if (CaptureFolds())
+        {
+            SaveViewState();
+            UpdateChangedWeeks();
+            repaint = true;
         }
         return repaint;
     }
@@ -618,6 +662,9 @@ class LearningModeWindow : public Window,
                 return true;
             case BTN_NOTES:
                 ShowNotes();
+                return true;
+            case BTN_WEEK_ORDER:
+                SwitchWeekOrder();
                 return true;
             case BTN_CLOSE:
                 Exit(opened ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
@@ -779,44 +826,144 @@ class LearningModeWindow : public Window,
         }
     }
 
-    // identifies the current row across a rebuild of the tree ("w:<week index>" or "i:<item name>")
+    // identifies the current row across a rebuild of the tree ("w:<week id>" or "i:<item name>"), from what the row showed
     std::string CurrentRowKey()
     {
         const uint64 idx = CurrentRowIndex();
-        if (idx == ROW_NONE)
-            return {};
-        if (rows[idx].kind == RowKind::Week)
-            return "w:" + std::to_string(rows[idx].week);
-        const auto* item = ItemOf(rows[idx]);
-        return item ? "i:" + item->name : std::string();
+        return idx == ROW_NONE ? std::string() : rows[idx].key;
+    }
+
+    // ---------------- order and folding of the weeks (per course server and student)
+    void LoadViewState(const std::string& section)
+    {
+        viewState   = {};
+        viewSection = section;
+        if (auto ini = AppCUI::Application::GetAppSettings(); ini && !section.empty())
+        {
+            auto sect = ini->GetSection(section);
+            if (sect.Exists())
+            {
+                viewState.order  = Learning::ParseWeekOrder(sect.GetValue("WeekOrder").AsStringView().value_or(std::string_view()));
+                viewState.folded = Learning::ParseFoldedWeeks(sect.GetValue("FoldedWeeks").AsStringView().value_or(std::string_view()));
+            }
+        }
+        weekOrderButton->SetText(WeekOrderCaption(viewState.order), true);
+    }
+
+    void SaveViewState()
+    {
+        if (viewSection.empty())
+            return;
+        auto ini = AppCUI::Application::GetAppSettings();
+        if (!ini)
+            return;
+        // not secret: the web build mirrors GView.ini in clear into the localStorage of the page
+        (*ini)[viewSection]["WeekOrder"]   = std::string(Learning::WeekOrderName(viewState.order));
+        (*ini)[viewSection]["FoldedWeeks"] = Learning::SerializeFoldedWeeks(viewState.folded);
+        AppCUI::Application::SaveAppSettings();
+    }
+
+    // the state of the student of the current session (another student or server: another section)
+    void EnsureViewState()
+    {
+        const auto section = Learning::WeekViewSection(Session().GetStatus().serverUrl, Session().GetViewStateKey());
+        if (section != viewSection)
+            LoadViewState(section);
+    }
+
+    // the folds the student made in the tree since the last call (a search of the tree unfolds the weeks it finds
+    // something in: that counts as an unfold); true when viewState changed. Runs on every frame: no allocation.
+    bool CaptureFolds()
+    {
+        bool changed = false;
+        for (auto& w : shownWeeks)
+        {
+            if (!w.tracked || !w.item.IsValid())
+                continue;
+            const bool folded = w.item.IsFolded();
+            if (folded == w.folded)
+                continue;
+            w.folded = folded;
+            changed |= Learning::ApplyFoldChange(viewState, w.id, w.hash, folded);
+        }
+        return changed;
+    }
+
+    // the "updated" mark of the folded weeks the teacher changed since they were folded, and the line that lists them
+    void UpdateChangedWeeks()
+    {
+        std::string names;
+        for (auto& w : shownWeeks)
+        {
+            const bool changed = w.tracked && Learning::FoldedWeekChanged(viewState, w.id, w.hash);
+            if (changed != w.changed && w.item.IsValid())
+            {
+                w.item.SetText(changed ? w.title + std::string(UPDATED_WEEK_MARK) : w.title);
+                w.item.SetType(changed ? TreeViewItem::Type::Emphasized_2 : TreeViewItem::Type::Category);
+                w.changed = changed;
+            }
+            if (changed)
+            {
+                if (!names.empty())
+                    names += ", ";
+                names += w.title;
+            }
+        }
+        if (names.empty())
+            lbHint->SetText(DEFAULT_HINT);
+        else
+            lbHint->SetText(AsU8("Changed since you folded them: " + names + " (unfold to see what is new)"));
+    }
+
+    void SwitchWeekOrder()
+    {
+        if (CaptureFolds()) // into the section of the weeks shown
+            SaveViewState();
+        if (Session().HasSession())
+            EnsureViewState(); // the student connected now, even before the catalogue arrives
+        viewState.order = viewState.order == Learning::WeekOrder::NewestFirst ? Learning::WeekOrder::OldestFirst : Learning::WeekOrder::NewestFirst;
+        weekOrderButton->SetText(WeekOrderCaption(viewState.order), true);
+        SaveViewState();
+        PopulateTree();
     }
 
     void PopulateTree()
     {
         const std::string previous = CurrentRowKey();
-        populating                 = true;
+        if (CaptureFolds()) // before the rows go away (saved in the section of the catalogue that was shown)
+            SaveViewState();
+        populating = true;
         tree->ClearItems();
         rows.clear();
+        shownWeeks.clear();
         const auto& cat = Session().GetCatalogue();
         if (!Session().IsCatalogueLoaded())
         {
             populating = false;
+            UpdateChangedWeeks();
             UpdatePreview();
             return;
         }
+        EnsureViewState();
         const bool memoryPolicy = Session().GetPolicy().has_value() && Session().GetPolicy()->storageMode == StorageMode::Memory;
         std::optional<TreeViewItem> restore;
-        for (size_t w = 0; w < cat.weeks.size(); w++)
+        std::set<int64> seenWeekIds;
+        for (const size_t w : Learning::WeekDisplayOrder(cat, viewState.order))
         {
             const auto& week = cat.weeks[w];
             std::string title = week.name;
             if (!week.title.empty())
                 title += " - " + week.title;
-            auto weekItem = tree->AddItem(title, true);
+            const std::string weekKey = "w:" + std::to_string(week.id);
+            // a week id should be unique; a server that repeats one (or omits it: id 0) gets only its first week remembered
+            const bool tracked = seenWeekIds.insert(week.id).second;
+            const bool folded  = tracked && viewState.folded.count(week.id) != 0;
+            auto weekItem      = tree->AddItem(title, true);
             weekItem.SetType(TreeViewItem::Type::Category);
-            rows.push_back(RowRef{ w, RowKind::Week, 0 });
+            rows.push_back(RowRef{ w, RowKind::Week, 0, weekKey });
             weekItem.SetData(static_cast<uint64>(rows.size() - 1));
-            if (previous == "w:" + std::to_string(w))
+            shownWeeks.push_back(ShownWeekRow{ weekItem, week.id, Learning::WeekContentHash(week), title, false, folded, tracked });
+            if (previous == weekKey)
                 restore = weekItem;
             auto addItem = [&](const Learning::CatalogueItem& it, bool problem, size_t idx) {
                 auto node = weekItem.AddChild(it.title);
@@ -847,17 +994,21 @@ class LearningModeWindow : public Window,
                     node.SetText(4, CourseColumnText(it));
                 if (problem && it.hasMe && it.me.solved)
                     node.SetType(TreeViewItem::Type::Emphasized_1);
-                rows.push_back(RowRef{ w, problem ? RowKind::Problem : RowKind::Resource, idx });
+                rows.push_back(RowRef{ w, problem ? RowKind::Problem : RowKind::Resource, idx, "i:" + it.name });
                 node.SetData(static_cast<uint64>(rows.size() - 1));
                 if (previous == "i:" + it.name)
-                    restore = node;
+                    restore = folded ? weekItem : node; // an item of a folded week: its week row
             };
             for (size_t i = 0; i < week.problems.size(); i++)
                 addItem(week.problems[i], true, i);
             for (size_t i = 0; i < week.resources.size(); i++)
                 addItem(week.resources[i], false, i);
-            weekItem.Unfold();
+            if (folded)
+                weekItem.Fold();
+            else
+                weekItem.Unfold();
         }
+        UpdateChangedWeeks();
         if (!rows.empty() && !treeFocused)
         {
             tree->SetFocus(); // keyboard users land on the catalogue once it is available

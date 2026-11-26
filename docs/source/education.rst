@@ -41,6 +41,17 @@ with current points and the student's attempts) and **resources** (files, text n
 links shared by the teacher). Disabled weeks and items are never shown. *Details* shows the
 description; *Open* (or Enter) downloads the selected item.
 
+The newest week is listed first; the *Weeks: newest first* / *Weeks: oldest first* button
+(``Alt+K``) switches the order. GView remembers the order and the weeks the student folded,
+per course server and per student (the ``[LearningCourse.<server>.<key>]`` section of
+``GView.ini``: the order, and for each folded week its id and a hash of its content; the key
+is a hash of the access token, not the token). When the teacher changes a week the student
+has folded (its description, or a problem or resource added, removed or changed), the week is
+marked ``[updated]`` and the line above the list names it, until the student unfolds it. The
+changes are seen when the catalogue is loaded: at connect and with *Refresh*. Typing in the
+list searches it and unfolds the weeks where something matches; those weeks then count as
+unfolded.
+
 Typically this is binary executable files (e.g., PE files). Depending on the policy and the
 item, the content is either kept in memory only (encrypted in transit, decrypted into locked
 memory, never written to disk) or saved to a folder chosen by the student and opened from

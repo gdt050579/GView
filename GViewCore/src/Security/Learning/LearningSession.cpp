@@ -1,4 +1,5 @@
 #include "LearningSession.hpp"
+#include "CatalogueView.hpp"
 
 #include <chrono>
 
@@ -725,6 +726,13 @@ bool LearningSession::UsesConnection(const ConnectionInfo& ci) const noexcept
 {
     return HasSession() && ci.serverUrl == info.serverUrl && ci.token.size() == info.token.size() &&
            Crypto::Internal::ConstantTimeEquals(ci.token.data(), info.token.data(), ci.token.size());
+}
+
+std::string LearningSession::GetViewStateKey() const
+{
+    if (!HasSession())
+        return {};
+    return ViewStateKey(info.token);
 }
 
 Utils::GStatus LearningSession::ApplyConnectResult(ConnectionInfo&& newInfo, std::shared_ptr<IHttpTransport> newTransport, ConnectResult&& result)

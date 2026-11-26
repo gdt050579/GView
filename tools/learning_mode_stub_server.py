@@ -7,7 +7,8 @@ Implements the server side of docs/source/learning_mode_protocol.rst for end-to-
 
   POST /GView/Connect                 signed policy (Ed25519 over the exact bytes, schema 2, digest, subject, server)
   POST /GView/GetWeeks                catalogue: week 1 (problems + resources); a disabled item and a week that is not
-                                      visible yet are never sent
+                                      visible yet are never sent; --extra-weeks N adds weeks 2..N+1 (a link each),
+                                      --change-week-after K changes week 2 from the (K+1)-th answer on
   POST /GView/GetProblems/<name>      task content with the delivery headers (GVE1 = HKDF + AES-256-GCM in memory mode)
   POST /GView/GetResource/<name>      resource content
   POST /GView/SubmitFlag              grading with idempotency keys (a resent clientSubmissionId answers duplicate:true)
@@ -168,6 +169,7 @@ class StubState:
         self.telemetry_seen = set()  # (sessionId, seq)
         self.telemetry_events = 0
         self.score = 0
+        self.weeks_served = 0        # GetWeeks answers (--change-week-after)
         # week 1 (visible) + an item that is disabled; week 2 is not visible yet and is never sent
         self.items = {
             "w1_stack_var": {"problem": True, "mode": "memory", "flag": "3", "points": 100, "fileName": "stack_var.exe",
@@ -297,8 +299,23 @@ class StubState:
                 resources.append(entry)
         resources.append({"name": "w1_reading", "title": "GView documentation", "kind": "link", "order": 99,
                           "url": "https://gdt050579.github.io/GView/"})
-        return {"status": "ok", "weeks": [{"id": 1, "name": "Week 1", "title": "Getting started", "order": 1,
-                                           "problems": problems, "resources": resources}]}
+        weeks = [{"id": 1, "name": "Week 1", "title": "Getting started", "order": 1,
+                  "problems": problems, "resources": resources}]
+        # --extra-weeks: weeks 2.. with a link each (the order and the folding of the weeks in the client);
+        # --change-week-after N: from the (N+1)-th GetWeeks on, week 2 has a new description and a second link
+        self.weeks_served += 1  # the caller holds self.lock
+        changed = self.args.change_week_after > 0 and self.weeks_served > self.args.change_week_after
+        for wid in range(2, self.args.extra_weeks + 2):
+            week = {"id": wid, "name": f"Week {wid}", "title": f"Topic {wid}", "order": wid,
+                    "description": f"Reading for week {wid}.", "problems": [],
+                    "resources": [{"name": f"w{wid}_link", "title": f"Reading {wid}", "kind": "link", "order": 1,
+                                   "url": "https://gdt050579.github.io/GView/"}]}
+            if wid == 2 and changed:
+                week["description"] = "Reading for week 2 (updated by the teacher)."
+                week["resources"].append({"name": "w2_link_new", "title": "New reading", "kind": "link", "order": 2,
+                                          "url": "https://gdt050579.github.io/GView/"})
+            weeks.append(week)
+        return {"status": "ok", "weeks": weeks}
 
     def delivery(self, name: str, token: str):
         it = self.items[name]
@@ -1072,6 +1089,10 @@ def main():
                     help="largest work document (compact JSON); bodies above it + 64 KiB answer 413")
     ap.add_argument("--staff-token", help="a second access token that is course staff, served by the same process "
                                           "(its connection string is printed too)")
+    ap.add_argument("--extra-weeks", type=int, default=0,
+                    help="weeks 2..N+1 after week 1, each with a link (the order and folding of the weeks)")
+    ap.add_argument("--change-week-after", type=int, default=0,
+                    help="week 2 changes (description + a new link) from the (N+1)-th GetWeeks on; 0 = never")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
     if args.launch_code is not None and not re.fullmatch(r"[A-Za-z0-9_-]{32,64}", args.launch_code):

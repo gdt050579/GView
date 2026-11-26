@@ -501,6 +501,20 @@ them), items with invalid names, unknown ``kind``/``deliveryMode`` or non-http(s
 ``order`` then ``id``; items by ``order`` then ``name``. ``kind``: ``file`` and ``text`` are downloaded (text opens in
 the Text/Lexical viewer), ``link`` shows the URL read-only (Copy only if ``Clipboard`` is allowed).
 
+The window shows the weeks newest first by default (the student may switch to oldest first) and keeps the weeks the
+student folded folded. Both are client-side state, per server and per student: the section
+``[LearningCourse.<server folder>.<key>]`` of ``GView.ini`` holds ``WeekOrder`` (``newest`` / ``oldest``) and
+``FoldedWeeks`` (``<week id>:<hash>`` list). The key is ``hex(SHA-256("GView-Learning-View-v1" || 0x00 ||
+token))[0:16]``, deliberately not the policy ``subject``. The section is not secret (the web build mirrors
+``GView.ini`` in clear into the page's localStorage) and is kept after *End session*: it names the course server's host
+and a stable pseudonym of the student on this computer or browser. The hash is the first 16 hex characters of a SHA-256 over the week's
+``name``, ``title``, ``description`` and, for every problem and resource, ``kind``, ``name``, ``title``,
+``description``, ``order``, ``fileName``, ``sha256``, ``url``, ``size``, ``pointsMax``, ``pointsMin``,
+``requireExplanation``, ``solutionAvailable``, ``solutionHasReplay`` (``Learning/CatalogueView.cpp``); the fields of
+one student (``me``, ``pointsCurrent``) are left out. A folded week whose hash changed since it was folded is marked
+``[updated]`` until the student unfolds it. Week ``id`` must therefore be unique and stay the same for a week (a
+repeated id, or weeks without one, are shown but only the first of them is remembered); no server field is needed.
+
 Legacy servers: ``/GView/`` with an empty 200 => *Legacy* state: no restrictions are applied (there is nothing to
 verify), the catalogue comes from the flat ``GetProblems`` list as a single week, submissions use the legacy verdict.
 The window says so explicitly.

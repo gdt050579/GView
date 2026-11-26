@@ -1,6 +1,7 @@
 target_sources(GViewCore PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/SecureMemory.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/LearningProtocol.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/CatalogueView.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/LearningHttp.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ContentDelivery.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/TaskFiles.cpp
@@ -24,3 +25,4 @@ if (GVIEW_ENABLE_BROWSER_NETWORK)
 endif()
 
 add_testing_sources(GViewCore ${CMAKE_CURRENT_SOURCE_DIR}/tests_learning.cpp)
+add_testing_sources(GViewCore ${CMAKE_CURRENT_SOURCE_DIR}/tests_catalogueview.cpp)
