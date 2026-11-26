@@ -1490,6 +1490,16 @@ void AddDissasmDirectoryFields(DissasmViewer::Settings& settings, Reference<PE::
         }
         return text;
     };
+    // an RVA in a section of data (not executable): the lookup tables and the hint / name entries of the imports are there; a descriptor
+    // whose lookup table is in the code (a corrupted one) would type every 8 bytes of the code (cmd: 28000 fields, minutes to count the lines)
+    const auto inDataSection = [&pe](uint64 rva) {
+        for (uint32 index = 0; index < pe->nrSections; index++) {
+            const auto& section = pe->sect[index];
+            if (rva >= section.VirtualAddress && rva - section.VirtualAddress < std::max(section.Misc.VirtualSize, section.SizeOfRawData))
+                return (section.Characteristics & (__IMAGE_SCN_MEM_EXECUTE | __IMAGE_SCN_CNT_CODE)) == 0;
+        }
+        return false;
+    };
     const auto addFields = [&](uint64 rva, std::initializer_list<std::tuple<uint32, Type, std::string_view>> fields) {
         uint64 offset = 0;
         for (const auto& [size, type, name] : fields) {
@@ -1523,7 +1533,7 @@ void AddDissasmDirectoryFields(DissasmViewer::Settings& settings, Reference<PE::
                 const uint64 slotRVA = fields[0] + static_cast<uint64>(entry) * pointerSize;
                 const auto slotFa    = pe->RVAToFA(slotRVA);
                 uint64 value         = 0;
-                if (slotFa == PE_INVALID_ADDRESS || !ReadImagePointer(data, slotFa, is64, value) || value == 0)
+                if (slotFa == PE_INVALID_ADDRESS || !inDataSection(slotRVA) || !ReadImagePointer(data, slotFa, is64, value) || value == 0)
                     break;
                 const bool byOrdinal = (value >> (is64 ? 63 : 31)) != 0;
                 if (byOrdinal) {
@@ -1533,6 +1543,8 @@ void AddDissasmDirectoryFields(DissasmViewer::Settings& settings, Reference<PE::
                 const uint64 hintRVA   = value & 0x7FFFFFFF;
                 const std::string name = readString(hintRVA + 2);
                 settings.AddDataField(base + slotRVA, pointerSize, Type::RVA, name);
+                if (!inDataSection(hintRVA))
+                    continue;
                 settings.AddDataField(base + hintRVA, 2, Type::Value, "hint");
                 if (!name.empty())
                     settings.AddDataField(base + hintRVA + 2, static_cast<uint32>(name.size() + 1), Type::String, "name");

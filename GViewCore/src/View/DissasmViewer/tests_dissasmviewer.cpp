@@ -15697,3 +15697,67 @@ TEST_CASE("NumberedRunTimeCopies", "[Dissasm]Arm64")
     REQUIRE(dissasmInstance.zone->GetLabelNameAt(0x8C) == "__security_push_cookie_2");
     REQUIRE(FindListingLine(listing, "0x0000000c  bl     __security_push_cookie_1").size() > 0);
 }
+
+TEST_CASE("Arm64ECEntryThunkWords", "[Dissasm]Zones")
+{
+    // ARM64EC (MSVC): the word before a function x64 code may call is the offset of its entry thunk, bit 0 set; the thunk ends with br
+    // __os_arm64x_dispatch_ret (entry_thunk_N, NameArm64ECThunks). Linked: the word shows the thunk, the thunk has an xref from the function.
+    // A word below 0x10000 decodes as udf #imm; a word with bit 0 to a function that is no entry thunk is not linked
+    std::vector<unsigned char> file;
+    const auto word = [&file](uint32 value) {
+        for (uint32 index = 0; index < 4; index++)
+            file.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    };
+    const auto thunk = [&word](uint32 adrp) {
+        word(0xA9BF7BFD); // stp x29, x30, [sp, #-0x10]!
+        word(0x910003FD); // mov x29, sp
+        word(0xA8C17BFD); // ldp x29, x30, [sp], #0x10
+        word(adrp);       // adrp x16, 0x21000
+        word(0xF9400610); // ldr x16, [x16, #8]       (0x21008: __os_arm64x_dispatch_ret)
+        word(0xD61F0200); // br x16
+    };
+    word(0xA9BF7BFD); // 0x00: stp x29, x30, [sp, #-0x10]!
+    word(0x910003FD); // 0x04: mov x29, sp
+    word(0x94000006); // 0x08: bl 0x20
+    word(0x9400000D); // 0x0c: bl 0x40
+    word(0xA8C17BFD); // 0x10: ldp x29, x30, [sp], #0x10
+    word(0xD65F03C0); // 0x14: ret
+    word(0xD503201F); // 0x18: nop
+    word(0x00000041); // 0x1c: the entry thunk of 0x20 at 0x60 (0x40 | 1: udf #0x41)
+    word(0x52800020); // 0x20: mov w0, #1
+    word(0xD65F03C0); // 0x24: ret
+    while (file.size() < 0x3C)
+        word(0xD503201F); // nop
+    word(0x00010001); // 0x3c: the entry thunk of 0x40 at 0x10040 (0x10000 | 1: .word)
+    word(0x52800040); // 0x40: mov w0, #2
+    word(0xD65F03C0); // 0x44: ret
+    while (file.size() < 0x5C)
+        word(0xD503201F);
+    word(0xFFFFFFE1); // 0x5c: bit 0 set, to 0x40 (no entry thunk)
+    thunk(0xB0000110); // 0x60: an entry thunk (adrp from page 0: 0x21 pages)
+    while (file.size() < 0x10040)
+        word(0xD503201F);
+    thunk(0xB0000090); // 0x10040: another one (adrp from page 0x10000: 0x11 pages)
+    file.resize(0x21010, 0x00);
+    ZoneLayout layout;
+    layout.size             = 0x10060;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::ARM64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x21008, { "__os_arm64x_dispatch_ret", MemoryMappingType::TextMapping } } };
+    layout.functionEntries[0x60].size    = 0x18; // .pdata: the thunks have no caller
+    layout.functionEntries[0x10040].size = 0x18;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.GetLabelNameAt(0x60) == "entry_thunk_1");
+    REQUIRE(zone.GetLabelNameAt(0x10040) == "entry_thunk_2");
+    REQUIRE(zone.arm64ECEntryThunks.size() == 2);
+    REQUIRE(zone.arm64ECEntryThunks.at(0x1C) == 0x60);
+    REQUIRE(zone.arm64ECEntryThunks.at(0x3C) == 0x10040);
+    const auto [first, last] = zone.xrefs.To(0x60);
+    REQUIRE(std::any_of(first, last, [](const DissasmXref& xref) { return xref.from == 0x20 && xref.kind == DissasmXrefKind::Offset; }));
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x0000001c  udf    #0x41").ends_with("; entry_thunk_1"));
+    REQUIRE(FindListingLine(listing, "0x0000003c  .word  0x00010001").ends_with("; entry_thunk_2"));
+}

@@ -1131,6 +1131,17 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         }
     }
 
+    // ARM64EC: the offset of the entry thunk of the function after the word (.word 0x001b2969 ; entry_thunk_8; udf #0xc1 for a word below
+    // 0x10000)
+    if ((insn->id == 0 || (insn->id == ARM64_INS_UDF && params.zone->IsArm64Code())) && !params.zone->arm64ECEntryThunks.empty()) {
+        const auto thunk = params.zone->arm64ECEntryThunks.find(insn->address);
+        if (thunk != params.zone->arm64ECEntryThunks.end()) {
+            SetOperands(insn->op_str, params.zone);
+            autoComment = params.zone->GetLabelNameAt(thunk->second);
+            return true;
+        }
+    }
+
     // the meaning of the instruction from the capstone details (groups, operands), not from its text
     const auto flow     = GetInstructionFlow(*insn, params.zone->GetArch());
     const auto operands = params.zone->GetOperandsInfo(*insn);

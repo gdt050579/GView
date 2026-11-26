@@ -276,6 +276,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::vector<std::pair<uint64, std::string>> functionComparisons; // the walk of a function: its cmp of a returned value with a constant
     std::unordered_map<uint64, std::vector<std::pair<uint64, std::string>>> comparisonsByFunction; // the last walk of each function
     std::unordered_map<uint64, std::string> returnValueConstants;                                 // DissasmCodeZone::returnValueConstants
+    std::unordered_map<uint64, uint64> arm64ECEntryThunks;                                        // DissasmCodeZone::arm64ECEntryThunks
     std::unordered_map<uint64, std::pair<std::string, std::string>> argumentDefinitions;          // DissasmCodeZone::argumentDefinitions
     // x64 structured exception handling (CollectExceptionScopes): the funclets with the frame of their function (relative starts; the
     // unwind data of the function: its prologue size, its frame register and offset / 16), the marks of the scopes
@@ -3508,6 +3509,47 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 !GView::View::DissasmViewer::AddArm64ChunkSlots(detailHandle, bytes.GetData(), bytes.GetLength(), chunk.start, frame, movesStack))
                 return;
         }
+    }
+
+    // ARM64EC (MSVC): a function that x64 code may call has the offset of its entry thunk in the 4 bytes before it, bit 0 set (the thunk at
+    // the function + (word & ~3): DbgHelp 4270 functions, 27 thunks; d3dcompiler 1550). The word (no instruction: a data line, or udf #imm
+    // below 0x10000) shows its thunk, the thunk has an xref from the function (offset). Only a target NameArm64ECThunks named (br
+    // __os_arm64x_dispatch_ret at its end): a word of other data with bit 0 set points anywhere
+    void LinkArm64ECEntryThunks()
+    {
+        if (!zone->IsArm64Code() || handle == 0)
+            return;
+        bool linked = false;
+        for (const auto& [fileOffset, name] : callsFound) {
+            if (fileOffset < codeStart + 4 || fileOffset - codeStart >= codeSize || GetLabelType(name) == OFFSET)
+                continue;
+            const uint64 start = fileOffset - codeStart;
+            std::array<uint8, 4> bytes{};
+            if (!obj->GetData().Copy(fileOffset - 4, bytes) || (bytes[0] & 3) != 1)
+                continue;
+            const uint32 word  = bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (static_cast<uint32>(bytes[3]) << 24);
+            const int64 target = static_cast<int64>(start) + static_cast<int32>(word & ~3u);
+            if (target < 0 || static_cast<uint64>(target) >= codeSize)
+                continue;
+            const uint64 targetOffset = codeStart + static_cast<uint64>(target);
+            const auto label =
+                  std::lower_bound(callsFound.begin(), callsFound.end(), targetOffset, [](const auto& item, uint64 value) { return item.first < value; });
+            if (label == callsFound.end() || label->first != targetOffset || !label->second.starts_with("entry_thunk_"))
+                continue;
+            cs_insn* decoded = nullptr;
+            // an instruction is no word; a word below 0x10000 decodes as udf #imm (a thunk less than 64 KB after its function)
+            if (const size_t count = cs_disasm(handle, bytes.data(), bytes.size(), start - 4, 1, &decoded); count > 0) {
+                const bool undefined = decoded[0].id == ARM64_INS_UDF;
+                cs_free(decoded, count);
+                if (!undefined)
+                    continue;
+            }
+            arm64ECEntryThunks[start - 4] = static_cast<uint64>(target);
+            xrefs.Add(labelBase + start, labelBase + static_cast<uint64>(target), DissasmXrefKind::Offset);
+            linked = true;
+        }
+        if (linked)
+            xrefs.Finish();
     }
 
     // a function that is only a direct jump to a named function of the zone (IDA: j_Name): the incremental linking thunks of x86 / x64 (jmp
@@ -7816,6 +7858,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         FinishSweep();
         NameSecurityCookieFunctions();
         NameArm64ECThunks();
+        LinkArm64ECEntryThunks();
         NameOtherZoneThunks();
         NameRunTimeFunctionsByCode();
         NameJumpThunks();
@@ -7924,6 +7967,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         zone->inferredPrototypes        = std::move(inferredPrototypes);
         zone->methodPrototypes          = std::move(methodPrototypes);
         zone->returnValueConstants      = std::move(returnValueConstants);
+        zone->arm64ECEntryThunks        = std::move(arm64ECEntryThunks);
         zone->argumentDefinitions       = std::move(argumentDefinitions);
         zone->interfaceCalls            = std::move(interfaceCalls);
         zone->noReturnFunctions.assign(noReturnStarts.begin(), noReturnStarts.end());
