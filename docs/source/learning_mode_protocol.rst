@@ -621,10 +621,11 @@ Limitations
   process-wide clipboard policy callback in ``AppCUI::OS::Clipboard`` (``SetText``/``GetText`` consult it), installed
   by GView on activation.
 * Screen capture cannot be prevented on the Windows console frontend, Linux or macOS (`8. Screen protection`_).
-* Frontends without frame updates (ncurses on Linux/macOS) run network operations synchronously on the UI thread,
-  bounded by the timeouts above. GView enables AppCUI's FPS mode so that the Windows console and SDL frontends
-  deliver ``OnFrameUpdate`` (~30 Hz, no repaint unless something changed); on those frontends the automatic connect
-  when the Learning window opens is deferred to its first frame so that it runs on the worker.
+* GView enables AppCUI's FPS mode, so every frontend (Windows console, SDL, the browser and, since AppCUI 1.248.0, the
+  ncurses terminal) delivers ``OnFrameUpdate`` (about 30 Hz, less on ncurses; no repaint unless something changed); the automatic connect
+  when the Learning window opens is deferred to its first frame so that it runs on the worker. Before the first frame,
+  and on a frontend that never delivers one (the test terminal), network operations run synchronously on the UI
+  thread, bounded by the timeouts above.
 * Idle/active time is derived from repaints (approximation).
 * ``Retry-After`` is shown to the user but telemetry retries simply wait for the next flush interval.
 * Plugins outside GViewCore can still write files through code paths not listed in the matrix; the plugin
@@ -890,8 +891,8 @@ answer is capped at 32 MiB (save/delete answers 64 KiB). Scope names sent by the
   closes, on *Save now*, and at *End session* / exit (bounded: 2 s per request, 5 s in total). Each note has at most
   one request at a time; the request carries the last ``revision`` the server returned (omitted for a create) and the
   answer's ``revision`` is stored. The session tick (run from every frame of the desktop) drives the autosave,
-  the retries and their answers also while the Notes window is closed. Frontends without frame updates (ncurses)
-  save on close, on *Save now* and at session end only.
+  the retries and their answers also while the Notes window is closed. A frontend without frame updates (only the
+  test terminal) saves on close, on *Save now* and at session end only.
 * *End session* / exit / switching to another account: a conflict that is still waiting for its ``GetNotes`` turns
   the local text into a ``"(local copy)"`` note and notes the server refused get one more attempt; then the notes
   are wiped. Text that still cannot be sent (no network, notes turned off) is lost with the session, and *End

@@ -4,8 +4,8 @@
 //
 // AppCUI has no timers or cross-thread event posting: jobs run on the worker and hand back a completion callback
 // that is executed on the UI thread by DrainCompletions(), which is called from OnFrameUpdate (FPS mode is enabled
-// by GView for this purpose). Frontends that never deliver frame updates (ncurses) use synchronous execution
-// instead (see LearningSession::RunJob).
+// by GView for this purpose; every frontend delivers frames then). Until the first frame is seen - and on a frontend
+// that never delivers one, such as the test terminal - jobs run synchronously instead (see LearningSession::RunJob).
 //
 // WebAssembly (BUILD_FOR_WASM, BackgroundWorkerWasm.cpp): a web page has no threads. The jobs run, one at a time, on
 // the UI thread, and a job that needs a network response is re-run once the response has arrived (JobReplay.hpp):

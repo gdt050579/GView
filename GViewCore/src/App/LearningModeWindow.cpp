@@ -223,27 +223,6 @@ Learning::LearningSettings LoadLearningSettings()
     return s;
 }
 
-// Whether AppCUI will deliver OnFrameUpdate on this frontend (FPS mode is enabled by Instance::Init). On Windows both
-// frontends (console and SDL) honour FPS mode; on Linux/macOS only SDL does (ncurses never delivers frame updates).
-bool FrontendDeliversFrameUpdates()
-{
-#if defined(BUILD_FOR_WINDOWS) || defined(BUILD_FOR_WASM)
-    return true; // the browser frontend runs the AppCUI loop from the frames of the page
-#else
-    auto ini = AppCUI::Application::GetAppSettings();
-    if (!ini)
-        return false;
-    auto sect = ini->GetSection("AppCUI");
-    if (!sect.Exists())
-        return false;
-    auto frontend = sect.GetValue("Frontend").AsStringView();
-    if (!frontend.has_value() || frontend->size() != 3)
-        return false;
-    const auto lower = [](char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c; };
-    return lower((*frontend)[0]) == 's' && lower((*frontend)[1]) == 'd' && lower((*frontend)[2]) == 'l';
-#endif
-}
-
 // Web build: the connection string (it contains the access token) is kept encrypted by the page
 // (Browser::Secrets), never in GView.ini - the page mirrors GView.ini in clear into its localStorage.
 std::string LoadSavedConnectionString()
@@ -580,11 +559,10 @@ class LearningModeWindow : public Window,
     void OnStart() override
     {
         // OnStart runs before the first frame: a job started here would not yet know that frame updates (and thus the
-        // background worker) are available and would block the UI inline. Defer it to the first frame when one will come.
-        if (FrontendDeliversFrameUpdates())
-            startDeferred = true;
-        else
-            RunStartActions();
+        // background worker) are available and would block the UI inline. Deferred to the first frame: every frontend
+        // delivers frames in FPS mode (Instance::Init) - Windows console, SDL, the browser and, since AppCUI 1.248.0,
+        // ncurses; only the test terminal does not (the start actions do not run there; Connect still works).
+        startDeferred = true;
     }
 
     bool OnFrameUpdate() override
