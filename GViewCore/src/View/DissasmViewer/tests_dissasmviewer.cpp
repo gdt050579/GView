@@ -15581,3 +15581,119 @@ TEST_CASE("Arm64ECEmulatorThunks", "[Dissasm]Zones")
     REQUIRE(FindListingLine(listing, "0x00000050  blr    __os_arm64x_dispatch_call_no_redirect").size() > 0);
     REQUIRE(FindListingLine(listing, "0x00000088  br     __os_arm64x_dispatch_ret").size() > 0);
 }
+
+TEST_CASE("JumpThunkChains", "[Dissasm]Thunks")
+{
+    // a function that is only a jump to a named function: j_ and its name, a chain named from its end (the incremental linking thunks of x64,
+    // the ARM64 veneers of MSVC: DbgHelp b j__o_free); the prototype of the end applies to the calls of the chain; a jump to a location (the
+    // body of another function) is no thunk
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,       // 0x00: sub rsp, 0x28
+        0xB9, 0x05, 0x00, 0x00, 0x00, // 0x04: mov ecx, 5
+        0xE8, 0x12, 0x00, 0x00, 0x00, // 0x09: call 0x20          (the chain)
+        0xE8, 0x15, 0x00, 0x00, 0x00, // 0x0e: call 0x28
+        0xE8, 0x18, 0x00, 0x00, 0x00, // 0x13: call 0x30
+        0x48, 0x83, 0xC4, 0x28,       // 0x18: add rsp, 0x28
+        0xC3,                         // 0x1c: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xEB, 0x06 }); // 0x20: jmp 0x28
+    file.resize(0x28, 0xCC);
+    file.insert(file.end(), { 0xE9, 0x13, 0x00, 0x00, 0x00 }); // 0x28: jmp 0x40
+    file.resize(0x30, 0xCC);
+    file.insert(file.end(), { 0xEB, 0xE6 }); // 0x30: jmp 0x18 (a location of sub_0)
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0xFF, 0x25, 0x3A, 0x00, 0x00, 0x00 }); // 0x40: jmp qword ptr [rip + 0x3a] (0x80: CloseHandle)
+    file.resize(0x88, 0x00);
+    ZoneLayout layout;
+    layout.size             = 0x48;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x80, { "CloseHandle", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance x64(file.data(), file.size(), true, layout);
+    const std::string listing = x64.GetListing();
+    INFO(listing);
+    REQUIRE(x64.zone->GetLabelNameAt(0x40) == "j_CloseHandle");
+    REQUIRE(x64.zone->GetLabelNameAt(0x28) == "j_j_CloseHandle");
+    REQUIRE(x64.zone->GetLabelNameAt(0x20) == "j_j_j_CloseHandle");
+    REQUIRE(x64.zone->GetLabelNameAt(0x30).starts_with("sub_"));
+    REQUIRE(FindListingLine(listing, "0x00000009  call   j_j_j_CloseHandle").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000004  mov    ecx, 5").ends_with("; hObject"));
+
+    // ARM64: a veneer (b) to the stub of an import (adrp x16; ldr x16; br x16), the stub reached by the b first (a location, then a function)
+    std::vector<unsigned char> arm;
+    const auto word = [&arm](uint32 value) {
+        for (uint32 index = 0; index < 4; index++)
+            arm.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    };
+    word(0xA9BF7BFD); // 0x00: stp x29, x30, [sp, #-0x10]!
+    word(0x910003FD); // 0x04: mov x29, sp
+    word(0x94000006); // 0x08: bl 0x20                  (the veneer)
+    word(0xA8C17BFD); // 0x0c: ldp x29, x30, [sp], #0x10
+    word(0xD65F03C0); // 0x10: ret
+    arm.resize(0x20, 0x00);
+    word(0x14000004); // 0x20: b 0x30
+    word(0xD503201F); // 0x24: nop                     (the padding of MSVC)
+    word(0xD503201F); // 0x28: nop
+    word(0xD503201F); // 0x2c: nop
+    word(0xB0000010); // 0x30: adrp x16, 0x1000          (the stub of free)
+    word(0xF9400A10); // 0x34: ldr x16, [x16, #0x10]
+    word(0xD61F0200); // 0x38: br x16
+    arm.resize(0x1018, 0x00);
+    ZoneLayout armLayout;
+    armLayout.size             = 0x40;
+    armLayout.entryPoint       = 0;
+    armLayout.language         = DisassemblyLanguage::ARM64;
+    armLayout.translateOffsets = true; // the RVA is the file offset
+    armLayout.imports          = { { 0x1010, { "free", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance arm64(arm.data(), arm.size(), true, armLayout);
+    const std::string armListing = arm64.GetListing();
+    INFO(armListing);
+    REQUIRE(arm64.zone->GetLabelNameAt(0x30) == "j_free");
+    REQUIRE(arm64.zone->GetLabelNameAt(0x20) == "j_j_free");
+    REQUIRE(FindListingLine(armListing, "0x00000008  bl     j_j_free").size() > 0);
+}
+
+TEST_CASE("NumberedRunTimeCopies", "[Dissasm]Arm64")
+{
+    // the ARM64EC code of an ARM64X image links a run-time of its own: a second copy of __security_push_cookie in the zone is
+    // __security_push_cookie_1 (DbgHelp, d3dcompiler: the second __security_pop_cookie), a third __security_push_cookie_2
+    std::vector<unsigned char> file = {
+        0xFD, 0x7B, 0xBF, 0xA9, // 0x00: stp x29, x30, [sp, #-0x10]!
+        0xFD, 0x03, 0x00, 0x91, // 0x04: mov x29, sp
+        0x0E, 0x00, 0x00, 0x94, // 0x08: bl 0x40       __security_push_cookie
+        0x16, 0x00, 0x00, 0x94, // 0x0c: bl 0x64       (the second copy)
+        0x1F, 0x00, 0x00, 0x94, // 0x10: bl 0x8c       (the third copy)
+        0xFD, 0x7B, 0xC1, 0xA8, // 0x14: ldp x29, x30, [sp], #0x10
+        0xC0, 0x03, 0x5F, 0xD6, // 0x18: ret
+    };
+    file.resize(0x40, 0x00);
+    const std::vector<unsigned char> push = {
+        0xFF, 0x43, 0x00, 0xD1, // sub sp, sp, #0x10
+        0x11, 0x00, 0x00, 0xB0, // adrp x17, 0x1000
+        0x31, 0x0A, 0x40, 0xF9, // ldr x17, [x17, #0x10]    (0x1010: __security_cookie)
+        0xF1, 0x63, 0x31, 0xCB, // sub x17, sp, x17
+        0xF1, 0x07, 0x00, 0xF9, // str x17, [sp, #8]
+        0xC0, 0x03, 0x5F, 0xD6, // ret
+    };
+    file.insert(file.end(), push.begin(), push.end()); // 0x40
+    file.resize(0x64, 0x00);
+    file.insert(file.end(), push.begin(), push.end()); // 0x64
+    file.resize(0x8C, 0x00);
+    file.insert(file.end(), push.begin(), push.end()); // 0x8c
+    file.resize(0x1020, 0x00);
+    ZoneLayout layout;
+    layout.size             = 0xC0;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::ARM64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x1010, { "__security_cookie", MemoryMappingType::TextMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(dissasmInstance.zone->GetLabelNameAt(0x40) == "__security_push_cookie");
+    REQUIRE(dissasmInstance.zone->GetLabelNameAt(0x64) == "__security_push_cookie_1");
+    REQUIRE(dissasmInstance.zone->GetLabelNameAt(0x8C) == "__security_push_cookie_2");
+    REQUIRE(FindListingLine(listing, "0x0000000c  bl     __security_push_cookie_1").size() > 0);
+}
