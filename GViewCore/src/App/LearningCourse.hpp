@@ -21,6 +21,7 @@ namespace GView::App::Course
 using GView::Security::Learning::WorkspaceRole;
 
 enum class CourseAction : uint8 {
+    ProblemList,         // Problem list (server window): the Learning window, this task selected
     SaveWork,            // Save work to course
     ResumeWork,          // Resume work from course
     CompareSolution,     // Compare with the teacher's solution
@@ -62,9 +63,10 @@ struct CourseMenuRow {
     bool enabled{ true }; // a disabled row is shown grayed out; choosing it shows the detail
 };
 
-// The rows of the Course menu, in order. Student windows: Save / Resume (when the server has course work), Compare / Replay
-// (when a solution is published for the student / it has a replay), Course note (notes on), Submit flag (submissions on);
-// course staff add Publish solution... and Edit replay journal... Solution / Replay windows: Close solution window only.
+// The rows of the Course menu, in order. Every window starts with Problem list (back to the catalogue). Student windows:
+// Save / Resume (when the server has course work), Compare / Replay (when a solution is published for the student / it has a
+// replay), Course note (notes on), Submit flag (submissions on); course staff add Publish solution... and Edit replay
+// journal... Solution / Replay windows: Close solution window.
 std::vector<CourseMenuRow> BuildCourseMenuRows(const CourseMenuContext& ctx);
 
 // The teacher's solution opened from the Learning window, without a student window: from the local task file (file mode,

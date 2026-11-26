@@ -499,6 +499,7 @@ class LearningModeWindow : public Window,
 
     std::string launchNotice; // web launch link: why nothing was connected (shown until the student connects)
     bool autoConnect;
+    std::string pendingSelect; // row key to select when the catalogue is shown ("i:<item name>"), then cleared
     bool opened{ false };
     uint64 lastStatusSecond{ 0 };
     bool needsRefresh{ true };
@@ -515,8 +516,11 @@ class LearningModeWindow : public Window,
   public:
     // useSaved: an empty `prefilled` shows (and connects with) the saved connection string. notice: a failed web launch
     // opens the window with an empty connection field (useSaved = false) and the reason, so the string can be pasted.
-    LearningModeWindow(std::string_view prefilled, bool connectNow, bool useSaved = true, std::string_view notice = {})
-        : Window("Learning and Evaluation Mode", "d:c,w:98%,h:96%", WindowFlags::Sizeable), launchNotice(notice), autoConnect(connectNow)
+    // selectItem: the item selected once the catalogue is shown (Course -> Problem list from a task window)
+    LearningModeWindow(
+          std::string_view prefilled, bool connectNow, bool useSaved = true, std::string_view notice = {}, std::string_view selectItem = {})
+        : Window("Learning and Evaluation Mode", "d:c,w:98%,h:96%", WindowFlags::Sizeable), launchNotice(notice), autoConnect(connectNow),
+          pendingSelect(selectItem.empty() ? std::string() : "i:" + std::string(selectItem))
     {
         std::string initial = (prefilled.empty() && useSaved) ? LoadSavedConnectionString() : std::string(prefilled);
         if (prefilled.empty() && !initial.empty() && !Session().HasSession())
@@ -833,6 +837,15 @@ class LearningModeWindow : public Window,
         return idx == ROW_NONE ? std::string() : rows[idx].key;
     }
 
+    static bool WeekHasItem(const Learning::Week& week, std::string_view name)
+    {
+        for (const auto* list : { &week.problems, &week.resources })
+            for (const auto& it : *list)
+                if (it.name == name)
+                    return true;
+        return false;
+    }
+
     // ---------------- order and folding of the weeks (per course server and student)
     void LoadViewState(const std::string& section)
     {
@@ -929,7 +942,11 @@ class LearningModeWindow : public Window,
 
     void PopulateTree()
     {
-        const std::string previous = CurrentRowKey();
+        // the item asked for (opened from a task window) wins over the current row, once: the first tree with the catalogue
+        const bool select          = !pendingSelect.empty() && Session().IsCatalogueLoaded();
+        const std::string previous = select ? pendingSelect : CurrentRowKey();
+        if (select)
+            pendingSelect.clear();
         if (CaptureFolds()) // before the rows go away (saved in the section of the catalogue that was shown)
             SaveViewState();
         populating = true;
@@ -957,12 +974,20 @@ class LearningModeWindow : public Window,
             const std::string weekKey = "w:" + std::to_string(week.id);
             // a week id should be unique; a server that repeats one (or omits it: id 0) gets only its first week remembered
             const bool tracked = seenWeekIds.insert(week.id).second;
-            const bool folded  = tracked && viewState.folded.count(week.id) != 0;
-            auto weekItem      = tree->AddItem(title, true);
+            bool folded        = tracked && viewState.folded.count(week.id) != 0;
+            const auto hash    = Learning::WeekContentHash(week);
+            // the task the window was opened from (Course -> Problem list) is shown: its folded week is unfolded
+            if (folded && select && WeekHasItem(week, std::string_view(previous).substr(2)))
+            {
+                folded = false;
+                if (Learning::ApplyFoldChange(viewState, week.id, hash, false))
+                    SaveViewState();
+            }
+            auto weekItem = tree->AddItem(title, true);
             weekItem.SetType(TreeViewItem::Type::Category);
             rows.push_back(RowRef{ w, RowKind::Week, 0, weekKey });
             weekItem.SetData(static_cast<uint64>(rows.size() - 1));
-            shownWeeks.push_back(ShownWeekRow{ weekItem, week.id, Learning::WeekContentHash(week), title, false, folded, tracked });
+            shownWeeks.push_back(ShownWeekRow{ weekItem, week.id, hash, title, false, folded, tracked });
             if (previous == weekKey)
                 restore = weekItem;
             auto addItem = [&](const Learning::CatalogueItem& it, bool problem, size_t idx) {
@@ -1484,9 +1509,16 @@ class LearningModeWindow : public Window,
 };
 } // namespace
 
-void GView::App::ShowLearningModeWindow(std::string_view prefilledConnectionString, bool autoConnect)
+void GView::App::ShowNoCourseTaskWindowNotice()
 {
-    LearningModeWindow dlg(prefilledConnectionString, autoConnect);
+    Dialogs::MessageBox::ShowNotification(
+          "Course",
+          "Open the window of a problem first:\nCourse -> Problem list, select it, then Open.");
+}
+
+void GView::App::ShowLearningModeWindow(std::string_view prefilledConnectionString, bool autoConnect, std::string_view selectItem)
+{
+    LearningModeWindow dlg(prefilledConnectionString, autoConnect, true, {}, selectItem);
     dlg.Show();
 }
 

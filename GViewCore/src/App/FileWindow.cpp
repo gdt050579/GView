@@ -397,13 +397,20 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
             if (!GView::Security::Learning::Hooks::OpenNoteForObject(this->obj.get()))
                 GView::App::ShowAddNoteDialog();
             return true;
+        // the keys reach these only in a window of the course (OnKeyEvent); the Course menu sends them to any window
         case CMD_LEARNING_SUBMIT_FLAG:
             if (GView::Security::Learning::Hooks::IsCourseWorkWindow(this->obj.get()))
                 GView::Security::Learning::Hooks::ShowSubmitDialogForObject(this->obj.get());
+            else if (GView::Security::Learning::Hooks::IsLearningProblem(this->obj.get())) // a window of the teacher's solution
+                AppCUI::Dialogs::MessageBox::ShowNotification("Course", "Submit the flag from your own window of the problem,\nnot from the teacher's solution.");
+            else
+                GView::App::ShowNoCourseTaskWindowNotice();
             return true;
         case CMD_LEARNING_COURSE_MENU:
             if (GView::Security::Learning::Hooks::IsLearningProblem(this->obj.get()))
                 GView::App::ShowLearningCourseMenu(this);
+            else
+                GView::App::ShowNoCourseTaskWindowNotice();
             return true;
         }
         if ((ID >= CMD_SHOW_HORIZONTAL_PANEL) && (ID <= CMD_SHOW_HORIZONTAL_PANEL + 100))

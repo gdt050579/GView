@@ -1104,10 +1104,12 @@ not written at all: the course server is then the only persistence of the journa
 **User interface.**
 
 * *Course* menu (``F12``, ``[Keys.GView] LearningCourse``; on the command bar of every window of a problem of
-  the course; with no window opened, the same key is *SeeServerWindow*, the Learning and Evaluation Mode window): *Save work to course* (document size, replay steps), *Resume work from course* ("saved <time>", or
+  the course; with no window opened, the same key opens the Learning and Evaluation Mode window, connected or not): *Problem
+  list (server window)* (the Learning window with the problem of this window selected), *Save work to course* (document size, replay steps), *Resume work from course* ("saved <time>", or
   "(no saved work)"), *Compare with the teacher's solution* / *Replay the teacher's solution* (when the catalogue says
   a solution / a replay is published for the student), *Course note*, *Submit flag*; course staff add *Publish
-  solution...* and *Edit replay journal...*. In a solution window the only command is *Close solution window*.
+  solution...* and *Edit replay journal...*. In a solution window the only other command is *Close solution window*. The
+  *Course* menu of the menu bar has *Problem list*, *Course commands of this task* and *Submit flag*.
   Disabled rows say why (disabled by the teacher, not connected, no disassembly view).
 * *Save work*: counts (names, comments, variables, zones, bookmarks), the checkbox "Include replay journal" (checked),
   the size against the limit (refused above it), then "Saved: revision N (size) at <time>"; the window is clean. On

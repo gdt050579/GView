@@ -14,7 +14,8 @@ Step-by-step workflow
 
 **Step 1: Launch GView and connect to the course server.**
 
-The student launches GView, selects *Options > Learning and Evaluation Mode* (or
+The student launches GView, selects *Course > Problem list* (or presses ``F12`` with no window
+open; *Options > Learning and Evaluation Mode* opens the same window; or
 starts ``GView learn <connectionString>``) and pastes the connection string received from
 the teacher. With the browser build, the course page can do this step for the student: its
 *Open GView in the browser* button opens GView already connected, through a one-time launch code

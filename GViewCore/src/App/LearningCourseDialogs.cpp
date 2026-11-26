@@ -39,6 +39,8 @@ using GView::App::Course::WorkState;
 std::vector<CourseMenuRow> GView::App::Course::BuildCourseMenuRows(const CourseMenuContext& ctx)
 {
     std::vector<CourseMenuRow> rows;
+    // the way back to the catalogue: works in every state (the window connects or reconnects itself)
+    rows.push_back({ CourseAction::ProblemList, "Problem list (server window)", "the weeks, problems and resources of the course", true });
     if (ctx.role == WorkspaceRole::Solution || ctx.role == WorkspaceRole::Replay)
     {
         rows.push_back({ CourseAction::CloseSolutionWindow,
@@ -1264,6 +1266,9 @@ void GView::App::ShowLearningCourseMenu(FileWindow* window)
 
     switch (rows[menu.chosen.value()].action)
     {
+    case CourseAction::ProblemList:
+        GView::App::ShowLearningModeWindow("", false, task.item);
+        break;
     case CourseAction::SaveWork:
         SaveWork(task);
         break;

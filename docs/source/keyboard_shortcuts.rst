@@ -87,9 +87,11 @@ Learning and Evaluation Mode keys
 =================== ============================== ==============================================================================
 Key                 Command (section)              What it does
 =================== ============================== ==============================================================================
-``F12``             ``LearningCourse``             *Course* menu of a task window opened from the course catalogue: save /
-                    (``Keys.GView``)               resume the work, the teacher's solution, publish (course staff). With no
-                                                   window opened: *SeeServerWindow*, the Learning and Evaluation Mode window
+``F12``             ``LearningCourse``             *Course* menu of a task window opened from the course catalogue: the
+                    (``Keys.GView``)               problem list, save / resume the work, the teacher's solution, publish
+                                                   (course staff). With no window opened: the Learning and Evaluation Mode
+                                                   window (*SeeServerWindow* when connected, *LearningMode* before: it
+                                                   connects with the saved connection string)
 ``F10``             ``LearningSubmitFlag``         Submit the flag of the student's task window
                     (``Keys.GView``)
 ``Alt+Left``        ``ReplayBack``                 Replay of a teacher's solution: one step back
@@ -108,6 +110,11 @@ bar. They work only in a window of the course, where they take precedence over a
 of a panel (e.g. the ``F10`` of the PDF *Objects* panel), so the **Keyboard shortcuts** window does not report those
 as conflicts; a viewer key on the same key is still a conflict (the viewer handles it first). ``F11`` is not used: Windows Terminal, the Windows console, GNOME Terminal and macOS keep it for
 themselves (full screen, show desktop).
+
+The **Course** menu of the menu bar (``Alt+U``) has the same commands without keys: *Problem list (server window)*,
+*Course commands of this task* (``F12`` in a task window) and *Submit flag* (``F10``). Closing the last window keeps GView
+open on the empty desktop. ``Escape`` there closes GView; in Learning and Evaluation Mode (and always in the browser build)
+it asks first, and a second ``Escape`` answers *Cancel*. *File > Exit* (``Shift+Escape``) closes without asking.
 
 Settings file
 -------------

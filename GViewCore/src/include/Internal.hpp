@@ -1062,7 +1062,10 @@ namespace App
     };
 
     // Learning and Evaluation Mode UI (LearningModeWindow.cpp / LearningSubmitDialog.cpp)
-    void ShowLearningModeWindow(std::string_view prefilledConnectionString, bool autoConnect);
+    // Course -> Course commands / Submit flag with no task window of the course focused: says how to open one
+    void ShowNoCourseTaskWindowNotice();
+    // selectItem: the catalogue item to select once the catalogue is shown (the task window it was opened from)
+    void ShowLearningModeWindow(std::string_view prefilledConnectionString, bool autoConnect, std::string_view selectItem = {});
 #ifdef BUILD_FOR_WASM
     // launch link of the web build: validates the connection string, asks once per server origin, ends the current
     // connection if it is another one, then connects as if the string had been pasted (stored after a verified connect)
