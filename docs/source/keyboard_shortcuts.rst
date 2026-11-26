@@ -76,6 +76,13 @@ macOS and Linux terminals
 * ``Option`` is sent as ``Alt`` only when the terminal is configured for it: *Terminal.app* → Settings → Profiles →
   Keyboard → **Use Option as Meta key**; *iTerm2* → Profiles → Keys → **Left Option key: Esc+**. Without it, either
   use the *Swapped* profile or the combo mode below.
+* *Terminal.app* sends ``Option+Left`` / ``Option+Right`` as ``Alt+B`` / ``Alt+F`` (the same bytes), so the replay keys
+  ``Alt+Left`` / ``Alt+Right`` need a change of the profile's key list: edit ``⌥←`` and ``⌥→`` (*Send Text*), press
+  ``Escape`` in the text field (it shows ``\033``), then type ``[1;3D`` for ``⌥←`` and ``[1;3C`` for ``⌥→``.
+* ``Shift+F5`` - ``Shift+F12``, ``Ctrl+H`` and the non-ASCII characters (letters of the keyboard layout such as ``ș`` or
+  ``ă``, and the characters ``Option`` types without *Use Option as Meta key*, such as ``ƒ``) need a GView built with an
+  AppCUI newer than 1.258.0: older versions read ``Shift+F5`` - ``Shift+F12`` as ``Escape``, ``Ctrl+H`` as ``Backspace``
+  and drop the non-ASCII characters.
 * Function keys may require ``Fn`` (macOS uses some of them for system functions).
 * **Combo mode**: press the backtick key (left of ``1``), then ``a`` / ``c`` / ``s`` to toggle ``Alt`` / ``Ctrl`` / ``Shift`` and finally
   the key (a letter, or ``1``-``0`` for ``F1``-``F10``). ``Space`` keeps the combo mode active, ``Escape`` leaves it.
