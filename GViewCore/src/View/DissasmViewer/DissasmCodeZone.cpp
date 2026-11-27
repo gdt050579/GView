@@ -276,6 +276,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::vector<std::pair<uint64, std::string>> functionComparisons; // the walk of a function: its cmp of a returned value with a constant
     std::unordered_map<uint64, std::vector<std::pair<uint64, std::string>>> comparisonsByFunction; // the last walk of each function
     std::unordered_map<uint64, std::string> returnValueConstants;                                 // DissasmCodeZone::returnValueConstants
+    std::unordered_map<uint64, uint64> arm64ECEntryThunks;                                        // DissasmCodeZone::arm64ECEntryThunks
     std::unordered_map<uint64, std::pair<std::string, std::string>> argumentDefinitions;          // DissasmCodeZone::argumentDefinitions
     // x64 structured exception handling (CollectExceptionScopes): the funclets with the frame of their function (relative starts; the
     // unwind data of the function: its prologue size, its frame register and offset / 16), the marks of the scopes
@@ -3510,6 +3511,118 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
     }
 
+    // ARM64EC (MSVC): a function that x64 code may call has the offset of its entry thunk in the 4 bytes before it, bit 0 set (the thunk at
+    // the function + (word & ~3): DbgHelp 4270 functions, 27 thunks; d3dcompiler 1550). The word (no instruction: a data line, or udf #imm
+    // below 0x10000) shows its thunk, the thunk has an xref from the function (offset). Only a target NameArm64ECThunks named (br
+    // __os_arm64x_dispatch_ret at its end): a word of other data with bit 0 set points anywhere
+    void LinkArm64ECEntryThunks()
+    {
+        if (!zone->IsArm64Code() || handle == 0)
+            return;
+        bool linked = false;
+        for (const auto& [fileOffset, name] : callsFound) {
+            if (fileOffset < codeStart + 4 || fileOffset - codeStart >= codeSize || GetLabelType(name) == OFFSET)
+                continue;
+            const uint64 start = fileOffset - codeStart;
+            std::array<uint8, 4> bytes{};
+            if (!obj->GetData().Copy(fileOffset - 4, bytes) || (bytes[0] & 3) != 1)
+                continue;
+            const uint32 word  = bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (static_cast<uint32>(bytes[3]) << 24);
+            const int64 target = static_cast<int64>(start) + static_cast<int32>(word & ~3u);
+            if (target < 0 || static_cast<uint64>(target) >= codeSize)
+                continue;
+            const uint64 targetOffset = codeStart + static_cast<uint64>(target);
+            const auto label =
+                  std::lower_bound(callsFound.begin(), callsFound.end(), targetOffset, [](const auto& item, uint64 value) { return item.first < value; });
+            if (label == callsFound.end() || label->first != targetOffset || !label->second.starts_with("entry_thunk_"))
+                continue;
+            cs_insn* decoded = nullptr;
+            // an instruction is no word; a word below 0x10000 decodes as udf #imm (a thunk less than 64 KB after its function)
+            if (const size_t count = cs_disasm(handle, bytes.data(), bytes.size(), start - 4, 1, &decoded); count > 0) {
+                const bool undefined = decoded[0].id == ARM64_INS_UDF;
+                cs_free(decoded, count);
+                if (!undefined)
+                    continue;
+            }
+            arm64ECEntryThunks[start - 4] = static_cast<uint64>(target);
+            xrefs.Add(labelBase + start, labelBase + static_cast<uint64>(target), DissasmXrefKind::Offset);
+            linked = true;
+        }
+        if (linked)
+            xrefs.Finish();
+    }
+
+    // a function that is only a direct jump to a named function of the zone (IDA: j_Name): the incremental linking thunks of x86 / x64 (jmp
+    // Name), the ARM64 veneers of MSVC (b Name: DbgHelp sub_18000CC10, b j__o_free, 1674 calls; the ARM64EC code calls free through a chain of
+    // them, b sub_X; b j_free); j_ and the name of the target, a chain named from its end (j_j_free), a second one of the same target j_Name_1.
+    // Only a function with an automatic name (sub_) whose first instruction is the jump (E9 / EB, ARM64 b); the target a function (not a
+    // location: the entry of a split function jumping to its body) with a name, not the entry point
+    void NameJumpThunks()
+    {
+        constexpr uint32 MAX_CHAIN = 8;
+        if (zone->IsArm32Code())
+            return;
+        const bool isArm64 = zone->IsArm64Code();
+        std::vector<std::pair<size_t, size_t>> jumps; // indexes in callsFound: the thunk, its target
+        for (size_t index = 0; index < callsFound.size(); index++) {
+            const auto& [fileOffset, name] = callsFound[index];
+            if (fileOffset < codeStart || fileOffset - codeStart >= codeSize || GetLabelType(name) != SUB)
+                continue;
+            const uint64 start = fileOffset - codeStart;
+            if (zone->GetArchAt(start) != arch)
+                continue; // the x64 code of an ARM64X image
+            const uint32 length = static_cast<uint32>(std::min<uint64>(codeSize - start, isArm64 ? 4 : 5));
+            const auto head     = obj->GetData().Get(fileOffset, length, false);
+            if (!head.IsValid() || head.GetLength() < (isArm64 ? 4u : 2u))
+                continue;
+            const uint8* b = head.GetData();
+            int64 target   = -1;
+            if (isArm64) {
+                const uint32 word = b[0] | (b[1] << 8) | (b[2] << 16) | (static_cast<uint32>(b[3]) << 24);
+                if ((word & 0xFC000000u) == 0x14000000u) // b imm26 (the offset in words, signed)
+                    target = static_cast<int64>(start) + (static_cast<int64>(static_cast<int32>(word << 6)) >> 4);
+            } else if (b[0] == 0xEB) // jmp rel8
+                target = static_cast<int64>(start) + 2 + static_cast<int8>(b[1]);
+            else if (b[0] == 0xE9 && head.GetLength() >= 5) // jmp rel32
+                target = static_cast<int64>(start) + 5 + static_cast<int32>(b[1] | (b[2] << 8) | (b[3] << 16) | (static_cast<uint32>(b[4]) << 24));
+            if (target < 0 || static_cast<uint64>(target) >= codeSize || static_cast<uint64>(target) == start)
+                continue;
+            // the label of a function there (not a location; not a label of the data inside the code: callsMap keeps true for a jump
+            // target that became a function later)
+            const uint64 targetOffset = codeStart + static_cast<uint64>(target);
+            const auto found =
+                  std::lower_bound(callsFound.begin(), callsFound.end(), targetOffset, [](const auto& item, uint64 value) { return item.first < value; });
+            if (found != callsFound.end() && found->first == targetOffset && GetLabelType(found->second) != OFFSET &&
+                !instructionSet.DataRangeAt(static_cast<uint64>(target)))
+                jumps.emplace_back(index, static_cast<size_t>(found - callsFound.begin()));
+        }
+        if (jumps.empty())
+            return;
+        std::unordered_set<std::string> usedNames;
+        for (const auto& call : callsFound)
+            if (GetLabelType(call.second) != SUB)
+                usedNames.insert(call.second);
+        // a pass per link of the chains: a thunk is named once its target has a name
+        for (uint32 pass = 0; pass < MAX_CHAIN; pass++) {
+            bool named = false;
+            for (const auto& [thunk, target] : jumps) {
+                const std::string& targetName = callsFound[target].second;
+                if (GetLabelType(callsFound[thunk].second) != SUB || GetLabelType(targetName) != OTHER || targetName == "EntryPoint" ||
+                    callsFound[thunk].first == zone->zoneDetails.entryPoint)
+                    continue;
+                std::string name = "j_" + targetName;
+                for (uint32 copy = 1; usedNames.contains(name) && copy < 1000; copy++)
+                    name = "j_" + targetName + "_" + std::to_string(copy);
+                if (usedNames.insert(name).second) {
+                    callsFound[thunk].second = std::move(name);
+                    named                    = true;
+                }
+            }
+            if (!named)
+                break;
+        }
+    }
+
     // ARM64EC: the thunks between the ARM64EC code and the x64 code, named by the pointer of the emulator they go through (a stripped image
     // has no name for them; MSVC's are $iexit_thunk$cdecl$<signature> / $ientry_thunk$cdecl$<signature>):
     // - an exit thunk (exit_thunk_N): the call of x64 code, blr __os_arm64x_dispatch_call_no_redirect after the arguments moved to the x64
@@ -3556,7 +3669,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // - ARM64: the cookie loaded (adrp; ldr / add, ldr), cmp x0 with it; b.ne; ret: __security_check_cookie (x0); the cookie of the frame read
     //   at [sp, #8], its difference with sp compared; b.ne; add sp, sp, #0x10; ret: __security_pop_cookie; sub sp, sp, #0x10, the cookie loaded,
     //   its difference with sp stored at [sp, #8]; ret (no branch): __security_push_cookie (DbgHelp 1046 calls, d3dcompiler 1405)
-    // Only a function with an automatic name (sub_), a name not given yet
+    // Only a function with an automatic name (sub_); a second copy of the code numbered (NumberedRunTimeName)
     void NameSecurityCookieFunctions()
     {
         constexpr uint32 CHECK_BYTES      = 48;
@@ -3672,13 +3785,26 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             }
             if (count > 0)
                 cs_free(decoded, count);
-            if (!name.empty() && usedNames.insert(std::string(name)).second)
-                callsFound[index].second = std::string(name);
+            if (auto unique = name.empty() ? std::string() : NumberedRunTimeName(name, usedNames); !unique.empty())
+                callsFound[index].second = std::move(unique);
         }
     }
 
+    // a name of the run-time that a function has by its code (NameSecurityCookieFunctions, NameRunTimeFunctionsByCode), the first copy of the
+    // zone; a second copy of the code (the ARM64EC code of an ARM64X image links a run-time of its own: DbgHelp sub_1801900B0, the second
+    // __security_pop_cookie, 541 calls; d3dcompiler 573) gets the name and a number, as the second thunk of an import: __security_pop_cookie_1.
+    // Empty when the numbers are all taken
+    static std::string NumberedRunTimeName(std::string_view name, std::unordered_set<std::string>& usedNames)
+    {
+        constexpr uint32 MAX_COPIES = 1000;
+        std::string numbered(name);
+        for (uint32 copy = 1; usedNames.contains(numbered) && copy < MAX_COPIES; copy++)
+            numbered = std::string(name) + "_" + std::to_string(copy);
+        return usedNames.insert(numbered).second ? numbered : std::string();
+    }
+
     // the functions of the run-time linked statically, named by the first bytes of their code (a driver has no symbol for its memset; IDA names
-    // them by its signatures): the bytes are those of the run-time itself, exact (a start with an automatic name only, a name given once)
+    // them by its signatures): the bytes are those of the run-time itself, exact (a start with an automatic name only; a second copy numbered)
     // - x64 memset of the CRT of the WDK: mov rax, rcx; movzx edx, dl; mov r9, 0x0101010101010101; imul rdx, r9 (405 of the 495 drivers of a
     //   Windows 11; ntfs 1004 calls)
     // - x64 memcpy (memmove, the same code): mov rax, rcx; cmp r8, 8; jb; cmp r8, 0x10; ja; mov r11, [rdx]; mov rdx, [rdx + r8 - 8]; mov [rcx],
@@ -3786,8 +3912,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 }
                 if (!code.jumpsTo.empty())
                     jumps.emplace_back(index, &code);
-                else if (usedNames.insert(std::string(code.name)).second)
-                    call.second = std::string(code.name);
+                else if (auto unique = NumberedRunTimeName(code.name, usedNames); !unique.empty())
+                    call.second = std::move(unique);
                 break;
             }
         }
@@ -3801,8 +3927,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const uint64 target = (jump + static_cast<int64>(displacement)) & addressMask;
             const auto label =
                   std::lower_bound(callsFound.begin(), callsFound.end(), target, [](const auto& item, uint64 value) { return item.first < value; });
-            if (label != callsFound.end() && label->first == target && label->second == code->jumpsTo && usedNames.insert(std::string(code->name)).second)
-                callsFound[index].second = std::string(code->name);
+            if (label == callsFound.end() || label->first != target || label->second != code->jumpsTo)
+                continue;
+            if (auto unique = NumberedRunTimeName(code->name, usedNames); !unique.empty())
+                callsFound[index].second = std::move(unique);
         }
     }
 
@@ -7734,8 +7862,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         FinishSweep();
         NameSecurityCookieFunctions();
         NameArm64ECThunks();
+        LinkArm64ECEntryThunks();
         NameOtherZoneThunks();
         NameRunTimeFunctionsByCode();
+        NameJumpThunks();
         switchCaseTargets = SwitchCases();
         ComputeFunctionEnds();
         DetectFunctionChunks();
@@ -7841,6 +7971,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         zone->inferredPrototypes        = std::move(inferredPrototypes);
         zone->methodPrototypes          = std::move(methodPrototypes);
         zone->returnValueConstants      = std::move(returnValueConstants);
+        zone->arm64ECEntryThunks        = std::move(arm64ECEntryThunks);
         zone->argumentDefinitions       = std::move(argumentDefinitions);
         zone->interfaceCalls            = std::move(interfaceCalls);
         zone->noReturnFunctions.assign(noReturnStarts.begin(), noReturnStarts.end());

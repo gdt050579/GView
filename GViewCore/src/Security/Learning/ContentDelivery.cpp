@@ -154,8 +154,11 @@ Utils::GStatus ProcessDownloadResponse(HttpResponse& response, const CatalogueIt
     }
     else
     {
-        if (result.mode == DeliveryMode::Memory && v2 && !ctx.policy->contentEncryption.empty())
-            return Utils::GStatus::Error("memory-only content was delivered unencrypted although the policy requires encryption");
+        // fail closed: a policy that declares content encryption covers every item, whatever its delivery mode (a
+        // file-mode item is written to disk in clear only after it was decrypted here). Only a policy without
+        // contentEncryption (older servers) or the legacy no-policy path accept an unencrypted body.
+        if (v2 && !ctx.policy->contentEncryption.empty())
+            return Utils::GStatus::Error("the content was delivered unencrypted although the course policy requires encryption");
         if (!result.data.Allocate(response.body.size()))
             return Utils::GStatus::Error("failed to allocate memory for the delivered content");
         std::memcpy(result.data.Data(), response.body.data(), response.body.size());

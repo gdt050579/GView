@@ -24,6 +24,8 @@ target_sources(GViewCore PRIVATE
 
 # change detection of the persistent storage of the web build: pure logic, built everywhere for the unit tests
 target_sources(GViewCore PRIVATE BrowserStorageDiff.cpp)
+# download gate of the web build (task files are never handed to the browser): the matching is built everywhere too
+target_sources(GViewCore PRIVATE BrowserDownloadGate.cpp)
 
 if (EMSCRIPTEN)
     target_sources(GViewCore PRIVATE BrowserHost.cpp BrowserStorage.cpp BrowserLaunch.cpp StoredFilesWindow.cpp)
@@ -31,5 +33,6 @@ endif()
 
 add_testing_sources(GViewCore tests_keybindings.cpp)
 add_testing_sources(GViewCore tests_browserstorage.cpp)
+add_testing_sources(GViewCore tests_browserdownloadgate.cpp)
 add_testing_sources(GViewCore tests_temporaryfolder.cpp)
 add_testing_sources(GViewCore tests_learningcourse.cpp)

@@ -9,6 +9,7 @@
 #include "LearningCourse.hpp"
 
 #include <cstdio>
+#include <functional>
 #include <optional>
 #include <set>
 
@@ -1383,6 +1384,7 @@ class LearningModeWindow : public Window,
         const auto path = store.FindUpToDate(item.name, item.sha256);
         if (!path.has_value())
             return false;
+        RecordDelivered(item.sha256); // the local copy holds exactly these bytes (FindUpToDate checked them)
         OpenTaskFile(*path, item, store.RecordedVersion(item.name));
         return true;
     }
@@ -1422,23 +1424,159 @@ class LearningModeWindow : public Window,
             Exit(Dialogs::Result::Ok); // show the task
             return;
         }
-        auto st = Session().Download(item, Guarded([this, weekName, resume](Learning::DownloadResult& result) {
-            if (!result.status.ok)
-            {
-                Dialogs::MessageBox::ShowError("Download failed", result.status.message);
-                return;
-            }
+        auto st = StartDownload(item, weekName, [this, resume](Learning::DownloadResult& result, const std::string& deliveredWeek) {
             const Learning::CatalogueItem delivered = result.item;
-            if (OpenDelivered(result, weekName, Learning::WorkspaceRole::Student))
+            if (OpenDelivered(result, deliveredWeek, Learning::WorkspaceRole::Student))
             {
                 AfterTaskOpened(delivered, resume);
                 opened = true;
                 Exit(Dialogs::Result::Ok); // show the task
             }
-        }));
+        });
         if (!st.ok)
             Dialogs::MessageBox::ShowError("Open", st.message);
         UpdateStatus();
+    }
+
+    // what is done with a successfully delivered item (the week it belongs to in the catalogue that was used)
+    using DeliveredHandler = std::function<void(Learning::DownloadResult& result, const std::string& weekName)>;
+
+    // The single path of the item downloads of this window. A 403 POLICY_EXPIRED answer expires the session (fail
+    // closed, LearningSession::Download) - a current course server sends it for a policy issued before content
+    // encryption, or for one that ended. On the first attempt the window then reconnects once with the connection string
+    // it holds, reloads the catalogue and downloads the same item (looked up again by name) once more. Never loops.
+    GView::Utils::GStatus StartDownload(const Learning::CatalogueItem& item, const std::string& weekName, DeliveredHandler onDelivered, bool firstAttempt = true)
+    {
+        return Session().Download(
+              item, Guarded([this, name = item.name, problem = item.IsProblem(), weekName, onDelivered, firstAttempt](Learning::DownloadResult& result) {
+                  if (!result.status.ok)
+                  {
+                      if (firstAttempt && result.error.code == Learning::ErrorCode::PolicyExpired)
+                      {
+                          ReconnectAndRetry(name, problem, onDelivered);
+                          return;
+                      }
+                      Dialogs::MessageBox::ShowError("Download failed", result.status.message);
+                      return;
+                  }
+                  RecordDelivered(result.content.sha256);
+                  onDelivered(result, weekName);
+              }));
+    }
+
+    // web build: the bytes of every delivered item (any delivery mode) are never handed to the browser as a download
+    // (denylist of the download gate, BrowserDownloadGate.cpp)
+    static void RecordDelivered(std::string_view sha256Hex)
+    {
+#ifdef BUILD_FOR_WASM
+        if (!sha256Hex.empty())
+            GView::App::Browser::RecordDeliveredTaskHash(sha256Hex);
+#else
+        (void) sha256Hex;
+#endif
+    }
+
+    void ShowPolicyRenewalFailed(std::string_view message)
+    {
+        std::string text = "The course server no longer accepts the current course policy (it expired or was renewed), and reconnecting failed: ";
+        text += message;
+        text += "\nPress Reconnect to continue.";
+        Dialogs::MessageBox::ShowError("Course policy", AsU8(text));
+    }
+
+    // the item `name` in the current catalogue, and the name of its week
+    const Learning::CatalogueItem* FindCatalogueItem(std::string_view name, bool problem, std::string& weekName)
+    {
+        for (const auto& week : Session().GetCatalogue().weeks)
+        {
+            const auto& list = problem ? week.problems : week.resources;
+            for (const auto& it : list)
+                if (it.name == name)
+                {
+                    weekName = week.name;
+                    return &it;
+                }
+        }
+        return nullptr;
+    }
+
+    // after a POLICY_EXPIRED answer to a download: Connect exactly like StartConnect (the session is Expired, which
+    // Connect accepts; a successful connect activates the new policy and restarts the telemetry flusher), then the
+    // catalogue, then a single retry of the same item
+    void ReconnectAndRetry(const std::string& name, bool problem, DeliveredHandler onDelivered)
+    {
+        // the connection string holds the access token: wiped when the last copy of the pointer goes (the callback may
+        // never run - window closed, superseded connect) and as soon as the callback is done with it
+        std::shared_ptr<std::string> cs(new std::string(), [](std::string* s) {
+            Learning::WipeString(*s);
+            delete s;
+        });
+        if (!connectionField->GetText().ToString(*cs) || cs->empty())
+            *cs = LoadSavedConnectionString();
+        if (cs->empty())
+        {
+            ShowPolicyRenewalFailed("no connection string is available");
+            RefreshNow();
+            return;
+        }
+        const auto settings = LoadLearningSettings();
+        {
+            // only the connection of the current session is renewed without asking (the field or the saved string may
+            // belong to another account or server by now)
+            Learning::ConnectionInfo ci;
+            const bool same = Learning::ParseConnectionString(*cs, settings.allowPlainHttpLocalhost, ci).ok && Session().UsesConnection(ci);
+            // SecureString also zeroes its storage when released; wiped now all the same (also an inline buffer)
+            if (!ci.token.empty())
+                GView::Security::Crypto::Internal::SecureErase(ci.token.data(), ci.token.size());
+            ci.token.clear();
+            if (!same)
+            {
+                ShowPolicyRenewalFailed("the connection string does not belong to the current session");
+                RefreshNow();
+                return;
+            }
+        }
+        auto st = Session().Connect(*cs, settings, Guarded([this, cs, name, problem, onDelivered](const GView::Utils::GStatus& result) {
+            if (!result.ok)
+            {
+                Learning::WipeString(*cs);
+                ShowPolicyRenewalFailed(result.message);
+                RefreshNow();
+                return;
+            }
+            SaveConnectionString(*cs); // as StartConnect: kept only after a successful, verified connect
+            Learning::WipeString(*cs);
+            GView::App::RefreshAllFileWindowTitles();
+            auto refresh = Session().RefreshCatalogue(Guarded([this, name, problem, onDelivered](const GView::Utils::GStatus& loaded) {
+                RefreshNow();
+                if (!loaded.ok)
+                {
+                    Dialogs::MessageBox::ShowError("Catalogue", loaded.message);
+                    return;
+                }
+                std::string weekName;
+                const auto* found = FindCatalogueItem(name, problem, weekName);
+                if (found == nullptr)
+                {
+                    Dialogs::MessageBox::ShowError("Download failed", "The item is not available any more.");
+                    return;
+                }
+                const Learning::CatalogueItem again = *found;
+                auto retry                          = StartDownload(again, weekName, onDelivered, false);
+                if (!retry.ok)
+                    Dialogs::MessageBox::ShowError("Download failed", retry.message);
+                UpdateStatus();
+            }));
+            if (!refresh.ok)
+                Dialogs::MessageBox::ShowError("Catalogue", refresh.message);
+            RefreshNow();
+        }));
+        if (!st.ok)
+        {
+            Learning::WipeString(*cs);
+            ShowPolicyRenewalFailed(st.message);
+        }
+        RefreshNow();
     }
 
     // Open solution: the teacher's solution of the selected problem in a window of its own (no student window, no tiling),
@@ -1484,12 +1622,7 @@ class LearningModeWindow : public Window,
             }
         }
         // no local copy: the task is downloaded and the solution window reads a copy of it from memory (nothing is written)
-        auto st = Session().Download(item, Guarded([this, replay](Learning::DownloadResult& result) {
-            if (!result.status.ok)
-            {
-                Dialogs::MessageBox::ShowError("Download failed", result.status.message);
-                return;
-            }
+        auto st = StartDownload(item, weekName, [this, replay](Learning::DownloadResult& result, const std::string&) {
             GView::App::Course::SolutionSource source;
             source.name  = result.content.fileName.empty() ? Learning::SanitizeFileName(result.item.name) : result.content.fileName;
             source.bytes = &result.content.data;
@@ -1498,7 +1631,7 @@ class LearningModeWindow : public Window,
                 opened = true;
                 Exit(Dialogs::Result::Ok);
             }
-        }));
+        });
         if (!st.ok)
             Dialogs::MessageBox::ShowError("Open solution", st.message);
         UpdateStatus();
