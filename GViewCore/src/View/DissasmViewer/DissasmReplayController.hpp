@@ -62,4 +62,9 @@ class DissasmReplayController
     bool ApplyEdit(const DissasmReplayEvent& event, bool forward);
     bool Apply(size_t index, bool forward);
 };
+
+// The status line of a window that plays a replay back: where it is and how to move, then the step shown
+// ("Replay 12/57 ([ ] step, { } start / end): comment added at 0x401040"). The bracket keys are characters, so they work
+// on every terminal and keyboard (the Alt+arrows do not reach GView from macOS Terminal by default).
+std::string ReplayStatusLine(size_t position, size_t count, bool waitingForAnalysis, std::string_view stepDescription);
 } // namespace GView::View::DissasmViewer

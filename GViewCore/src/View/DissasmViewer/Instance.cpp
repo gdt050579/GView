@@ -2392,13 +2392,9 @@ std::string Instance::ReplayStatusText() const
         return {};
     const size_t position = replayController->Position();
     const size_t count    = replayController->Count();
-    std::string text      = "Replay: step " + std::to_string(position) + "/" + std::to_string(count) + " - ";
-    if (replayWaitingForAnalysis && HasPendingDeepScans())
-        return text + "wait, the analysis of the code is still running";
-    if (position == 0)
-        return text + (count == 0 ? "the journal is empty" : "at the start (Alt+Right: the first step)");
     // without the time of the step: the step number says where the replay is
-    return text + replayController->Describe(position - 1, false);
+    const std::string step = (position > 0 && position <= count) ? replayController->Describe(position - 1, false) : std::string();
+    return ReplayStatusLine(position, count, replayWaitingForAnalysis && HasPendingDeepScans(), step);
 }
 
 bool Instance::IsCourseStateEmpty() const

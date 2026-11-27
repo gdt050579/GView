@@ -110,7 +110,13 @@ Key                 Command (section)              What it does
                     (``Keys.View.Dissasm``)        palette, ``Ctrl+P``)
 =================== ============================== ==============================================================================
 
-The replay keys are on the command bar only in a window that plays a teacher's solution back.
+The replay keys are on the command bar only in a window that plays a teacher's solution back. In such a window the
+characters ``[`` / ``]`` (one step back / forward) and ``{`` / ``}`` (to the start / end) do the same on every terminal,
+also on macOS where ``Option+Left`` / ``Option+Right`` are not ``Alt+Left`` / ``Alt+Right`` by default. They are not
+configurable (AppCUI has no key code for them) and the status line of the replay always names them. While the
+disassembly view of a replay window has the focus, its replay keys (``Alt+Left`` / ``Alt+Right`` / ``Alt+Home`` /
+``Alt+End`` by default) are handled by the view, so they no longer move the focus to the panel on that side
+(``Alt+Up`` / ``Alt+Down`` still do).
 
 The course keys are bare function keys because a terminal shows only the keys without a modifier on the command
 bar. They work only in a window of the course, where they take precedence over a command of the type plugin or a key

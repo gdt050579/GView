@@ -17,6 +17,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cstring>
 #include <memory>
 #include <optional>
@@ -95,7 +96,7 @@ std::vector<CourseMenuRow> GView::App::Course::BuildCourseMenuRows(const CourseM
             if (ctx.solutionHasReplay)
                 rows.push_back({ CourseAction::ReplaySolution,
                                  "Replay the teacher's solution",
-                                 workOn ? "step by step: Alt+Left / Alt+Right" : solutionWhy,
+                                 workOn ? "step by step: [ ] (or Alt+Left / Alt+Right)" : solutionWhy,
                                  workOn });
         }
     }
@@ -113,6 +114,13 @@ std::vector<CourseMenuRow> GView::App::Course::BuildCourseMenuRows(const CourseM
                          "Edit replay journal...",
                          ctx.hasDissasmView ? "course staff: remove steps before publishing" : "this window has no disassembly view",
                          ctx.hasDissasmView });
+    // the way out when the file went wrong: last, away from the everyday commands
+    std::string resetDetail = "download it again; course work stays";
+    if (ctx.memoryTask)
+        resetDetail = "kept in memory only: it can not change";
+    else if (!ctx.canOpenItems)
+        resetDetail = "not available now: reconnect to the course";
+    rows.push_back({ CourseAction::ResetTaskFile, "Reset the task file to the original", resetDetail, ctx.canOpenItems && !ctx.memoryTask });
     return rows;
 }
 
@@ -1084,6 +1092,13 @@ bool GView::App::Course::OpenSolutionStandalone(
     return true;
 }
 
+void GView::App::Course::SaveTaskWindowCache(FileWindow* window)
+{
+    TaskWindow task;
+    if (GetTaskWindow(window, task) && task.role == WorkspaceRole::Student && task.view != nullptr)
+        task.view->SaveCacheNow(); // Solution / Replay windows never write the cache; nor a policy that blocks Export
+}
+
 void GView::App::Course::OfferResumeCourseWork(std::string_view itemName, bool ask)
 {
     auto& session = Learning::GetSession();
@@ -1198,6 +1213,8 @@ void GView::App::ShowLearningCourseMenu(FileWindow* window)
     ctx.courseStaff         = session.IsCourseStaff();
     ctx.notesAvailable      = session.CanUseNotes();
     ctx.canSubmit           = session.CanSubmit() && task.role == WorkspaceRole::Student;
+    ctx.canOpenItems        = session.CanOpenItems();
+    ctx.memoryTask          = task.mode == Learning::DeliveryMode::Memory;
     if (task.view != nullptr && task.role == WorkspaceRole::Student && task.view->HasAnalysedCodeZones())
     {
         ctx.replaySteps = ReplayStepsOf(task.view); // the size of the document is known once it is built (the Save dialog)
@@ -1216,9 +1233,15 @@ void GView::App::ShowLearningCourseMenu(FileWindow* window)
         const std::vector<CourseMenuRow>& rows;
 
       public:
+        // tall enough for every row (about seven lines go to the frame, the task line, the header and the buttons)
+        static std::string LayoutFor(size_t rowCount)
+        {
+            return "d:c,w:96,h:" + std::to_string(std::min<size_t>(std::max<size_t>(16, rowCount + 8), 30));
+        }
+
         std::optional<size_t> chosen;
         CourseMenuDialog(const std::vector<CourseMenuRow>& r, std::string_view problem)
-            : Window("Course", "d:c,w:96,h:16", WindowFlags::None), rows(r)
+            : Window("Course", LayoutFor(r.size()), WindowFlags::None), rows(r)
         {
             Factory::Label::Create(this, AsU8("Task: " + std::string(problem)), "l:1,t:0,r:1,h:1");
             list = Factory::ListView::Create(this, "l:1,t:1,r:1,b:3", { "n:Command,w:40", "n:Details,w:52" }, ListViewFlags::None);
@@ -1268,6 +1291,10 @@ void GView::App::ShowLearningCourseMenu(FileWindow* window)
     {
     case CourseAction::ProblemList:
         GView::App::ShowLearningModeWindow("", false, task.item);
+        break;
+    case CourseAction::ResetTaskFile:
+        // the Learning window does it (download, store, open): it asks first, closes the windows of the task, then reopens it
+        GView::App::ShowLearningModeWindow("", false, task.item, true);
         break;
     case CourseAction::SaveWork:
         SaveWork(task);

@@ -135,3 +135,16 @@ size_t DissasmReplayController::SkippedCount() const
 {
     return static_cast<size_t>(std::count(skipped.begin(), skipped.end(), true));
 }
+
+std::string GView::View::DissasmViewer::ReplayStatusLine(size_t position, size_t count, bool waitingForAnalysis, std::string_view stepDescription)
+{
+    std::string text = "Replay " + std::to_string(position) + "/" + std::to_string(count) + " ([ ] step, { } start / end): ";
+    if (waitingForAnalysis)
+        return text + "wait, the analysis of the code is still running";
+    if (count == 0)
+        return text + "the journal is empty";
+    if (position == 0)
+        return text + "at the start, press ] for the first step";
+    text.append(stepDescription);
+    return text;
+}

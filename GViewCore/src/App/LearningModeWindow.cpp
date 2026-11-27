@@ -479,6 +479,9 @@ class LearningModeWindow : public Window,
     std::string launchNotice; // web launch link: why nothing was connected (shown until the student connects)
     bool autoConnect;
     std::string pendingSelect; // row key to select when the catalogue is shown ("i:<item name>"), then cleared
+    bool pendingReset{ false };   // reset the task file of pendingSelect once it is selected (Course -> Reset the task file)
+    bool resetRequested{ false }; // ... it is selected: ResetSelected on the next frame
+    std::string pendingNotice;    // shown in a message box on the next frame (the status label is rewritten every second)
     bool opened{ false };
     uint64 lastStatusSecond{ 0 };
     bool needsRefresh{ true };
@@ -497,9 +500,14 @@ class LearningModeWindow : public Window,
     // opens the window with an empty connection field (useSaved = false) and the reason, so the string can be pasted.
     // selectItem: the item selected once the catalogue is shown (Course -> Problem list from a task window)
     LearningModeWindow(
-          std::string_view prefilled, bool connectNow, bool useSaved = true, std::string_view notice = {}, std::string_view selectItem = {})
+          std::string_view prefilled,
+          bool connectNow,
+          bool useSaved              = true,
+          std::string_view notice    = {},
+          std::string_view selectItem = {},
+          bool resetItem             = false)
         : Window("Learning and Evaluation Mode", "d:c,w:98%,h:96%", WindowFlags::Sizeable), launchNotice(notice), autoConnect(connectNow),
-          pendingSelect(selectItem.empty() ? std::string() : "i:" + std::string(selectItem))
+          pendingSelect(selectItem.empty() ? std::string() : "i:" + std::string(selectItem)), pendingReset(resetItem && !selectItem.empty())
     {
         std::string initial = (prefilled.empty() && useSaved) ? LoadSavedConnectionString() : std::string(prefilled);
         if (prefilled.empty() && !initial.empty() && !Session().HasSession())
@@ -588,6 +596,19 @@ class LearningModeWindow : public Window,
             PopulateTree();
             needsRefresh = false;
         }
+        if (resetRequested)
+        {
+            resetRequested = false;
+            ResetSelected(); // may open dialogs: not from inside PopulateTree
+            repaint = true;
+        }
+        if (!pendingNotice.empty())
+        {
+            const std::string notice = std::move(pendingNotice);
+            pendingNotice.clear();
+            Dialogs::MessageBox::ShowNotification("Learning and Evaluation Mode", AsU8(notice));
+            repaint = true;
+        }
         // AppCUI does not report a fold of the tree: compare with what was shown on every frame
         if (CaptureFolds())
         {
@@ -619,6 +640,7 @@ class LearningModeWindow : public Window,
             switch (id)
             {
             case BTN_CONNECT:
+                pendingReset = false; // a Reset asked for in another session must not run in this one
                 StartConnect();
                 return true;
             case BTN_END:
@@ -1029,6 +1051,92 @@ class LearningModeWindow : public Window,
             restore->SetCurrent(); // a refresh (or a submission) keeps the student on the same row
         populating = false;
         UpdatePreview();
+        if (select && pendingReset)
+        {
+            // Course -> Reset the task file: once the item is the current row (it may have left the catalogue)
+            pendingReset = false;
+            if (CurrentRowKey() == previous)
+                resetRequested = true;
+            else
+                pendingNotice = "The task is no longer in the catalogue: its file was not reset.";
+        }
+    }
+
+    // Course -> Reset the task file: the selected item downloaded again, its local copy replaced (also when the student changed
+    // it) and opened. Asks first (and the close prompts of unsaved course work), saves the names and comments of its windows,
+    // and closes them only once the new copy has arrived: a failed or cancelled download leaves everything as it was.
+    void ResetSelected()
+    {
+        std::string weekName;
+        const auto* selected = SelectedItem(&weekName);
+        if (selected == nullptr || selected->kind == Learning::ItemKind::ResourceLink)
+            return;
+        const Learning::CatalogueItem item = *selected;
+        if (!Session().CanOpenItems())
+        {
+            Dialogs::MessageBox::ShowError("Reset", "The task file can not be downloaded now: connect to the course first.");
+            return;
+        }
+        const bool memoryPolicy = Session().GetPolicy().has_value() && Session().GetPolicy()->storageMode == StorageMode::Memory;
+        if (memoryPolicy || item.deliveryMode == Learning::DeliveryMode::Memory)
+        {
+            Dialogs::MessageBox::ShowNotification("Reset", "This task is kept in memory only: it can not have changed.");
+            return;
+        }
+        // a message box shows about four lines: the question, then what is lost and what is kept
+        const std::string question =
+              "Download \"" + item.title + "\" again and replace your copy?\nChanges to the file are lost; course work stays.";
+        if (Dialogs::MessageBox::ShowOkCancel("Reset the task file", AsU8(question)) != Dialogs::Result::Ok)
+            return;
+        const auto windows = TaskWindowsOf(item.name);
+        for (auto* window : windows)
+            if (!GView::App::ConfirmCloseCourseWorkWindow(window))
+                return;
+        for (auto* window : windows)
+            GView::App::Course::SaveTaskWindowCache(window); // a window GView closes does not save it on its own
+        const std::string itemName = item.name;
+        auto st = Session().Download(item, Guarded([this, weekName, itemName](Learning::DownloadResult& result) {
+            if (!result.status.ok)
+            {
+                Dialogs::MessageBox::ShowError("Reset failed", result.status.message + "\nThe task file was not changed.");
+                return;
+            }
+            // Windows can not replace an open file, and the windows show the old content: closed now (deleted at once)
+            for (auto* window : TaskWindowsOf(itemName))
+                window->RemoveMe();
+            const Learning::CatalogueItem delivered = result.item;
+            if (OpenDelivered(result, weekName, Learning::WorkspaceRole::Student, true))
+            {
+                AfterTaskOpened(delivered, ResumeMode::Offer);
+                opened = true;
+                Exit(Dialogs::Result::Ok); // show the task
+            }
+        }));
+        if (!st.ok)
+            Dialogs::MessageBox::ShowError("Reset", st.message);
+        UpdateStatus();
+    }
+
+    // every window of the item: the student's and the teacher's solution windows (they open the same task file)
+    std::vector<FileWindow*> TaskWindowsOf(std::string_view itemName)
+    {
+        std::vector<FileWindow*> windows;
+        auto dsk = AppCUI::Application::GetDesktop();
+        if (!dsk.IsValid())
+            return windows;
+        const auto count = dsk->GetChildrenCount();
+        for (uint32 i = 0; i < count; i++)
+        {
+            auto child = dsk->GetChild(i);
+            if (!child.IsValid())
+                continue;
+            auto* window = dynamic_cast<FileWindow*>(&static_cast<Control&>(child));
+            if (window == nullptr || window->GetObjectPtr() == nullptr)
+                continue;
+            if (const auto* binding = Session().FindBinding(window->GetObjectPtr()); binding != nullptr && binding->item == itemName)
+                windows.push_back(window);
+        }
+        return windows;
     }
 
     const Learning::CatalogueItem* ItemOf(const RowRef& r)
@@ -1147,6 +1255,9 @@ class LearningModeWindow : public Window,
 
     void EndSession()
     {
+        pendingSelect.clear(); // what was asked for belongs to this session
+        pendingReset   = false;
+        resetRequested = false;
         std::string question = "End the learning session? Restrictions will be removed and secrets erased.";
         if (Session().Notes().HasUnsavedChanges())
             question += "\n\nSome note changes are not on the course server yet. GView tries to send them once more; what cannot be "
@@ -1393,8 +1504,9 @@ class LearningModeWindow : public Window,
         UpdateStatus();
     }
 
-    // role: the window of the student's task (Student); the solution windows are opened by OpenSolutionStandalone
-    bool OpenDelivered(Learning::DownloadResult& result, const std::string& weekName, Learning::WorkspaceRole role)
+    // role: the window of the student's task (Student); the solution windows are opened by OpenSolutionStandalone.
+    // replaceLocalCopy (Reset the task file): a local copy the student changed is replaced without asking.
+    bool OpenDelivered(Learning::DownloadResult& result, const std::string& weekName, Learning::WorkspaceRole role, bool replaceLocalCopy = false)
     {
         auto& session = Session();
         const auto& item = result.item;
@@ -1433,8 +1545,9 @@ class LearningModeWindow : public Window,
         std::filesystem::path path = plan.path;
         uint32 version             = content.itemVersion;
         bool write                 = plan.state == Learning::TaskFileStore::LocalState::Missing ||
-                     plan.state == Learning::TaskFileStore::LocalState::Outdated; // unchanged by the student: just update it
-        if (plan.state == Learning::TaskFileStore::LocalState::Modified)
+                     plan.state == Learning::TaskFileStore::LocalState::Outdated || // unchanged by the student: just update it
+                     (replaceLocalCopy && plan.state == Learning::TaskFileStore::LocalState::Modified);
+        if (plan.state == Learning::TaskFileStore::LocalState::Modified && !replaceLocalCopy)
         {
             LocalString<512> msg;
             msg.SetFormat(
@@ -1494,9 +1607,9 @@ void GView::App::ShowNoCourseTaskWindowNotice()
           "Open the window of a problem first:\nCourse -> Problem list, select it, then Open.");
 }
 
-void GView::App::ShowLearningModeWindow(std::string_view prefilledConnectionString, bool autoConnect, std::string_view selectItem)
+void GView::App::ShowLearningModeWindow(std::string_view prefilledConnectionString, bool autoConnect, std::string_view selectItem, bool resetItem)
 {
-    LearningModeWindow dlg(prefilledConnectionString, autoConnect, true, {}, selectItem);
+    LearningModeWindow dlg(prefilledConnectionString, autoConnect, true, {}, selectItem, resetItem);
     dlg.Show();
 }
 

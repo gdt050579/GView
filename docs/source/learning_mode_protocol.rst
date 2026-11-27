@@ -1109,7 +1109,14 @@ not written at all: the course server is then the only persistence of the journa
   list (server window)* (the Learning window with the problem of this window selected), *Save work to course* (document size, replay steps), *Resume work from course* ("saved <time>", or
   "(no saved work)"), *Compare with the teacher's solution* / *Replay the teacher's solution* (when the catalogue says
   a solution / a replay is published for the student), *Course note*, *Submit flag*; course staff add *Publish
-  solution...* and *Edit replay journal...*. In a solution window the only other command is *Close solution window*. The
+  solution...* and *Edit replay journal...*; the last row is *Reset the task file to the original* (file mode only; a
+  task kept in memory can not change: the row is disabled). It asks, runs the close prompt for unsaved course work,
+  saves the disassembly cache of the student's window, downloads the file again and, once it has arrived, closes the
+  windows of the task, replaces the local copy even when the student changed it and reopens it; a failed download
+  changes nothing. The work on the server is untouched (and offered again when the reopened window is empty); the local
+  names and comments stay in the cache when it is written (not for a policy that blocks ``Export``) and the change to
+  the file did not touch the code (the cache is checked against the code). In a solution window the only
+  other command is *Close solution window*. The
   *Course* menu of the menu bar has *Problem list*, *Course commands of this task* and *Submit flag*.
   Disabled rows say why (disabled by the teacher, not connected, no disassembly view).
 * *Save work*: counts (names, comments, variables, zones, bookmarks), the checkbox "Include replay journal" (checked),
@@ -1128,8 +1135,9 @@ not written at all: the course server is then the only persistence of the journa
   solution"): file mode opens the same local task file, memory mode a copy of the bytes in locked memory
   (memory-only). The two windows are tiled side by side (student left), the focus goes back to the student.
   *Replay* opens role *Replay* ("<name> - Teacher solution (replay)"): the window starts without the solution's
-  annotations and plays the journal back with ``Alt+Left`` / ``Alt+Right`` / ``Alt+Home`` / ``Alt+End`` (command bar
-  *Back*, *Forward*, *To start*, *To end*); the status line shows "Replay: step 12/57 - comment added at 0x401040";
+  annotations and plays the journal back with ``[`` / ``]`` / ``{`` / ``}`` (characters: every terminal and keyboard
+  layout that types them) or ``Alt+Left`` / ``Alt+Right`` / ``Alt+Home`` / ``Alt+End`` (command bar *Back*, *Forward*,
+  *To start*, *To end*); the status line shows "Replay 12/57 ([ ] step, { } start / end): comment added at 0x401040";
   a step first ends the pending analyses and prepares every code zone (as the other commands do); events whose place this analysis does not have are skipped.
   *Open solution* in the Learning window opens the same windows on their own (no tiling).
 * Solution windows are read only: no edit command, no undo / redo, no import / export / signatures, no assistant; a
