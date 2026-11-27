@@ -15726,23 +15726,23 @@ TEST_CASE("Arm64ECEntryThunkWords", "[Dissasm]Zones")
     word(0xD65F03C0); // 0x24: ret
     while (file.size() < 0x3C)
         word(0xD503201F); // nop
-    word(0x00010001); // 0x3c: the entry thunk of 0x40 at 0x10040 (0x10000 | 1: .word)
-    word(0x52800040); // 0x40: mov w0, #2
-    word(0xD65F03C0); // 0x44: ret
+    word(0x00010001);     // 0x3c: the entry thunk of 0x40 at 0x10040 (0x10000 | 1: .word)
+    word(0x52800040);     // 0x40: mov w0, #2
+    word(0xD65F03C0);     // 0x44: ret
     while (file.size() < 0x5C)
         word(0xD503201F);
-    word(0xFFFFFFE1); // 0x5c: bit 0 set, to 0x40 (no entry thunk)
+    word(0xFFFFFFE1);  // 0x5c: bit 0 set, to 0x40 (no entry thunk)
     thunk(0xB0000110); // 0x60: an entry thunk (adrp from page 0: 0x21 pages)
     while (file.size() < 0x10040)
         word(0xD503201F);
     thunk(0xB0000090); // 0x10040: another one (adrp from page 0x10000: 0x11 pages)
     file.resize(0x21010, 0x00);
     ZoneLayout layout;
-    layout.size             = 0x10060;
-    layout.entryPoint       = 0;
-    layout.language         = DisassemblyLanguage::ARM64;
-    layout.translateOffsets = true;
-    layout.imports          = { { 0x21008, { "__os_arm64x_dispatch_ret", MemoryMappingType::TextMapping } } };
+    layout.size                          = 0x10060;
+    layout.entryPoint                    = 0;
+    layout.language                      = DisassemblyLanguage::ARM64;
+    layout.translateOffsets              = true;
+    layout.imports                       = { { 0x21008, { "__os_arm64x_dispatch_ret", MemoryMappingType::TextMapping } } };
     layout.functionEntries[0x60].size    = 0x18; // .pdata: the thunks have no caller
     layout.functionEntries[0x10040].size = 0x18;
     DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);

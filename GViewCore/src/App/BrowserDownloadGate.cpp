@@ -44,8 +44,7 @@ namespace
         if (hex.size() != 64)
             return {};
         std::string out(hex);
-        for (auto& c : out)
-        {
+        for (auto& c : out) {
             if (c >= 'A' && c <= 'F')
                 c = static_cast<char>(c - 'A' + 'a');
             else if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
@@ -80,8 +79,7 @@ TaskFileMatch FindFileWithContent(const std::filesystem::path& root, BufferView 
     auto it = fs::recursive_directory_iterator(root, fs::directory_options::none, ec);
     if (ec)
         return TaskFileMatch::Error;
-    for (; it != fs::recursive_directory_iterator(); it.increment(ec))
-    {
+    for (; it != fs::recursive_directory_iterator(); it.increment(ec)) {
         if (ec)
             return TaskFileMatch::Error;
         if (++count > MAX_SCANNED_ENTRIES)
@@ -89,8 +87,7 @@ TaskFileMatch FindFileWithContent(const std::filesystem::path& root, BufferView 
         const auto type = it->symlink_status(ec).type(); // the entry itself, never the target of a link
         if (ec)
             return TaskFileMatch::Error;
-        if (type == fs::file_type::directory)
-        {
+        if (type == fs::file_type::directory) {
             // a folder that can not be scanned could hold a copy: refuse rather than skip it
             if (it.depth() + 1 >= MAX_SCAN_DEPTH)
                 return TaskFileMatch::Error;
@@ -103,8 +100,7 @@ TaskFileMatch FindFileWithContent(const std::filesystem::path& root, BufferView 
             return TaskFileMatch::Error;
         if (size != data.GetLength())
             continue;
-        if (!hashed)
-        {
+        if (!hashed) {
             if (!Security::Crypto::Internal::ComputeSHA256(data, expected).ok)
                 return TaskFileMatch::Error;
             hashed = true;
@@ -135,8 +131,7 @@ bool IsUnderRoot(std::string_view relativePath, const std::vector<std::string>& 
     // a path that leaves the folder ("../x") or is absolute is never "under" a root relative to it
     if ((!path.empty() && path.front() == '/') || path == ".." || path.starts_with("../"))
         return false;
-    for (const auto& r : roots)
-    {
+    for (const auto& r : roots) {
         const std::string root = normalise(r);
         if (root == ".." || root.starts_with("../") || (!root.empty() && root.front() == '/'))
             continue;
@@ -156,21 +151,18 @@ std::vector<std::filesystem::path> FindFoldersWithFile(const std::filesystem::pa
     std::error_code ec;
     auto it      = fs::recursive_directory_iterator(home, fs::directory_options::skip_permission_denied, ec);
     uint32 count = 0;
-    for (; !ec && it != fs::recursive_directory_iterator(); it.increment(ec))
-    {
+    for (; !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
         if (++count > MAX_SCANNED_ENTRIES)
             break;
         const auto type = it->symlink_status(ec).type();
         if (ec)
             break;
-        if (type == fs::file_type::directory)
-        {
+        if (type == fs::file_type::directory) {
             if (it.depth() + 1 >= MAX_SCAN_DEPTH)
                 it.disable_recursion_pending();
             continue;
         }
-        if (type == fs::file_type::regular && it->path().filename().native() == wanted.native())
-        {
+        if (type == fs::file_type::regular && it->path().filename().native() == wanted.native()) {
             auto folder = it->path().parent_path().lexically_normal();
             if (std::find(folders.begin(), folders.end(), folder) == folders.end())
                 folders.push_back(std::move(folder));
@@ -182,8 +174,7 @@ std::vector<std::filesystem::path> FindFoldersWithFile(const std::filesystem::pa
 std::vector<std::string> ParseTaskHashes(std::string_view text)
 {
     std::vector<std::string> hashes;
-    while (!text.empty())
-    {
+    while (!text.empty()) {
         const auto end        = text.find('\n');
         const auto line       = text.substr(0, end);
         text                  = end == std::string_view::npos ? std::string_view() : text.substr(end + 1);
@@ -200,8 +191,7 @@ std::string SerializeTaskHashes(const std::vector<std::string>& hashes)
 {
     std::string text;
     text.reserve(hashes.size() * 65);
-    for (const auto& h : hashes)
-    {
+    for (const auto& h : hashes) {
         if (!text.empty())
             text.push_back('\n');
         text += h;
@@ -262,8 +252,7 @@ namespace
         static constexpr char HEX[] = "0123456789abcdef";
         std::string hex;
         hex.reserve(64);
-        for (const auto b : hash)
-        {
+        for (const auto b : hash) {
             hex.push_back(HEX[b >> 4]);
             hex.push_back(HEX[b & 0x0F]);
         }
@@ -279,8 +268,7 @@ std::vector<std::filesystem::path> LearningTaskRoots()
         auto n = p.lexically_normal();
         if (n.empty())
             return;
-        for (const auto& r : roots)
-        {
+        for (const auto& r : roots) {
             const auto rel = n.lexically_relative(r).generic_string();
             if (!rel.empty() && rel != ".." && !rel.starts_with("../"))
                 return;
@@ -302,8 +290,7 @@ std::vector<std::string> LearningTaskRootsRelativeToHome()
 {
     std::vector<std::string> result;
     const auto home = HomeFolder().lexically_normal();
-    for (const auto& root : LearningTaskRoots())
-    {
+    for (const auto& root : LearningTaskRoots()) {
         const auto rel = root.lexically_relative(home);
         if (rel.empty())
             continue; // not under the home folder: the store never holds it
@@ -325,31 +312,25 @@ void RecordDeliveredTaskHash(std::string_view sha256Hex)
 bool IsBrowserDownloadAllowed(BufferView data, std::string& refusalReason)
 {
     refusalReason.clear();
-    if (Learning::GetSession().HasSession())
-    {
+    if (Learning::GetSession().HasSession()) {
         refusalReason = "downloads are disabled while Learning and Evaluation Mode is in use (End session first)";
         return false;
     }
-    if (GView::App::IsFeatureRestricted(Security::RestrictedMode::Feature::Export))
-    {
+    if (GView::App::IsFeatureRestricted(Security::RestrictedMode::Feature::Export)) {
         refusalReason = "exports are restricted by the course policy";
         return false;
     }
     const std::string sha = Sha256Hex(data);
-    if (sha.empty())
-    {
+    if (sha.empty()) {
         refusalReason = "the file could not be checked";
         return false;
     }
-    if (DownloadGate::ContainsTaskHash(LoadTaskHashes(), sha))
-    {
+    if (DownloadGate::ContainsTaskHash(LoadTaskHashes(), sha)) {
         refusalReason = "Learning task files can not be downloaded";
         return false;
     }
-    for (const auto& root : LearningTaskRoots())
-    {
-        switch (DownloadGate::FindFileWithContent(root, data))
-        {
+    for (const auto& root : LearningTaskRoots()) {
+        switch (DownloadGate::FindFileWithContent(root, data)) {
         case DownloadGate::TaskFileMatch::None:
             break;
         case DownloadGate::TaskFileMatch::Match:

@@ -125,7 +125,7 @@ TEST_CASE("Learning: folders holding a task manifest", "[learning][downloadgate]
     TempRoot t("gview_downloadgate_manifests");
     WriteBytes(t.root / "Documents" / "GView" / "course.example.edu" / "Week 1" / ".gview-items.json", "{}");
     WriteBytes(t.root / "Old" / "srv" / "Week 2" / ".gview-items.json", "{}");
-    WriteBytes(t.root / "Files" / "gview-items.json", "{}");           // other name
+    WriteBytes(t.root / "Files" / "gview-items.json", "{}");                     // other name
     std::filesystem::create_directories(t.root / "Files" / ".gview-items.json"); // a folder, not a file
     auto found = FindFoldersWithFile(t.root, ".gview-items.json");
     std::sort(found.begin(), found.end());
@@ -173,8 +173,9 @@ TEST_CASE("Learning: denylist of delivered task hashes", "[learning][downloadgat
         REQUIRE(text == h1 + "\n" + h2);
         REQUIRE(ParseTaskHashes(text) == list);
         REQUIRE(ParseTaskHashes("").empty());
-        REQUIRE(ParseTaskHashes("garbage\n\n" + h1 + "\r\nzz\n" + h1 + "\n" + std::string(64, 'x') + "\n" + h2 + "\n") ==
-                std::vector<std::string>{ h1, h2 }); // "\r" lines, duplicates and non-hex dropped
+        REQUIRE(
+              ParseTaskHashes("garbage\n\n" + h1 + "\r\nzz\n" + h1 + "\n" + std::string(64, 'x') + "\n" + h2 + "\n") ==
+              std::vector<std::string>{ h1, h2 }); // "\r" lines, duplicates and non-hex dropped
     }
     SECTION("capped: the oldest entries are dropped first")
     {

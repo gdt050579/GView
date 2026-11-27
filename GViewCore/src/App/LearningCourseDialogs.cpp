@@ -1240,8 +1240,7 @@ void GView::App::ShowLearningCourseMenu(FileWindow* window)
         }
 
         std::optional<size_t> chosen;
-        CourseMenuDialog(const std::vector<CourseMenuRow>& r, std::string_view problem)
-            : Window("Course", LayoutFor(r.size()), WindowFlags::None), rows(r)
+        CourseMenuDialog(const std::vector<CourseMenuRow>& r, std::string_view problem) : Window("Course", LayoutFor(r.size()), WindowFlags::None), rows(r)
         {
             Factory::Label::Create(this, AsU8("Task: " + std::string(problem)), "l:1,t:0,r:1,h:1");
             list = Factory::ListView::Create(this, "l:1,t:1,r:1,b:3", { "n:Command,w:40", "n:Details,w:52" }, ListViewFlags::None);

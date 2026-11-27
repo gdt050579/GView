@@ -1114,8 +1114,7 @@ namespace App
     void ShowNoCourseTaskWindowNotice();
     // selectItem: the catalogue item to select once the catalogue is shown (the task window it was opened from); resetItem: then
     // reset its task file to the original (asks, closes its windows, downloads it again, replaces the local copy, reopens it)
-    void ShowLearningModeWindow(
-          std::string_view prefilledConnectionString, bool autoConnect, std::string_view selectItem = {}, bool resetItem = false);
+    void ShowLearningModeWindow(std::string_view prefilledConnectionString, bool autoConnect, std::string_view selectItem = {}, bool resetItem = false);
 #ifdef BUILD_FOR_WASM
     // launch link of the web build: validates the connection string, asks once per server origin, ends the current
     // connection if it is another one, then connects as if the string had been pasted (stored after a verified connect)

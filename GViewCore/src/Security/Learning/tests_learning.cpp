@@ -143,8 +143,7 @@ std::string BuildPolicy(PolicyOptions o)
         p["notes"] = *o.notes;
     if (o.work.has_value())
         p["work"] = *o.work;
-    if (o.storage == "memory" || o.encrypt)
-    {
+    if (o.storage == "memory" || o.encrypt) {
         if (o.contentKeyId.empty())
         {
             LockedBuffer key;
@@ -1031,9 +1030,9 @@ TEST_CASE("Learning: download processing under a file policy that declares encry
     fileItem.kind         = ItemKind::Problem;
     fileItem.deliveryMode = DeliveryMode::File;
     CatalogueItem memoryItem;
-    memoryItem.name         = "w1_stack_var";
-    memoryItem.kind         = ItemKind::Problem;
-    memoryItem.deliveryMode = DeliveryMode::Memory;
+    memoryItem.name             = "w1_stack_var";
+    memoryItem.kind             = ItemKind::Problem;
+    memoryItem.deliveryMode     = DeliveryMode::Memory;
     const std::string plaintext = std::string("MZ\x90\x00", 4) + "file-mode task content";
     const auto sha              = Sha256Hex(plaintext);
 
@@ -1041,8 +1040,11 @@ TEST_CASE("Learning: download processing under a file policy that declares encry
         return Response(
               200,
               EncryptBlob(plaintext, it.name, policy.id, token),
-              { { "x-gview-delivery", std::string(mode) }, { "x-gview-encrypted", "1" }, { "x-gview-sha256", sha },
-                { "x-gview-filename", "task.exe" }, { "x-gview-item-version", "4" } });
+              { { "x-gview-delivery", std::string(mode) },
+                { "x-gview-encrypted", "1" },
+                { "x-gview-sha256", sha },
+                { "x-gview-filename", "task.exe" },
+                { "x-gview-item-version", "4" } });
     };
     auto inClear = [&](std::string_view mode) {
         return Response(200, plaintext, { { "x-gview-delivery", std::string(mode) }, { "x-gview-encrypted", "0" }, { "x-gview-sha256", sha } });
@@ -1778,12 +1780,13 @@ TEST_CASE("Learning: POLICY_EXPIRED on a download, reconnect, same download succ
     REQUIRE(fx.Connect().ok);
     REQUIRE(fx.session->GetPolicy()->contentEncryption.empty());
 
-    const std::string plaintext = "MZ...file mode task";
-    auto* transport             = fx.transport.get();
+    const std::string plaintext                 = "MZ...file mode task";
+    auto* transport                             = fx.transport.get();
     fx.transport->routes["/GView/GetProblems/"] = [transport, &plaintext](const HttpRequest& r) {
         // the route runs under the transport lock: policyId is the X-GView-Policy of this request
         if (transport->policyId == "pol_2026w1_old")
-            return Response(403, R"({"status":"error","code":"POLICY_EXPIRED","details":"policy issued before content encryption; reconnect","retryable":false})");
+            return Response(
+                  403, R"({"status":"error","code":"POLICY_EXPIRED","details":"policy issued before content encryption; reconnect","retryable":false})");
         const std::string name = r.path.substr(std::string("/GView/GetProblems/").size());
         return Response(
               200,
@@ -1797,14 +1800,21 @@ TEST_CASE("Learning: POLICY_EXPIRED on a download, reconnect, same download succ
 
     DownloadResult first;
     bool called = false;
-    REQUIRE(fx.session->Download(item, [&](DownloadResult& r) { called = true; first = std::move(r); }).ok);
+    REQUIRE(fx.session
+                  ->Download(
+                        item,
+                        [&](DownloadResult& r) {
+                            called = true;
+                            first  = std::move(r);
+                        })
+                  .ok);
     REQUIRE(called);
     REQUIRE_FALSE(first.status.ok);
     REQUIRE(first.error.code == ErrorCode::PolicyExpired);
     REQUIRE(first.status.message.find("Reconnect") != std::string::npos);
     REQUIRE(fx.session->GetState() == SessionState::Expired);
     REQUIRE(fx.session->GetStatus().message.find("reconnect") != std::string::npos);
-    REQUIRE(fx.deactivations == 0);                       // restrictions stay applied (fail closed)
+    REQUIRE(fx.deactivations == 0);                        // restrictions stay applied (fail closed)
     REQUIRE_FALSE(fx.session->Download(item, nullptr).ok); // nothing more until a new policy validates
 
     // the window reconnects with the same connection string: the server now issues a policy with content encryption
@@ -1822,7 +1832,14 @@ TEST_CASE("Learning: POLICY_EXPIRED on a download, reconnect, same download succ
     // ... and retries the same item once
     DownloadResult second;
     called = false;
-    REQUIRE(fx.session->Download(item, [&](DownloadResult& r) { called = true; second = std::move(r); }).ok);
+    REQUIRE(fx.session
+                  ->Download(
+                        item,
+                        [&](DownloadResult& r) {
+                            called = true;
+                            second = std::move(r);
+                        })
+                  .ok);
     REQUIRE(called);
     INFO(second.status.message);
     REQUIRE(second.status.ok);

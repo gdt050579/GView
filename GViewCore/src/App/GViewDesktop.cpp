@@ -53,32 +53,26 @@ namespace
         // answers Cancel). File -> Exit (Shift+Esc) still closes without asking.
         bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 unicodeChar) override
         {
-            if (keyCode == AppCUI::Input::Key::Escape)
-            {
+            if (keyCode == AppCUI::Input::Key::Escape) {
                 const bool learning = IsLearningModeActive();
 #ifdef BUILD_FOR_WASM
                 const bool ask = true;
 #else
                 const bool ask = learning;
 #endif
-                if (ask)
-                {
+                if (ask) {
                     std::string question;
-                    if (learning)
-                    {
+                    if (learning) {
                         question = "Close GView? This ends your course session.\nTo see the problem list, ";
                         AppCUI::Utils::LocalString<32> key; // the Course key is configurable, and may be unassigned
                         const auto courseKey = InstanceCommands::INSTANCE_LEARNING_COURSE.Key;
-                        if (courseKey != AppCUI::Input::Key::None && AppCUI::Utils::KeyUtils::ToString(courseKey, key) && key.Len() > 0)
-                        {
+                        if (courseKey != AppCUI::Input::Key::None && AppCUI::Utils::KeyUtils::ToString(courseKey, key) && key.Len() > 0) {
                             question += "press ";
                             question.append(key.GetText(), key.Len());
                             question += " instead.";
-                        }
-                        else
+                        } else
                             question += "use Course -> Problem list.";
-                    }
-                    else
+                    } else
                         question = "Close GView? In the browser, it starts again only when the page is reloaded.";
                     if (AppCUI::Dialogs::MessageBox::ShowOkCancel("Close GView", question) == AppCUI::Dialogs::Result::Ok)
                         AppCUI::Application::Close();

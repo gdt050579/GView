@@ -136,8 +136,7 @@ namespace
                         return true;
                     // task files (also those of earlier sessions) stay in this browser, session or not; Open still works.
                     // The download itself is checked once more by the page (BrowserDownloadGate.cpp).
-                    if (DownloadGate::IsUnderRoot(f->path, LearningTaskRootsRelativeToHome()))
-                    {
+                    if (DownloadGate::IsUnderRoot(f->path, LearningTaskRootsRelativeToHome())) {
                         Dialogs::MessageBox::ShowError("Stored files", "Learning task files can not be downloaded from this browser.");
                         return true;
                     }

@@ -30,7 +30,7 @@ struct WeekViewState {
 std::string WeekContentHash(const Week& week);
 
 std::string_view WeekOrderName(WeekOrder order) noexcept; // "newest" / "oldest"
-WeekOrder ParseWeekOrder(std::string_view text) noexcept;  // anything else -> NewestFirst
+WeekOrder ParseWeekOrder(std::string_view text) noexcept; // anything else -> NewestFirst
 
 // "<id>:<hash>,<id>:<hash>" (ids in increasing order)
 std::string SerializeFoldedWeeks(const std::map<int64, std::string>& folded);

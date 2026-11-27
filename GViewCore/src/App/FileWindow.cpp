@@ -402,7 +402,8 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
             if (GView::Security::Learning::Hooks::IsCourseWorkWindow(this->obj.get()))
                 GView::Security::Learning::Hooks::ShowSubmitDialogForObject(this->obj.get());
             else if (GView::Security::Learning::Hooks::IsLearningProblem(this->obj.get())) // a window of the teacher's solution
-                AppCUI::Dialogs::MessageBox::ShowNotification("Course", "Submit the flag from your own window of the problem,\nnot from the teacher's solution.");
+                AppCUI::Dialogs::MessageBox::ShowNotification(
+                      "Course", "Submit the flag from your own window of the problem,\nnot from the teacher's solution.");
             else
                 GView::App::ShowNoCourseTaskWindowNotice();
             return true;

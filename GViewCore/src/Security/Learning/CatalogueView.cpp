@@ -110,8 +110,7 @@ std::string SerializeFoldedWeeks(const std::map<int64, std::string>& folded)
 {
     std::string r;
     size_t count = 0;
-    for (const auto& [id, hash] : folded)
-    {
+    for (const auto& [id, hash] : folded) {
         if (!IsWeekHash(hash))
             continue;
         if (count++ == MAX_REMEMBERED_FOLDED_WEEKS)
@@ -128,15 +127,14 @@ std::string SerializeFoldedWeeks(const std::map<int64, std::string>& folded)
 std::map<int64, std::string> ParseFoldedWeeks(std::string_view text)
 {
     std::map<int64, std::string> r;
-    while (!text.empty() && r.size() < MAX_REMEMBERED_FOLDED_WEEKS)
-    {
-        const size_t comma     = text.find(',');
+    while (!text.empty() && r.size() < MAX_REMEMBERED_FOLDED_WEEKS) {
+        const size_t comma           = text.find(',');
         const std::string_view entry = Trim(text.substr(0, comma));
-        text                   = comma == std::string_view::npos ? std::string_view() : text.substr(comma + 1);
-        const size_t colon     = entry.find(':');
+        text                         = comma == std::string_view::npos ? std::string_view() : text.substr(comma + 1);
+        const size_t colon           = entry.find(':');
         if (colon == std::string_view::npos)
             continue;
-        int64 id = 0;
+        int64 id        = 0;
         const auto hash = Trim(entry.substr(colon + 1));
         if (!ParseInt64(Trim(entry.substr(0, colon)), id) || !IsWeekHash(hash))
             continue;
@@ -183,8 +181,7 @@ std::string WeekViewSection(std::string_view serverUrl, std::string_view viewSta
 bool ApplyFoldChange(WeekViewState& state, int64 weekId, std::string_view shownHash, bool folded)
 {
     const auto it = state.folded.find(weekId);
-    if (!folded)
-    {
+    if (!folded) {
         if (it == state.folded.end())
             return false;
         state.folded.erase(it);

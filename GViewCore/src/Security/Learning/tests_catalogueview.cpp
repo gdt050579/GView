@@ -43,18 +43,18 @@ bool IsLowerHex(const std::string& s)
 
 TEST_CASE("Learning: week content hash", "[learning][catalogueview]")
 {
-    const Week base   = MakeWeek(3);
-    const auto hash   = WeekContentHash(base);
+    const Week base = MakeWeek(3);
+    const auto hash = WeekContentHash(base);
     REQUIRE(hash.size() == 16);
     REQUIRE(IsLowerHex(hash));
     REQUIRE(WeekContentHash(MakeWeek(3)) == hash); // stable
 
     SECTION("the fields of one student do not change it")
     {
-        Week w                    = base;
-        w.problems[0].hasMe       = true;
-        w.problems[0].me.solved   = true;
-        w.problems[0].me.attempts = 4;
+        Week w                       = base;
+        w.problems[0].hasMe          = true;
+        w.problems[0].me.solved      = true;
+        w.problems[0].me.attempts    = 4;
         w.problems[0].me.workSavedAt = 1234;
         w.problems[0].pointsCurrent  = 7;
         REQUIRE(WeekContentHash(w) == hash);
@@ -69,28 +69,28 @@ TEST_CASE("Learning: week content hash", "[learning][catalogueview]")
         w.resources.clear();
         REQUIRE(WeekContentHash(w) != hash);
 
-        w                     = base;
-        w.problems[0].sha256  = std::string(64, 'b');
+        w                    = base;
+        w.problems[0].sha256 = std::string(64, 'b');
         REQUIRE(WeekContentHash(w) != hash);
 
         w             = base;
         w.description = "new text";
         REQUIRE(WeekContentHash(w) != hash);
 
-        w                       = base;
-        w.problems[0].title     = "Renamed";
+        w                   = base;
+        w.problems[0].title = "Renamed";
         REQUIRE(WeekContentHash(w) != hash);
 
-        w                                = base;
-        w.problems[0].solutionAvailable  = true;
+        w                               = base;
+        w.problems[0].solutionAvailable = true;
         REQUIRE(WeekContentHash(w) != hash);
     }
     SECTION("fields are length prefixed")
     {
         Week a = base, b = base;
-        a.title = "ab";
+        a.title       = "ab";
         a.description = "c";
-        b.title = "a";
+        b.title       = "a";
         b.description = "bc";
         REQUIRE(WeekContentHash(a) != WeekContentHash(b));
     }
@@ -139,7 +139,6 @@ TEST_CASE("Learning: folded weeks are serialized and parsed defensively", "[lear
     REQUIRE(ParseFoldedWeeks(many).size() == MAX_REMEMBERED_FOLDED_WEEKS);
 }
 
-
 TEST_CASE("Learning: ini section of the catalogue view", "[learning][catalogueview]")
 {
     REQUIRE(WeekViewSection("https://course.example.edu", "").empty());
@@ -165,8 +164,7 @@ TEST_CASE("Learning: the view state round-trips through GView.ini", "[learning][
 {
     const std::string h1(16, 'a'), h2 = "0123456789abcdef";
     const std::map<int64, std::string> folded{ { -3, h1 }, { 5, h2 } };
-    for (const auto* server : { "https://course.example.edu:8443", "https://[::1]:8443", "http://127.0.0.1:8771" })
-    {
+    for (const auto* server : { "https://course.example.edu:8443", "https://[::1]:8443", "http://127.0.0.1:8771" }) {
         const auto section = WeekViewSection(server, "0011aabbccddeeff");
         AppCUI::Utils::IniObject ini;
         REQUIRE(ini.Create());
@@ -199,7 +197,7 @@ TEST_CASE("Learning: folded weeks remember what they showed", "[learning][catalo
     REQUIRE(FoldedWeekChanged(st, 1, newHash));
     REQUIRE_FALSE(FoldedWeekChanged(st, 1, oldHash));
     REQUIRE_FALSE(FoldedWeekChanged(st, 2, newHash)); // not folded
-    REQUIRE_FALSE(FoldedWeekChanged(st, 1, ""));       // no hash: never "changed"
+    REQUIRE_FALSE(FoldedWeekChanged(st, 1, ""));      // no hash: never "changed"
 
     // unfolded (seen), then folded again: the new content is remembered
     REQUIRE(ApplyFoldChange(st, 1, newHash, false));

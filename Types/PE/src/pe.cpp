@@ -777,7 +777,7 @@ std::map<uint32, std::vector<uint8>> ReadArm64XAssignments(Reference<PE::PEFile>
                     break;
                 entry += 2;
                 const uint32 type = (value >> 12) & 3, bytes = 1u << (value >> 14);
-                const uint32 rva  = page + (value & 0xFFF);
+                const uint32 rva = page + (value & 0xFFF);
                 if (type == 0)
                     result.try_emplace(rva, std::vector<uint8>(bytes, 0));
                 else if (type == 1) {
@@ -1130,9 +1130,9 @@ uint32 ReadArm64XLoadConfig(Reference<PE::PEFile> pe, const std::map<uint32, std
 // auxiliary IAT of the CHPE metadata (__hybrid_auxiliary_iat: the ARM64EC code calls the imports through it, adrp x16, slot; ldr x16; br x16)
 // has the layout of the IAT: its slots get the names of the slots of the IAT, those in a section of data
 void AddDissasmArm64XImports(
-      DissasmViewer::Settings& settings,
+      DissasmViewer::Settings & settings,
       Reference<PE::PEFile> pe,
-      GView::Utils::DataCache& data,
+      GView::Utils::DataCache & data,
       std::u16string_view filePath,
       const std::map<uint32, std::vector<uint8>>& assignments,
       uint32 auxiliaryIAT,
@@ -1186,11 +1186,12 @@ void AddDissasmArm64XImports(
         }
     }
     // the auxiliary IAT: its slot n is the one of the slot n of the IAT
-    const auto& iat           = pe->GetDirectory(PE::DirectoryType::IAT);
-    const auto inDataSection  = [&pe](uint64 begin, uint64 end) {
+    const auto& iat          = pe->GetDirectory(PE::DirectoryType::IAT);
+    const auto inDataSection = [&pe](uint64 begin, uint64 end) {
         for (uint32 index = 0; index < pe->nrSections; index++) {
             const auto& section = pe->sect[index];
-            if (begin >= section.VirtualAddress && end <= static_cast<uint64>(section.VirtualAddress) + std::max(section.Misc.VirtualSize, section.SizeOfRawData))
+            if (begin >= section.VirtualAddress &&
+                end <= static_cast<uint64>(section.VirtualAddress) + std::max(section.Misc.VirtualSize, section.SizeOfRawData))
                 return (section.Characteristics & (__IMAGE_SCN_MEM_EXECUTE | __IMAGE_SCN_CNT_CODE)) == 0;
         }
         return false;

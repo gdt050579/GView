@@ -44,7 +44,9 @@ TEST_CASE("CourseMenuStudentWithoutSavedWork", "[learningcourse]")
     ctx.documentSize = 12 * 1024 + 300;
     ctx.replaySteps  = 57;
     const auto rows  = BuildCourseMenuRows(ctx);
-    REQUIRE(Actions(rows) == std::vector<CourseAction>{ CourseAction::ProblemList, CourseAction::SaveWork, CourseAction::ResumeWork, CourseAction::ResetTaskFile });
+    REQUIRE(
+          Actions(rows) ==
+          std::vector<CourseAction>{ CourseAction::ProblemList, CourseAction::SaveWork, CourseAction::ResumeWork, CourseAction::ResetTaskFile });
     REQUIRE(rows[1].enabled);
     REQUIRE(rows[1].caption == "Save work to course");
     REQUIRE(rows[1].detail == "12.3 KiB, 57 replay steps");
@@ -62,13 +64,15 @@ TEST_CASE("CourseMenuStudentWithSolution", "[learningcourse]")
     ctx.notesAvailable    = true;
     ctx.canSubmit         = true;
     const auto rows       = BuildCourseMenuRows(ctx);
-    REQUIRE(Actions(rows) == std::vector<CourseAction>{ CourseAction::ProblemList, CourseAction::SaveWork,
-                                                         CourseAction::ResumeWork,
-                                                         CourseAction::CompareSolution,
-                                                         CourseAction::ReplaySolution,
-                                                         CourseAction::CourseNote,
-                                                         CourseAction::SubmitFlag,
-                                                         CourseAction::ResetTaskFile });
+    REQUIRE(
+          Actions(rows) == std::vector<CourseAction>{ CourseAction::ProblemList,
+                                                      CourseAction::SaveWork,
+                                                      CourseAction::ResumeWork,
+                                                      CourseAction::CompareSolution,
+                                                      CourseAction::ReplaySolution,
+                                                      CourseAction::CourseNote,
+                                                      CourseAction::SubmitFlag,
+                                                      CourseAction::ResetTaskFile });
     for (const auto& row : rows)
         REQUIRE(row.enabled);
     REQUIRE(RowOf(rows, CourseAction::ResumeWork).detail.rfind("saved ", 0) == 0);
@@ -91,15 +95,23 @@ TEST_CASE("CourseMenuStaff", "[learningcourse]")
     ctx.canPublishSolutions = true;
     ctx.courseStaff         = true;
     const auto rows         = BuildCourseMenuRows(ctx);
-    REQUIRE(Actions(rows) == std::vector<CourseAction>{ CourseAction::ProblemList,
-                                   CourseAction::SaveWork, CourseAction::ResumeWork, CourseAction::PublishSolution, CourseAction::EditReplayJournal, CourseAction::ResetTaskFile });
+    REQUIRE(
+          Actions(rows) == std::vector<CourseAction>{ CourseAction::ProblemList,
+                                                      CourseAction::SaveWork,
+                                                      CourseAction::ResumeWork,
+                                                      CourseAction::PublishSolution,
+                                                      CourseAction::EditReplayJournal,
+                                                      CourseAction::ResetTaskFile });
     REQUIRE(RowOf(rows, CourseAction::PublishSolution).enabled);
     REQUIRE(RowOf(rows, CourseAction::EditReplayJournal).enabled);
 
     // a teacher-notes-only token (no solutions): the editor, no Publish
     ctx.canPublishSolutions = false;
     const auto notesStaff   = BuildCourseMenuRows(ctx);
-    REQUIRE(Actions(notesStaff) == std::vector<CourseAction>{ CourseAction::ProblemList, CourseAction::SaveWork, CourseAction::ResumeWork, CourseAction::EditReplayJournal, CourseAction::ResetTaskFile });
+    REQUIRE(
+          Actions(notesStaff) ==
+          std::vector<CourseAction>{
+                CourseAction::ProblemList, CourseAction::SaveWork, CourseAction::ResumeWork, CourseAction::EditReplayJournal, CourseAction::ResetTaskFile });
 
     // a window without a disassembly view: the rows that need it are disabled with the reason
     ctx.canPublishSolutions = true;
@@ -124,8 +136,13 @@ TEST_CASE("CourseMenuWorkStates", "[learningcourse]")
     ctx.work        = WorkState::Disabled;
     ctx.workSavedAt = 1760000000;
     auto rows       = BuildCourseMenuRows(ctx);
-    REQUIRE(Actions(rows) == std::vector<CourseAction>{ CourseAction::ProblemList,
-                                   CourseAction::SaveWork, CourseAction::ResumeWork, CourseAction::CompareSolution, CourseAction::SubmitFlag, CourseAction::ResetTaskFile });
+    REQUIRE(
+          Actions(rows) == std::vector<CourseAction>{ CourseAction::ProblemList,
+                                                      CourseAction::SaveWork,
+                                                      CourseAction::ResumeWork,
+                                                      CourseAction::CompareSolution,
+                                                      CourseAction::SubmitFlag,
+                                                      CourseAction::ResetTaskFile });
     for (const auto action : { CourseAction::SaveWork, CourseAction::ResumeWork, CourseAction::CompareSolution }) {
         REQUIRE_FALSE(RowOf(rows, action).enabled);
         REQUIRE(RowOf(rows, action).detail == "disabled by your teacher");
@@ -165,9 +182,9 @@ TEST_CASE("CourseMenuProblemListFirst", "[learningcourse]")
     // the way back to the catalogue: the first row of every window, enabled in every state
     for (const auto role : { WorkspaceRole::Student, WorkspaceRole::Solution, WorkspaceRole::Replay })
         for (const auto work : { WorkState::Hidden, WorkState::Disabled, WorkState::NotConnected, WorkState::Available }) {
-            auto ctx       = StudentContext();
-            ctx.role       = role;
-            ctx.work       = work;
+            auto ctx        = StudentContext();
+            ctx.role        = role;
+            ctx.work        = work;
             const auto rows = BuildCourseMenuRows(ctx);
             REQUIRE_FALSE(rows.empty());
             REQUIRE(rows[0].action == CourseAction::ProblemList);
@@ -179,8 +196,8 @@ TEST_CASE("CourseMenuProblemListFirst", "[learningcourse]")
 TEST_CASE("CourseMenuResetTaskFile", "[learningcourse]")
 {
     // the last row of a student window; enabled when a download is possible
-    auto ctx        = StudentContext();
-    auto rows       = BuildCourseMenuRows(ctx);
+    auto ctx  = StudentContext();
+    auto rows = BuildCourseMenuRows(ctx);
     REQUIRE(rows.back().action == CourseAction::ResetTaskFile);
     REQUIRE(rows.back().enabled);
     REQUIRE(rows.back().caption == "Reset the task file to the original");

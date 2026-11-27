@@ -318,8 +318,7 @@ EMSCRIPTEN_KEEPALIVE int32 gview_browser_download_allowed(uint8* name, uint32 na
         uint32 size;
         ~WipeAndFree()
         {
-            if (p != nullptr)
-            {
+            if (p != nullptr) {
                 GView::Security::Crypto::Internal::SecureErase(p, size);
                 delete[] p;
             }
@@ -327,13 +326,12 @@ EMSCRIPTEN_KEEPALIVE int32 gview_browser_download_allowed(uint8* name, uint32 na
     } nameBuffer{ name, nameSize }, dataBuffer{ data, dataSize };
     auto& refusal = GView::App::Browser::downloadRefusal;
     refusal.clear();
-    if ((name == nullptr) || (nameSize == 0) || ((data == nullptr) && (dataSize != 0)))
-    {
+    if ((name == nullptr) || (nameSize == 0) || ((data == nullptr) && (dataSize != 0))) {
         refusal = "the file could not be checked"; // also the page releasing buffers after a failed allocation
         return 0;
     }
     static const uint8 emptyFile = 0;
-    const bool allowed = GView::App::Browser::IsBrowserDownloadAllowed(BufferView(data ? data : &emptyFile, dataSize), refusal);
+    const bool allowed           = GView::App::Browser::IsBrowserDownloadAllowed(BufferView(data ? data : &emptyFile, dataSize), refusal);
     if (!allowed && refusal.empty())
         refusal = "refused";
     return allowed ? 1 : 0;
