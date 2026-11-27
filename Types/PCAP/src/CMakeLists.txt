@@ -4,8 +4,8 @@ file(GLOB sources_top     *.cpp *.hpp)
 file(GLOB sources_panels Panels/*.cpp Panels/*.h Panels/*.hpp)
 file(GLOB sources_payload_parser PayloadParsers/*.cpp PayloadParsers/*.h PayloadParsers/*.hpp)
 
-source_group("Panels" ${sources_panels})
-source_group("PayloadParsers" ${sources_payload_parser})
+source_group("Panels" FILES ${sources_panels})
+source_group("PayloadParsers" FILES ${sources_payload_parser})
 
 target_sources(PCAP PRIVATE ${sources_all})
 

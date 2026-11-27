@@ -1,6 +1,6 @@
 // File > Stored files (web build): the files GView keeps in the storage of the browser (BrowserStorage.cpp). Lists
 // them, opens the ones that were not copied back into memory at startup, downloads (export - gated by the course
-// policy), deletes them, and forgets the saved Learning connection.
+// policy; Learning task files are never downloaded), deletes them, and forgets the saved Learning connection.
 
 #include "Internal.hpp"
 
@@ -134,6 +134,12 @@ namespace
                     // a download hands the file to the machine of the user: an export for the course policy
                     if (GView::App::IsBlockedByPolicy(GView::Security::RestrictedMode::Feature::Export, "downloading a stored file"))
                         return true;
+                    // task files (also those of earlier sessions) stay in this browser, session or not; Open still works.
+                    // The download itself is checked once more by the page (BrowserDownloadGate.cpp).
+                    if (DownloadGate::IsUnderRoot(f->path, LearningTaskRootsRelativeToHome())) {
+                        Dialogs::MessageBox::ShowError("Stored files", "Learning task files can not be downloaded from this browser.");
+                        return true;
+                    }
                     std::filesystem::path path;
                     if (!MaterializeStoredFile(f->path, path) || !AppCUI::OS::DownloadFile(path))
                         Dialogs::MessageBox::ShowError("Stored files", "The file could not be downloaded.");

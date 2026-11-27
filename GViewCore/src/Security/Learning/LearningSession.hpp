@@ -426,6 +426,9 @@ class LearningSession
     }
     // the current session belongs to this server and access token (constant-time token comparison)
     bool UsesConnection(const ConnectionInfo& ci) const noexcept;
+    // ViewStateKey (CatalogueView.hpp) of the access token of the session: names the student's catalogue view state in
+    // GView.ini (not secret, not the protocol subject); empty without a session
+    std::string GetViewStateKey() const;
     bool CanOpenItems() const noexcept;
     bool CanSubmit() const noexcept;
     const Catalogue& GetCatalogue() const noexcept

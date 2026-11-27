@@ -14,7 +14,8 @@ Step-by-step workflow
 
 **Step 1: Launch GView and connect to the course server.**
 
-The student launches GView, selects *Options > Learning and Evaluation Mode* (or
+The student launches GView, selects *Course > Problem list* (or presses ``F12`` with no window
+open; *Options > Learning and Evaluation Mode* opens the same window; or
 starts ``GView learn <connectionString>``) and pastes the connection string received from
 the teacher. With the browser build, the course page can do this step for the student: its
 *Open GView in the browser* button opens GView already connected, through a one-time launch code
@@ -41,10 +42,25 @@ with current points and the student's attempts) and **resources** (files, text n
 links shared by the teacher). Disabled weeks and items are never shown. *Details* shows the
 description; *Open* (or Enter) downloads the selected item.
 
+The newest week is listed first; the *Weeks: newest first* / *Weeks: oldest first* button
+(``Alt+K``) switches the order. GView remembers the order and the weeks the student folded,
+per course server and per student (the ``[LearningCourse.<server>.<key>]`` section of
+``GView.ini``: the order, and for each folded week its id and a hash of its content; the key
+is a hash of the access token, not the token). When the teacher changes a week the student
+has folded (its description, or a problem or resource added, removed or changed), the week is
+marked ``[updated]`` and the line above the list names it, until the student unfolds it. The
+changes are seen when the catalogue is loaded: at connect and with *Refresh*. Typing in the
+list searches it and unfolds the weeks where something matches; those weeks then count as
+unfolded.
+
 Typically this is binary executable files (e.g., PE files). Depending on the policy and the
 item, the content is either kept in memory only (encrypted in transit, decrypted into locked
 memory, never written to disk) or saved to a folder chosen by the student and opened from
-there. In both cases its SHA-256 is verified.
+there. In both cases its SHA-256 is verified. When something went wrong with a task file saved to
+disk, *Reset the task file to the original* (the last row of the ``F12`` *Course* menu of the task
+window) downloads it again, replaces the local copy and reopens it. The work saved to the course
+stays (unsaved work is offered to be saved first); the local names and comments stay too when the
+policy allows the local cache and the change to the file did not touch the code.
 
 **Step 4: Perform the analysis.**
 
@@ -115,10 +131,11 @@ When the teacher publishes a solution of a problem (for everyone or for one lab 
   teacher's names and comments, tiled next to the student's window (the student's window on the
   left keeps the focus). It never changes the student's files or disassembly cache.
 * *Replay the teacher's solution* - a read-only window that starts without the teacher's
-  annotations and replays the teacher's steps: ``Alt+Right`` / ``Alt+Left`` one step forward /
-  back, ``Alt+End`` / ``Alt+Home`` to the end / start (the command bar shows *Forward*, *Back*,
-  *To end*, *To start*). The status line says which step is shown, e.g. "Replay: step 12/57 -
-  rename 0x401080 sub_401080 -> decrypt".
+  annotations and replays the teacher's steps: ``]`` / ``[`` one step forward / back, ``}`` /
+  ``{`` to the end / start (these work on every terminal, also on macOS), or ``Alt+Right`` /
+  ``Alt+Left`` and ``Alt+End`` / ``Alt+Home`` (the command bar shows *Forward*, *Back*, *To end*,
+  *To start*). The status line names the keys and says which step is shown, e.g. "Replay 12/57
+  ([ ] step, { } start / end): rename 0x401080 sub_401080 -> decrypt".
 
 *Open solution* in the Learning window opens the same window on its own. Course staff publish a
 solution from their own task window (*Course* > *Publish solution...*: audience, with or

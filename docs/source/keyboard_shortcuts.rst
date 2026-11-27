@@ -76,6 +76,13 @@ macOS and Linux terminals
 * ``Option`` is sent as ``Alt`` only when the terminal is configured for it: *Terminal.app* → Settings → Profiles →
   Keyboard → **Use Option as Meta key**; *iTerm2* → Profiles → Keys → **Left Option key: Esc+**. Without it, either
   use the *Swapped* profile or the combo mode below.
+* *Terminal.app* sends ``Option+Left`` / ``Option+Right`` as ``Alt+B`` / ``Alt+F`` (the same bytes), so the replay keys
+  ``Alt+Left`` / ``Alt+Right`` need a change of the profile's key list: edit ``⌥←`` and ``⌥→`` (*Send Text*), press
+  ``Escape`` in the text field (it shows ``\033``), then type ``[1;3D`` for ``⌥←`` and ``[1;3C`` for ``⌥→``.
+* ``Shift+F5`` - ``Shift+F12``, ``Ctrl+H`` and the non-ASCII characters (letters of the keyboard layout such as ``ș`` or
+  ``ă``, and the characters ``Option`` types without *Use Option as Meta key*, such as ``ƒ``) need a GView built with an
+  AppCUI newer than 1.258.0: older versions read ``Shift+F5`` - ``Shift+F12`` as ``Escape``, ``Ctrl+H`` as ``Backspace``
+  and drop the non-ASCII characters.
 * Function keys may require ``Fn`` (macOS uses some of them for system functions).
 * **Combo mode**: press the backtick key (left of ``1``), then ``a`` / ``c`` / ``s`` to toggle ``Alt`` / ``Ctrl`` / ``Shift`` and finally
   the key (a letter, or ``1``-``0`` for ``F1``-``F10``). ``Space`` keeps the combo mode active, ``Escape`` leaves it.
@@ -87,9 +94,11 @@ Learning and Evaluation Mode keys
 =================== ============================== ==============================================================================
 Key                 Command (section)              What it does
 =================== ============================== ==============================================================================
-``F12``             ``LearningCourse``             *Course* menu of a task window opened from the course catalogue: save /
-                    (``Keys.GView``)               resume the work, the teacher's solution, publish (course staff). With no
-                                                   window opened: *SeeServerWindow*, the Learning and Evaluation Mode window
+``F12``             ``LearningCourse``             *Course* menu of a task window opened from the course catalogue: the
+                    (``Keys.GView``)               problem list, save / resume the work, the teacher's solution, publish
+                                                   (course staff). With no window opened: the Learning and Evaluation Mode
+                                                   window (*SeeServerWindow* when connected, *LearningMode* before: it
+                                                   connects with the saved connection string)
 ``F10``             ``LearningSubmitFlag``         Submit the flag of the student's task window
                     (``Keys.GView``)
 ``Alt+Left``        ``ReplayBack``                 Replay of a teacher's solution: one step back
@@ -101,13 +110,24 @@ Key                 Command (section)              What it does
                     (``Keys.View.Dissasm``)        palette, ``Ctrl+P``)
 =================== ============================== ==============================================================================
 
-The replay keys are on the command bar only in a window that plays a teacher's solution back.
+The replay keys are on the command bar only in a window that plays a teacher's solution back. In such a window the
+characters ``[`` / ``]`` (one step back / forward) and ``{`` / ``}`` (to the start / end) do the same on every terminal,
+also on macOS where ``Option+Left`` / ``Option+Right`` are not ``Alt+Left`` / ``Alt+Right`` by default. They are not
+configurable (AppCUI has no key code for them) and the status line of the replay always names them. While the
+disassembly view of a replay window has the focus, its replay keys (``Alt+Left`` / ``Alt+Right`` / ``Alt+Home`` /
+``Alt+End`` by default) are handled by the view, so they no longer move the focus to the panel on that side
+(``Alt+Up`` / ``Alt+Down`` still do).
 
 The course keys are bare function keys because a terminal shows only the keys without a modifier on the command
 bar. They work only in a window of the course, where they take precedence over a command of the type plugin or a key
 of a panel (e.g. the ``F10`` of the PDF *Objects* panel), so the **Keyboard shortcuts** window does not report those
 as conflicts; a viewer key on the same key is still a conflict (the viewer handles it first). ``F11`` is not used: Windows Terminal, the Windows console, GNOME Terminal and macOS keep it for
 themselves (full screen, show desktop).
+
+The **Course** menu of the menu bar (``Alt+U``) has the same commands without keys: *Problem list (server window)*,
+*Course commands of this task* (``F12`` in a task window) and *Submit flag* (``F10``). Closing the last window keeps GView
+open on the empty desktop. ``Escape`` there closes GView; in Learning and Evaluation Mode (and always in the browser build)
+it asks first, and a second ``Escape`` answers *Cancel*. *File > Exit* (``Shift+Escape``) closes without asking.
 
 Settings file
 -------------

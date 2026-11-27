@@ -47,7 +47,18 @@ constexpr GViewMenuCommand menuFileList[] = {
 };
 constexpr ItemHandle menuFileDisabledCommandsList[] = { 3, 4 };
 
-constexpr GViewMenuCommand menuOptionsList[] = { 
+#ifdef GVIEW_HAS_LEARNING_NETWORK
+// Learning and Evaluation Mode in a menu of its own. No shortcut keys here: a menu shortcut is checked before the command bar,
+// so it would take F12 / F10 from the task windows (FileWindow handles the course keys) and from the empty desktop.
+constexpr GViewMenuCommand menuCourseList[] = {
+    { "&Problem list (server window)", MenuCommands::OPEN_RESTRICTED_MODE, Key::None },
+    { "", 0, Key::None },
+    { "&Course commands of this task", InstanceCommands::CMD_LEARNING_COURSE_MENU, Key::None },
+    { "&Submit flag", InstanceCommands::CMD_LEARNING_SUBMIT_FLAG, Key::None },
+};
+#endif
+
+constexpr GViewMenuCommand menuOptionsList[] = {
     { "&Change theme", MenuCommands::CHANGE_THEME, Key::None },
     { "Op&en Theme Editor", MenuCommands::OPEN_THEME_EDITOR, Key::None },
 #ifdef GVIEW_HAS_LEARNING_NETWORK
@@ -229,6 +240,11 @@ bool Instance::BuildMainMenus()
     for (auto itemHandle : menuFileDisabledCommandsList) {
         CHECK(mnuFile->SetEnable(itemHandle, false), false, "Fail to disable menu item");
     }
+#ifdef GVIEW_HAS_LEARNING_NETWORK
+    Menu* mnuCourse = nullptr;
+    CHECK(mnuCourse = AppCUI::Application::AddMenu("Co&urse"), false, "Unable to create 'Course' menu");
+    CHECK(AddMenuCommands(mnuCourse, menuCourseList, ARRAY_LEN(menuCourseList)), false, "");
+#endif
     CHECK(mnuOptions = AppCUI::Application::AddMenu("&Options"), false, "Unable to create 'Options' menu");
     CHECK(AddMenuCommands(mnuOptions, menuOptionsList, ARRAY_LEN(menuOptionsList)), false, "");
 
@@ -268,8 +284,12 @@ bool Instance::Init(bool isTestingEnabled)
     GView::App::Browser::RestoreSettings();
 #endif
     // the GView desktop runs the background update check (see Update/UpdateService.hpp)
-    if (!isTestingEnabled && !isRemoteServer)
+    if (!isTestingEnabled && !isRemoteServer) {
         initData.CustomDesktopConstructor = GView::App::CreateDesktop;
+        // closing the last window leaves the empty desktop (as in the browser build): a course session survives it, the Course
+        // key opens the Learning window from there, and Escape / File -> Exit close GView (GViewDesktop.cpp)
+        initData.Flags |= InitializationFlags::DisableAutoCloseDesktop;
+    }
 
     const auto settingsPath = AppCUI::Application::GetAppSettingsFile();
     AppCUI::OS::File settingsFile;
@@ -789,6 +809,13 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
         case MenuCommands::OPEN_RESTRICTED_MODE:
             ShowRestrictedModeWindow();
             return true;
+#ifdef GVIEW_HAS_LEARNING_NETWORK
+        // Course menu commands that need a task window: here when no window has the focus (a task window handles them itself)
+        case InstanceCommands::CMD_LEARNING_COURSE_MENU:
+        case InstanceCommands::CMD_LEARNING_SUBMIT_FLAG:
+            GView::App::ShowNoCourseTaskWindowNotice();
+            return true;
+#endif
 #ifdef GVIEW_ENABLE_REMOTE
         case MenuCommands::REMOTE_CONNECT:
             GView::Remote::ShowConnectDialog();

@@ -247,7 +247,7 @@ class LearningNotesWindow : public Window, public Handlers::OnTreeViewCurrentIte
             default:
                 return Window::OnEvent(c, eventType, id);
             }
-            // frontends without frame updates (ncurses) ran the request inline and get no OnFrameUpdate
+            // a request run inline (before the first frame, or on a frontend without frame updates) has its result now
             Refresh(false);
             UpdateStatusLine();
             return true;

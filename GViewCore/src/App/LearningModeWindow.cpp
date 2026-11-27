@@ -5,10 +5,13 @@
 #include "Learning/LearningSession.hpp"
 #include "Learning/LearningFormat.hpp"
 #include "Learning/TaskFiles.hpp"
+#include "Learning/CatalogueView.hpp"
 #include "LearningCourse.hpp"
 
 #include <cstdio>
+#include <functional>
 #include <optional>
+#include <set>
 
 #undef MessageBox // Windows header conflict with AppCUI
 
@@ -34,6 +37,16 @@ constexpr int BTN_CLOSE   = 7;
 constexpr int BTN_NOTES   = 8;
 constexpr int BTN_OPEN_WITH_WORK = 9;
 constexpr int BTN_OPEN_SOLUTION  = 10;
+constexpr int BTN_WEEK_ORDER     = 11;
+
+constexpr std::string_view DEFAULT_HINT      = "Click an item to preview its description below the list; press Details for the full explanation.";
+constexpr std::string_view UPDATED_WEEK_MARK = "  [updated]";
+
+// the caption of the button says the order in use; the button switches to the other one
+std::string_view WeekOrderCaption(Learning::WeekOrder order)
+{
+    return order == Learning::WeekOrder::NewestFirst ? "Wee&ks: newest first" : "Wee&ks: oldest first";
+}
 
 // what the course server keeps for a problem (spec §10.12): "work 2026-11-08", "solution", "solution+replay"
 std::string CourseColumnText(const Learning::CatalogueItem& item)
@@ -208,27 +221,6 @@ Learning::LearningSettings LoadLearningSettings()
     if (auto folder = sect.GetValue("LearningDownloadFolder").AsStringView(); folder.has_value())
         s.downloadFolder = std::string(*folder);
     return s;
-}
-
-// Whether AppCUI will deliver OnFrameUpdate on this frontend (FPS mode is enabled by Instance::Init). On Windows both
-// frontends (console and SDL) honour FPS mode; on Linux/macOS only SDL does (ncurses never delivers frame updates).
-bool FrontendDeliversFrameUpdates()
-{
-#if defined(BUILD_FOR_WINDOWS) || defined(BUILD_FOR_WASM)
-    return true; // the browser frontend runs the AppCUI loop from the frames of the page
-#else
-    auto ini = AppCUI::Application::GetAppSettings();
-    if (!ini)
-        return false;
-    auto sect = ini->GetSection("AppCUI");
-    if (!sect.Exists())
-        return false;
-    auto frontend = sect.GetValue("Frontend").AsStringView();
-    if (!frontend.has_value() || frontend->size() != 3)
-        return false;
-    const auto lower = [](char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c; };
-    return lower((*frontend)[0]) == 's' && lower((*frontend)[1]) == 'd' && lower((*frontend)[2]) == 'l';
-#endif
 }
 
 // Web build: the connection string (it contains the access token) is kept encrypted by the page
@@ -456,20 +448,40 @@ class LearningModeWindow : public Window,
     struct RowRef {
         size_t week;
         RowKind kind;
-        size_t index; // problem / resource index (unused for a week row)
+        size_t index;    // problem / resource index (unused for a week row)
+        std::string key; // "w:<week id>" or "i:<item name>": finds the row again after a rebuild (the catalogue may have changed)
+    };
+    // a week row of the tree: what it showed, to remember its folding (Learning/CatalogueView.hpp)
+    struct ShownWeekRow {
+        TreeViewItem item;
+        int64 id;
+        std::string hash;  // WeekContentHash of the week shown
+        std::string title; // without the "updated" mark
+        bool changed;      // shown with the "updated" mark
+        bool folded;       // its folding when last seen (a fold is captured when it differs)
+        bool tracked;      // false for a second week with the same id: shown, its folding not remembered
     };
 
     Reference<TextField> connectionField;
     Reference<Label> lbMaskedConnection;
     Reference<Button> connectButton, reconnectButton, endButton, openButton, detailsButton, submitButton, refreshButton, notesButton;
-    Reference<Button> openWithWorkButton, openSolutionButton;
+    Reference<Button> openWithWorkButton, openSolutionButton, weekOrderButton;
     Reference<ColoredLine> statusLine, previewLine;
     Reference<Label> lbPolicy, lbBlocked, lbMessage, lbHint;
     Reference<TreeView> tree;
     std::vector<RowRef> rows;
 
+    // order of the weeks and the weeks folded by the student, per course server and student ([LearningCourse.*] in GView.ini)
+    Learning::WeekViewState viewState;
+    std::string viewSection; // empty: no student known yet (nothing is saved)
+    std::vector<ShownWeekRow> shownWeeks;
+
     std::string launchNotice; // web launch link: why nothing was connected (shown until the student connects)
     bool autoConnect;
+    std::string pendingSelect;    // row key to select when the catalogue is shown ("i:<item name>"), then cleared
+    bool pendingReset{ false };   // reset the task file of pendingSelect once it is selected (Course -> Reset the task file)
+    bool resetRequested{ false }; // ... it is selected: ResetSelected on the next frame
+    std::string pendingNotice;    // shown in a message box on the next frame (the status label is rewritten every second)
     bool opened{ false };
     uint64 lastStatusSecond{ 0 };
     bool needsRefresh{ true };
@@ -486,8 +498,16 @@ class LearningModeWindow : public Window,
   public:
     // useSaved: an empty `prefilled` shows (and connects with) the saved connection string. notice: a failed web launch
     // opens the window with an empty connection field (useSaved = false) and the reason, so the string can be pasted.
-    LearningModeWindow(std::string_view prefilled, bool connectNow, bool useSaved = true, std::string_view notice = {})
-        : Window("Learning and Evaluation Mode", "d:c,w:98%,h:96%", WindowFlags::Sizeable), launchNotice(notice), autoConnect(connectNow)
+    // selectItem: the item selected once the catalogue is shown (Course -> Problem list from a task window)
+    LearningModeWindow(
+          std::string_view prefilled,
+          bool connectNow,
+          bool useSaved               = true,
+          std::string_view notice     = {},
+          std::string_view selectItem = {},
+          bool resetItem              = false)
+        : Window("Learning and Evaluation Mode", "d:c,w:98%,h:96%", WindowFlags::Sizeable), launchNotice(notice), autoConnect(connectNow),
+          pendingSelect(selectItem.empty() ? std::string() : "i:" + std::string(selectItem)), pendingReset(resetItem && !selectItem.empty())
     {
         std::string initial = (prefilled.empty() && useSaved) ? LoadSavedConnectionString() : std::string(prefilled);
         if (prefilled.empty() && !initial.empty() && !Session().HasSession())
@@ -506,8 +526,8 @@ class LearningModeWindow : public Window,
         lbPolicy   = Factory::Label::Create(this, "", "l:1,t:3,r:1,h:1");
         lbBlocked  = Factory::Label::Create(this, "", "l:1,t:4,r:1,h:1");
         lbMessage  = Factory::Label::Create(this, "", "l:1,t:5,r:1,h:2");
-        lbHint     = Factory::Label::Create(
-              this, "Click an item to preview its description below the list; press Details for the full explanation.", "l:1,t:7,r:1,h:1");
+        lbHint          = Factory::Label::Create(this, DEFAULT_HINT, "l:1,t:7,r:26,h:1");
+        weekOrderButton = Factory::Button::Create(this, WeekOrderCaption(viewState.order), "r:1,t:7,w:24", BTN_WEEK_ORDER, ButtonFlags::Flat);
 
         tree = Factory::TreeView::Create(
               this,
@@ -534,16 +554,20 @@ class LearningModeWindow : public Window,
     ~LearningModeWindow() override
     {
         *alive = false;
+        try {
+            if (CaptureFolds()) // the folds made since the last frame (the controls are still alive here)
+                SaveViewState();
+        } catch (...) {
+        }
     }
 
     void OnStart() override
     {
         // OnStart runs before the first frame: a job started here would not yet know that frame updates (and thus the
-        // background worker) are available and would block the UI inline. Defer it to the first frame when one will come.
-        if (FrontendDeliversFrameUpdates())
-            startDeferred = true;
-        else
-            RunStartActions();
+        // background worker) are available and would block the UI inline. Deferred to the first frame: every frontend
+        // delivers frames in FPS mode (Instance::Init) - Windows console, SDL, the browser and, since AppCUI 1.248.0,
+        // ncurses; only the test terminal does not (the start actions do not run there; Connect still works).
+        startDeferred = true;
     }
 
     bool OnFrameUpdate() override
@@ -569,6 +593,23 @@ class LearningModeWindow : public Window,
             PopulateTree();
             needsRefresh = false;
         }
+        if (resetRequested) {
+            resetRequested = false;
+            ResetSelected(); // may open dialogs: not from inside PopulateTree
+            repaint = true;
+        }
+        if (!pendingNotice.empty()) {
+            const std::string notice = std::move(pendingNotice);
+            pendingNotice.clear();
+            Dialogs::MessageBox::ShowNotification("Learning and Evaluation Mode", AsU8(notice));
+            repaint = true;
+        }
+        // AppCUI does not report a fold of the tree: compare with what was shown on every frame
+        if (CaptureFolds()) {
+            SaveViewState();
+            UpdateChangedWeeks();
+            repaint = true;
+        }
         return repaint;
     }
 
@@ -593,6 +634,7 @@ class LearningModeWindow : public Window,
             switch (id)
             {
             case BTN_CONNECT:
+                pendingReset = false; // a Reset asked for in another session must not run in this one
                 StartConnect();
                 return true;
             case BTN_END:
@@ -618,6 +660,9 @@ class LearningModeWindow : public Window,
                 return true;
             case BTN_NOTES:
                 ShowNotes();
+                return true;
+            case BTN_WEEK_ORDER:
+                SwitchWeekOrder();
                 return true;
             case BTN_CLOSE:
                 Exit(opened ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
@@ -779,44 +824,157 @@ class LearningModeWindow : public Window,
         }
     }
 
-    // identifies the current row across a rebuild of the tree ("w:<week index>" or "i:<item name>")
+    // identifies the current row across a rebuild of the tree ("w:<week id>" or "i:<item name>"), from what the row showed
     std::string CurrentRowKey()
     {
         const uint64 idx = CurrentRowIndex();
-        if (idx == ROW_NONE)
-            return {};
-        if (rows[idx].kind == RowKind::Week)
-            return "w:" + std::to_string(rows[idx].week);
-        const auto* item = ItemOf(rows[idx]);
-        return item ? "i:" + item->name : std::string();
+        return idx == ROW_NONE ? std::string() : rows[idx].key;
+    }
+
+    static bool WeekHasItem(const Learning::Week& week, std::string_view name)
+    {
+        for (const auto* list : { &week.problems, &week.resources })
+            for (const auto& it : *list)
+                if (it.name == name)
+                    return true;
+        return false;
+    }
+
+    // ---------------- order and folding of the weeks (per course server and student)
+    void LoadViewState(const std::string& section)
+    {
+        viewState   = {};
+        viewSection = section;
+        if (auto ini = AppCUI::Application::GetAppSettings(); ini && !section.empty()) {
+            auto sect = ini->GetSection(section);
+            if (sect.Exists()) {
+                viewState.order  = Learning::ParseWeekOrder(sect.GetValue("WeekOrder").AsStringView().value_or(std::string_view()));
+                viewState.folded = Learning::ParseFoldedWeeks(sect.GetValue("FoldedWeeks").AsStringView().value_or(std::string_view()));
+            }
+        }
+        weekOrderButton->SetText(WeekOrderCaption(viewState.order), true);
+    }
+
+    void SaveViewState()
+    {
+        if (viewSection.empty())
+            return;
+        auto ini = AppCUI::Application::GetAppSettings();
+        if (!ini)
+            return;
+        // not secret: the web build mirrors GView.ini in clear into the localStorage of the page
+        (*ini)[viewSection]["WeekOrder"]   = std::string(Learning::WeekOrderName(viewState.order));
+        (*ini)[viewSection]["FoldedWeeks"] = Learning::SerializeFoldedWeeks(viewState.folded);
+        AppCUI::Application::SaveAppSettings();
+    }
+
+    // the state of the student of the current session (another student or server: another section)
+    void EnsureViewState()
+    {
+        const auto section = Learning::WeekViewSection(Session().GetStatus().serverUrl, Session().GetViewStateKey());
+        if (section != viewSection)
+            LoadViewState(section);
+    }
+
+    // the folds the student made in the tree since the last call (a search of the tree unfolds the weeks it finds
+    // something in: that counts as an unfold); true when viewState changed. Runs on every frame: no allocation.
+    bool CaptureFolds()
+    {
+        bool changed = false;
+        for (auto& w : shownWeeks) {
+            if (!w.tracked || !w.item.IsValid())
+                continue;
+            const bool folded = w.item.IsFolded();
+            if (folded == w.folded)
+                continue;
+            w.folded = folded;
+            changed |= Learning::ApplyFoldChange(viewState, w.id, w.hash, folded);
+        }
+        return changed;
+    }
+
+    // the "updated" mark of the folded weeks the teacher changed since they were folded, and the line that lists them
+    void UpdateChangedWeeks()
+    {
+        std::string names;
+        for (auto& w : shownWeeks) {
+            const bool changed = w.tracked && Learning::FoldedWeekChanged(viewState, w.id, w.hash);
+            if (changed != w.changed && w.item.IsValid()) {
+                w.item.SetText(changed ? w.title + std::string(UPDATED_WEEK_MARK) : w.title);
+                w.item.SetType(changed ? TreeViewItem::Type::Emphasized_2 : TreeViewItem::Type::Category);
+                w.changed = changed;
+            }
+            if (changed) {
+                if (!names.empty())
+                    names += ", ";
+                names += w.title;
+            }
+        }
+        if (names.empty())
+            lbHint->SetText(DEFAULT_HINT);
+        else
+            lbHint->SetText(AsU8("Changed since you folded them: " + names + " (unfold to see what is new)"));
+    }
+
+    void SwitchWeekOrder()
+    {
+        if (CaptureFolds()) // into the section of the weeks shown
+            SaveViewState();
+        if (Session().HasSession())
+            EnsureViewState(); // the student connected now, even before the catalogue arrives
+        viewState.order = viewState.order == Learning::WeekOrder::NewestFirst ? Learning::WeekOrder::OldestFirst : Learning::WeekOrder::NewestFirst;
+        weekOrderButton->SetText(WeekOrderCaption(viewState.order), true);
+        SaveViewState();
+        PopulateTree();
     }
 
     void PopulateTree()
     {
-        const std::string previous = CurrentRowKey();
-        populating                 = true;
+        // the item asked for (opened from a task window) wins over the current row, once: the first tree with the catalogue
+        const bool select          = !pendingSelect.empty() && Session().IsCatalogueLoaded();
+        const std::string previous = select ? pendingSelect : CurrentRowKey();
+        if (select)
+            pendingSelect.clear();
+        if (CaptureFolds()) // before the rows go away (saved in the section of the catalogue that was shown)
+            SaveViewState();
+        populating = true;
         tree->ClearItems();
         rows.clear();
+        shownWeeks.clear();
         const auto& cat = Session().GetCatalogue();
         if (!Session().IsCatalogueLoaded())
         {
             populating = false;
+            UpdateChangedWeeks();
             UpdatePreview();
             return;
         }
+        EnsureViewState();
         const bool memoryPolicy = Session().GetPolicy().has_value() && Session().GetPolicy()->storageMode == StorageMode::Memory;
         std::optional<TreeViewItem> restore;
-        for (size_t w = 0; w < cat.weeks.size(); w++)
-        {
+        std::set<int64> seenWeekIds;
+        for (const size_t w : Learning::WeekDisplayOrder(cat, viewState.order)) {
             const auto& week = cat.weeks[w];
             std::string title = week.name;
             if (!week.title.empty())
                 title += " - " + week.title;
+            const std::string weekKey = "w:" + std::to_string(week.id);
+            // a week id should be unique; a server that repeats one (or omits it: id 0) gets only its first week remembered
+            const bool tracked = seenWeekIds.insert(week.id).second;
+            bool folded        = tracked && viewState.folded.count(week.id) != 0;
+            const auto hash    = Learning::WeekContentHash(week);
+            // the task the window was opened from (Course -> Problem list) is shown: its folded week is unfolded
+            if (folded && select && WeekHasItem(week, std::string_view(previous).substr(2))) {
+                folded = false;
+                if (Learning::ApplyFoldChange(viewState, week.id, hash, false))
+                    SaveViewState();
+            }
             auto weekItem = tree->AddItem(title, true);
             weekItem.SetType(TreeViewItem::Type::Category);
-            rows.push_back(RowRef{ w, RowKind::Week, 0 });
+            rows.push_back(RowRef{ w, RowKind::Week, 0, weekKey });
             weekItem.SetData(static_cast<uint64>(rows.size() - 1));
-            if (previous == "w:" + std::to_string(w))
+            shownWeeks.push_back(ShownWeekRow{ weekItem, week.id, hash, title, false, folded, tracked });
+            if (previous == weekKey)
                 restore = weekItem;
             auto addItem = [&](const Learning::CatalogueItem& it, bool problem, size_t idx) {
                 auto node = weekItem.AddChild(it.title);
@@ -847,17 +1005,21 @@ class LearningModeWindow : public Window,
                     node.SetText(4, CourseColumnText(it));
                 if (problem && it.hasMe && it.me.solved)
                     node.SetType(TreeViewItem::Type::Emphasized_1);
-                rows.push_back(RowRef{ w, problem ? RowKind::Problem : RowKind::Resource, idx });
+                rows.push_back(RowRef{ w, problem ? RowKind::Problem : RowKind::Resource, idx, "i:" + it.name });
                 node.SetData(static_cast<uint64>(rows.size() - 1));
                 if (previous == "i:" + it.name)
-                    restore = node;
+                    restore = folded ? weekItem : node; // an item of a folded week: its week row
             };
             for (size_t i = 0; i < week.problems.size(); i++)
                 addItem(week.problems[i], true, i);
             for (size_t i = 0; i < week.resources.size(); i++)
                 addItem(week.resources[i], false, i);
-            weekItem.Unfold();
+            if (folded)
+                weekItem.Fold();
+            else
+                weekItem.Unfold();
         }
+        UpdateChangedWeeks();
         if (!rows.empty() && !treeFocused)
         {
             tree->SetFocus(); // keyboard users land on the catalogue once it is available
@@ -875,6 +1037,85 @@ class LearningModeWindow : public Window,
             restore->SetCurrent(); // a refresh (or a submission) keeps the student on the same row
         populating = false;
         UpdatePreview();
+        if (select && pendingReset) {
+            // Course -> Reset the task file: once the item is the current row (it may have left the catalogue)
+            pendingReset = false;
+            if (CurrentRowKey() == previous)
+                resetRequested = true;
+            else
+                pendingNotice = "The task is no longer in the catalogue: its file was not reset.";
+        }
+    }
+
+    // Course -> Reset the task file: the selected item downloaded again, its local copy replaced (also when the student changed
+    // it) and opened. Asks first (and the close prompts of unsaved course work), saves the names and comments of its windows,
+    // and closes them only once the new copy has arrived: a failed or cancelled download leaves everything as it was.
+    void ResetSelected()
+    {
+        std::string weekName;
+        const auto* selected = SelectedItem(&weekName);
+        if (selected == nullptr || selected->kind == Learning::ItemKind::ResourceLink)
+            return;
+        const Learning::CatalogueItem item = *selected;
+        if (!Session().CanOpenItems()) {
+            Dialogs::MessageBox::ShowError("Reset", "The task file can not be downloaded now: connect to the course first.");
+            return;
+        }
+        const bool memoryPolicy = Session().GetPolicy().has_value() && Session().GetPolicy()->storageMode == StorageMode::Memory;
+        if (memoryPolicy || item.deliveryMode == Learning::DeliveryMode::Memory) {
+            Dialogs::MessageBox::ShowNotification("Reset", "This task is kept in memory only: it can not have changed.");
+            return;
+        }
+        // a message box shows about four lines: the question, then what is lost and what is kept
+        const std::string question = "Download \"" + item.title + "\" again and replace your copy?\nChanges to the file are lost; course work stays.";
+        if (Dialogs::MessageBox::ShowOkCancel("Reset the task file", AsU8(question)) != Dialogs::Result::Ok)
+            return;
+        const auto windows = TaskWindowsOf(item.name);
+        for (auto* window : windows)
+            if (!GView::App::ConfirmCloseCourseWorkWindow(window))
+                return;
+        for (auto* window : windows)
+            GView::App::Course::SaveTaskWindowCache(window); // a window GView closes does not save it on its own
+        const std::string itemName = item.name;
+        auto st                    = Session().Download(item, Guarded([this, weekName, itemName](Learning::DownloadResult& result) {
+                                         if (!result.status.ok) {
+                                             Dialogs::MessageBox::ShowError("Reset failed", result.status.message + "\nThe task file was not changed.");
+                                             return;
+                                         }
+                                         // Windows can not replace an open file, and the windows show the old content: closed now (deleted at once)
+                                         for (auto* window : TaskWindowsOf(itemName))
+                                             window->RemoveMe();
+                                         const Learning::CatalogueItem delivered = result.item;
+                                         if (OpenDelivered(result, weekName, Learning::WorkspaceRole::Student, true)) {
+                                             AfterTaskOpened(delivered, ResumeMode::Offer);
+                                             opened = true;
+                                             Exit(Dialogs::Result::Ok); // show the task
+                                         }
+                                     }));
+        if (!st.ok)
+            Dialogs::MessageBox::ShowError("Reset", st.message);
+        UpdateStatus();
+    }
+
+    // every window of the item: the student's and the teacher's solution windows (they open the same task file)
+    std::vector<FileWindow*> TaskWindowsOf(std::string_view itemName)
+    {
+        std::vector<FileWindow*> windows;
+        auto dsk = AppCUI::Application::GetDesktop();
+        if (!dsk.IsValid())
+            return windows;
+        const auto count = dsk->GetChildrenCount();
+        for (uint32 i = 0; i < count; i++) {
+            auto child = dsk->GetChild(i);
+            if (!child.IsValid())
+                continue;
+            auto* window = dynamic_cast<FileWindow*>(&static_cast<Control&>(child));
+            if (window == nullptr || window->GetObjectPtr() == nullptr)
+                continue;
+            if (const auto* binding = Session().FindBinding(window->GetObjectPtr()); binding != nullptr && binding->item == itemName)
+                windows.push_back(window);
+        }
+        return windows;
     }
 
     const Learning::CatalogueItem* ItemOf(const RowRef& r)
@@ -993,6 +1234,9 @@ class LearningModeWindow : public Window,
 
     void EndSession()
     {
+        pendingSelect.clear(); // what was asked for belongs to this session
+        pendingReset         = false;
+        resetRequested       = false;
         std::string question = "End the learning session? Restrictions will be removed and secrets erased.";
         if (Session().Notes().HasUnsavedChanges())
             question += "\n\nSome note changes are not on the course server yet. GView tries to send them once more; what cannot be "
@@ -1118,6 +1362,7 @@ class LearningModeWindow : public Window,
         const auto path = store.FindUpToDate(item.name, item.sha256);
         if (!path.has_value())
             return false;
+        RecordDelivered(item.sha256); // the local copy holds exactly these bytes (FindUpToDate checked them)
         OpenTaskFile(*path, item, store.RecordedVersion(item.name));
         return true;
     }
@@ -1157,23 +1402,149 @@ class LearningModeWindow : public Window,
             Exit(Dialogs::Result::Ok); // show the task
             return;
         }
-        auto st = Session().Download(item, Guarded([this, weekName, resume](Learning::DownloadResult& result) {
-            if (!result.status.ok)
-            {
-                Dialogs::MessageBox::ShowError("Download failed", result.status.message);
-                return;
-            }
+        auto st = StartDownload(item, weekName, [this, resume](Learning::DownloadResult& result, const std::string& deliveredWeek) {
             const Learning::CatalogueItem delivered = result.item;
-            if (OpenDelivered(result, weekName, Learning::WorkspaceRole::Student))
-            {
+            if (OpenDelivered(result, deliveredWeek, Learning::WorkspaceRole::Student)) {
                 AfterTaskOpened(delivered, resume);
                 opened = true;
                 Exit(Dialogs::Result::Ok); // show the task
             }
-        }));
+        });
         if (!st.ok)
             Dialogs::MessageBox::ShowError("Open", st.message);
         UpdateStatus();
+    }
+
+    // what is done with a successfully delivered item (the week it belongs to in the catalogue that was used)
+    using DeliveredHandler = std::function<void(Learning::DownloadResult& result, const std::string& weekName)>;
+
+    // The single path of the item downloads of this window. A 403 POLICY_EXPIRED answer expires the session (fail
+    // closed, LearningSession::Download) - a current course server sends it for a policy issued before content
+    // encryption, or for one that ended. On the first attempt the window then reconnects once with the connection string
+    // it holds, reloads the catalogue and downloads the same item (looked up again by name) once more. Never loops.
+    GView::Utils::GStatus StartDownload(
+          const Learning::CatalogueItem& item, const std::string& weekName, DeliveredHandler onDelivered, bool firstAttempt = true)
+    {
+        return Session().Download(
+              item, Guarded([this, name = item.name, problem = item.IsProblem(), weekName, onDelivered, firstAttempt](Learning::DownloadResult& result) {
+                  if (!result.status.ok) {
+                      if (firstAttempt && result.error.code == Learning::ErrorCode::PolicyExpired) {
+                          ReconnectAndRetry(name, problem, onDelivered);
+                          return;
+                      }
+                      Dialogs::MessageBox::ShowError("Download failed", result.status.message);
+                      return;
+                  }
+                  RecordDelivered(result.content.sha256);
+                  onDelivered(result, weekName);
+              }));
+    }
+
+    // web build: the bytes of every delivered item (any delivery mode) are never handed to the browser as a download
+    // (denylist of the download gate, BrowserDownloadGate.cpp)
+    static void RecordDelivered(std::string_view sha256Hex)
+    {
+#ifdef BUILD_FOR_WASM
+        if (!sha256Hex.empty())
+            GView::App::Browser::RecordDeliveredTaskHash(sha256Hex);
+#else
+        (void) sha256Hex;
+#endif
+    }
+
+    void ShowPolicyRenewalFailed(std::string_view message)
+    {
+        std::string text = "The course server no longer accepts the current course policy (it expired or was renewed), and reconnecting failed: ";
+        text += message;
+        text += "\nPress Reconnect to continue.";
+        Dialogs::MessageBox::ShowError("Course policy", AsU8(text));
+    }
+
+    // the item `name` in the current catalogue, and the name of its week
+    const Learning::CatalogueItem* FindCatalogueItem(std::string_view name, bool problem, std::string& weekName)
+    {
+        for (const auto& week : Session().GetCatalogue().weeks) {
+            const auto& list = problem ? week.problems : week.resources;
+            for (const auto& it : list)
+                if (it.name == name) {
+                    weekName = week.name;
+                    return &it;
+                }
+        }
+        return nullptr;
+    }
+
+    // after a POLICY_EXPIRED answer to a download: Connect exactly like StartConnect (the session is Expired, which
+    // Connect accepts; a successful connect activates the new policy and restarts the telemetry flusher), then the
+    // catalogue, then a single retry of the same item
+    void ReconnectAndRetry(const std::string& name, bool problem, DeliveredHandler onDelivered)
+    {
+        // the connection string holds the access token: wiped when the last copy of the pointer goes (the callback may
+        // never run - window closed, superseded connect) and as soon as the callback is done with it
+        std::shared_ptr<std::string> cs(new std::string(), [](std::string* s) {
+            Learning::WipeString(*s);
+            delete s;
+        });
+        if (!connectionField->GetText().ToString(*cs) || cs->empty())
+            *cs = LoadSavedConnectionString();
+        if (cs->empty()) {
+            ShowPolicyRenewalFailed("no connection string is available");
+            RefreshNow();
+            return;
+        }
+        const auto settings = LoadLearningSettings();
+        {
+            // only the connection of the current session is renewed without asking (the field or the saved string may
+            // belong to another account or server by now)
+            Learning::ConnectionInfo ci;
+            const bool same = Learning::ParseConnectionString(*cs, settings.allowPlainHttpLocalhost, ci).ok && Session().UsesConnection(ci);
+            // SecureString also zeroes its storage when released; wiped now all the same (also an inline buffer)
+            if (!ci.token.empty())
+                GView::Security::Crypto::Internal::SecureErase(ci.token.data(), ci.token.size());
+            ci.token.clear();
+            if (!same) {
+                ShowPolicyRenewalFailed("the connection string does not belong to the current session");
+                RefreshNow();
+                return;
+            }
+        }
+        auto st = Session().Connect(*cs, settings, Guarded([this, cs, name, problem, onDelivered](const GView::Utils::GStatus& result) {
+            if (!result.ok) {
+                Learning::WipeString(*cs);
+                ShowPolicyRenewalFailed(result.message);
+                RefreshNow();
+                return;
+            }
+            SaveConnectionString(*cs); // as StartConnect: kept only after a successful, verified connect
+            Learning::WipeString(*cs);
+            GView::App::RefreshAllFileWindowTitles();
+            auto refresh = Session().RefreshCatalogue(Guarded([this, name, problem, onDelivered](const GView::Utils::GStatus& loaded) {
+                RefreshNow();
+                if (!loaded.ok) {
+                    Dialogs::MessageBox::ShowError("Catalogue", loaded.message);
+                    return;
+                }
+                std::string weekName;
+                const auto* found = FindCatalogueItem(name, problem, weekName);
+                if (found == nullptr) {
+                    Dialogs::MessageBox::ShowError("Download failed", "The item is not available any more.");
+                    return;
+                }
+                const Learning::CatalogueItem again = *found;
+                auto retry                          = StartDownload(again, weekName, onDelivered, false);
+                if (!retry.ok)
+                    Dialogs::MessageBox::ShowError("Download failed", retry.message);
+                UpdateStatus();
+            }));
+            if (!refresh.ok)
+                Dialogs::MessageBox::ShowError("Catalogue", refresh.message);
+            RefreshNow();
+        }));
+        if (!st.ok) {
+            Learning::WipeString(*cs);
+            ShowPolicyRenewalFailed(st.message);
+        }
+        RefreshNow();
     }
 
     // Open solution: the teacher's solution of the selected problem in a window of its own (no student window, no tiling),
@@ -1219,12 +1590,7 @@ class LearningModeWindow : public Window,
             }
         }
         // no local copy: the task is downloaded and the solution window reads a copy of it from memory (nothing is written)
-        auto st = Session().Download(item, Guarded([this, replay](Learning::DownloadResult& result) {
-            if (!result.status.ok)
-            {
-                Dialogs::MessageBox::ShowError("Download failed", result.status.message);
-                return;
-            }
+        auto st = StartDownload(item, weekName, [this, replay](Learning::DownloadResult& result, const std::string&) {
             GView::App::Course::SolutionSource source;
             source.name  = result.content.fileName.empty() ? Learning::SanitizeFileName(result.item.name) : result.content.fileName;
             source.bytes = &result.content.data;
@@ -1233,14 +1599,15 @@ class LearningModeWindow : public Window,
                 opened = true;
                 Exit(Dialogs::Result::Ok);
             }
-        }));
+        });
         if (!st.ok)
             Dialogs::MessageBox::ShowError("Open solution", st.message);
         UpdateStatus();
     }
 
-    // role: the window of the student's task (Student); the solution windows are opened by OpenSolutionStandalone
-    bool OpenDelivered(Learning::DownloadResult& result, const std::string& weekName, Learning::WorkspaceRole role)
+    // role: the window of the student's task (Student); the solution windows are opened by OpenSolutionStandalone.
+    // replaceLocalCopy (Reset the task file): a local copy the student changed is replaced without asking.
+    bool OpenDelivered(Learning::DownloadResult& result, const std::string& weekName, Learning::WorkspaceRole role, bool replaceLocalCopy = false)
     {
         auto& session = Session();
         const auto& item = result.item;
@@ -1279,9 +1646,9 @@ class LearningModeWindow : public Window,
         std::filesystem::path path = plan.path;
         uint32 version             = content.itemVersion;
         bool write                 = plan.state == Learning::TaskFileStore::LocalState::Missing ||
-                     plan.state == Learning::TaskFileStore::LocalState::Outdated; // unchanged by the student: just update it
-        if (plan.state == Learning::TaskFileStore::LocalState::Modified)
-        {
+                     plan.state == Learning::TaskFileStore::LocalState::Outdated || // unchanged by the student: just update it
+                     (replaceLocalCopy && plan.state == Learning::TaskFileStore::LocalState::Modified);
+        if (plan.state == Learning::TaskFileStore::LocalState::Modified && !replaceLocalCopy) {
             LocalString<512> msg;
             msg.SetFormat(
                   "Your file on disk (%s) has been changed since it was downloaded.\n\nReplace it with the version from the server?\n"
@@ -1298,9 +1665,7 @@ class LearningModeWindow : public Window,
             }
             else
                 return false; // the LockedBuffer is wiped when result goes out of scope
-        }
-        else if (plan.state == Learning::TaskFileStore::LocalState::SameAsServer)
-        {
+        } else if (plan.state == Learning::TaskFileStore::LocalState::SameAsServer) {
             store.Keep(plan, item.name, content.sha256, content.itemVersion);
         }
         if (write)
@@ -1333,9 +1698,14 @@ class LearningModeWindow : public Window,
 };
 } // namespace
 
-void GView::App::ShowLearningModeWindow(std::string_view prefilledConnectionString, bool autoConnect)
+void GView::App::ShowNoCourseTaskWindowNotice()
 {
-    LearningModeWindow dlg(prefilledConnectionString, autoConnect);
+    Dialogs::MessageBox::ShowNotification("Course", "Open the window of a problem first:\nCourse -> Problem list, select it, then Open.");
+}
+
+void GView::App::ShowLearningModeWindow(std::string_view prefilledConnectionString, bool autoConnect, std::string_view selectItem, bool resetItem)
+{
+    LearningModeWindow dlg(prefilledConnectionString, autoConnect, true, {}, selectItem, resetItem);
     dlg.Show();
 }
 

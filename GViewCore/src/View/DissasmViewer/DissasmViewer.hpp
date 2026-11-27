@@ -1246,7 +1246,7 @@ namespace View
             bool mouseClickInProgress  = false; // a click moves the cursor (MoveScrollTo): a visit at once
             uint64 readOnlyNoticeMs    = 0;     // the last "read only" notification (one per READ_ONLY_NOTICE_MS)
             bool replayWaitingForAnalysis = false; // a replay step was asked while the analysis runs (the status line says so)
-            // "Replay: step 12/57 - comment added at 0x401040" (empty without a replay)
+            // "Replay 12/57 ([ ] step, { } start / end): comment added at 0x401040" (ReplayStatusLine; empty without a replay)
             std::string ReplayStatusText() const;
             // the read-only menu of the windows of a solution (selections, collapsible zones: no edit)
             Menu readOnlyRightClickMenu;
@@ -1276,6 +1276,12 @@ namespace View
             // the course work of the window (Learning mode): an edit / an event of the journal since the last MarkCourseWorkSaved
             bool HasUnsavedCourseChanges() const;
             void MarkCourseWorkSaved(uint64 revision);
+            // saves the cache now (names, comments, the journal): a window closed by GView itself (Reset the task file) does not
+            // save it on its own; Solution / Replay windows never write it
+            void SaveCacheNow()
+            {
+                SaveCacheData();
+            }
             uint64 GetCourseWorkRevision() const
             {
                 return courseWorkRevision;

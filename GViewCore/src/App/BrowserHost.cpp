@@ -10,6 +10,15 @@
 //   _gview_browser_last_stored()                                     "<path relative to $HOME>\n<mtime ms>" (UTF-8,
 //                                                                    0-terminated) of the last accepted file: the page
 //                                                                    keeps that file in the persistent storage itself
+//   _gview_browser_download_allowed(namePtr, nameSize, dataPtr, dataSize)
+//                                                                    1 = the page may hand the file to the browser, 0 =
+//                                                                    refused (BrowserDownloadGate.cpp); wipes and frees
+//                                                                    both buffers. nameSize 0 = release only (refused):
+//                                                                    the page releases the buffers this way when it
+//                                                                    fails after allocating them, with the real
+//                                                                    dataSize so that the data buffer is wiped
+//   _gview_browser_download_refusal()                                why the last download was refused (UTF-8,
+//                                                                    0-terminated; empty after an allowed one)
 //
 // The settings file (AppCUI names it after the virtual executable: /app.ini) also lives in the in-memory file system and
 // would be lost on every reload. It is kept in the localStorage of the page (SETTINGS_KEY): restored before AppCUI
@@ -72,6 +81,7 @@ namespace
 
     std::filesystem::path filesFolder;
     std::string lastStored; // see _gview_browser_last_stored
+    std::string downloadRefusal; // see _gview_browser_download_refusal
     bool pageHidden = false; // set by _gview_browser_page_hidden, handled by the next frame
 
     // the origin (e.g. <user>.github.io) can be shared with other pages: the key carries the application name
@@ -297,5 +307,38 @@ EMSCRIPTEN_KEEPALIVE int32 gview_browser_add_file(uint8* name, uint32 nameSize, 
     const std::string_view fileName(reinterpret_cast<const char*>(name), nameSize);
     GView::App::Browser::ClearLastStored();
     return GView::App::Browser::StoreFile(fileName, data ? data : &emptyFile, dataSize) ? 1 : 0;
+}
+
+// The onDownload hook of the page (gview-page.js) asks this before the browser saves a file of GView. The bytes may be
+// a task sample: both buffers are wiped before they are released, whatever the answer.
+EMSCRIPTEN_KEEPALIVE int32 gview_browser_download_allowed(uint8* name, uint32 nameSize, uint8* data, uint32 dataSize)
+{
+    struct WipeAndFree {
+        uint8* p;
+        uint32 size;
+        ~WipeAndFree()
+        {
+            if (p != nullptr) {
+                GView::Security::Crypto::Internal::SecureErase(p, size);
+                delete[] p;
+            }
+        }
+    } nameBuffer{ name, nameSize }, dataBuffer{ data, dataSize };
+    auto& refusal = GView::App::Browser::downloadRefusal;
+    refusal.clear();
+    if ((name == nullptr) || (nameSize == 0) || ((data == nullptr) && (dataSize != 0))) {
+        refusal = "the file could not be checked"; // also the page releasing buffers after a failed allocation
+        return 0;
+    }
+    static const uint8 emptyFile = 0;
+    const bool allowed           = GView::App::Browser::IsBrowserDownloadAllowed(BufferView(data ? data : &emptyFile, dataSize), refusal);
+    if (!allowed && refusal.empty())
+        refusal = "refused";
+    return allowed ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE const char* gview_browser_download_refusal()
+{
+    return GView::App::Browser::downloadRefusal.c_str();
 }
 }

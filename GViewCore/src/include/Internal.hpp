@@ -683,6 +683,41 @@ namespace App
         bool IsStorablePath(std::string_view relativePath) noexcept;
     } // namespace Browser::Storage
 
+    namespace Browser::DownloadGate
+    {
+        // Download gate of the web build (App/BrowserDownloadGate.cpp): what a browser download may not hand to the
+        // machine of the user. Pure logic, compiled in every build (unit tests); the glue is under BUILD_FOR_WASM.
+        enum class TaskFileMatch : uint8 {
+            None,  // no regular file under the root holds these bytes (or the root does not exist)
+            Match, // a regular file under the root holds exactly these bytes (same size and SHA-256)
+            Error, // the scan failed or reached its bounds: the caller refuses (fail closed)
+        };
+        constexpr uint32 MAX_SCANNED_ENTRIES = 20000;
+        constexpr int MAX_SCAN_DEPTH         = 16;
+        // whether a regular file under `root` holds exactly `data`; symbolic links under the root are never followed
+        // and only files of the same size are hashed
+        TaskFileMatch FindFileWithContent(const std::filesystem::path& root, BufferView data);
+        // relativePath and roots: relative to the same folder (the home folder), '/' separated; "" or "." = that folder
+        // itself. True when relativePath is one of the roots or lies under one of them.
+        bool IsUnderRoot(std::string_view relativePath, const std::vector<std::string>& roots);
+        // the folders under `home` that hold a regular file named `fileName` (e.g. the manifest of a task folder);
+        // links are never followed. Best effort: what was found before a bound (entries, depth) or an error.
+        std::vector<std::filesystem::path> FindFoldersWithFile(const std::filesystem::path& home, std::string_view fileName);
+
+        // Denylist of the SHA-256 (64 lowercase hex characters) of every Learning item delivered in this browser, oldest
+        // first. The web build keeps it encrypted as a secret of the page (Browser::Secrets::LEARNING_TASK_HASHES); the
+        // oldest entries are dropped beyond MAX_TASK_HASHES, so that the serialized list stays under the 64 KiB a secret
+        // may hold. Serialized form: the hashes separated by '\n'.
+        constexpr size_t MAX_TASK_HASHES = 900;
+        // malformed entries and duplicates are ignored (uppercase hex is accepted and lowered); keeps the newest
+        // MAX_TASK_HASHES
+        std::vector<std::string> ParseTaskHashes(std::string_view text);
+        std::string SerializeTaskHashes(const std::vector<std::string>& hashes);
+        // true when the list changed; false for a malformed hash or one already in the list
+        bool AddTaskHash(std::vector<std::string>& hashes, std::string_view sha256Hex);
+        bool ContainsTaskHash(const std::vector<std::string>& hashes, std::string_view sha256Hex);
+    } // namespace Browser::DownloadGate
+
 #ifdef BUILD_FOR_WASM
     // GView inside a web page (App/BrowserHost.cpp, App/BrowserStorage.cpp): the files given to the page (file picker /
     // drag & drop) are copied into the in-memory file system and opened from the desktop's OnFrameUpdate. Everything
@@ -701,6 +736,17 @@ namespace App
         void StorageMarkStored(const std::string& relativePath, const Storage::Stamp& stamp);
         std::filesystem::path HomeFolder();
         void ShowStoredFilesWindow();
+        // BrowserDownloadGate.cpp: the folders that hold (or held) Learning task files - <home>/Documents/GView (the
+        // default, also the files of earlier sessions), the configured [GView] LearningDownloadFolder and every folder
+        // of the home folder that holds a task manifest (.gview-items.json)
+        std::vector<std::filesystem::path> LearningTaskRoots();
+        // adds the SHA-256 of a delivered Learning item to the denylist of the download gate (kept encrypted by the page)
+        void RecordDeliveredTaskHash(std::string_view sha256Hex);
+        // the same, relative to the home folder ('/' separated); roots outside the home folder are left out
+        std::vector<std::string> LearningTaskRootsRelativeToHome();
+        // whether the page may hand this file (FileDialog Download, the download after a Save, OS::DownloadFile) to the
+        // machine of the user; refusalReason: why not, for the status line of the page
+        bool IsBrowserDownloadAllowed(BufferView data, std::string& refusalReason);
         struct StoredFile {
             std::string path; // relative to the home folder
             uint64 size{ 0 };
@@ -729,6 +775,8 @@ namespace App
         {
             // Learning and Evaluation Mode keeps its connection string (it contains the access token) under this name
             constexpr std::string_view LEARNING_CONNECTION = "learning.connectionString";
+            // the SHA-256 of every delivered Learning item: never downloaded by the browser (BrowserDownloadGate.cpp)
+            constexpr std::string_view LEARNING_TASK_HASHES = "learning.taskHashes";
             std::optional<std::string> Get(std::string_view name);
             void Set(std::string_view name, std::string_view value);
             void Remove(std::string_view name);
@@ -1062,7 +1110,11 @@ namespace App
     };
 
     // Learning and Evaluation Mode UI (LearningModeWindow.cpp / LearningSubmitDialog.cpp)
-    void ShowLearningModeWindow(std::string_view prefilledConnectionString, bool autoConnect);
+    // Course -> Course commands / Submit flag with no task window of the course focused: says how to open one
+    void ShowNoCourseTaskWindowNotice();
+    // selectItem: the catalogue item to select once the catalogue is shown (the task window it was opened from); resetItem: then
+    // reset its task file to the original (asks, closes its windows, downloads it again, replaces the local copy, reopens it)
+    void ShowLearningModeWindow(std::string_view prefilledConnectionString, bool autoConnect, std::string_view selectItem = {}, bool resetItem = false);
 #ifdef BUILD_FOR_WASM
     // launch link of the web build: validates the connection string, asks once per server origin, ends the current
     // connection if it is another one, then connects as if the string had been pasted (stored after a verified connect)

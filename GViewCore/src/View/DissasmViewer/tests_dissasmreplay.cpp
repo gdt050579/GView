@@ -570,6 +570,15 @@ TEST_CASE("ReplayDescriptions", "[Dissasm]Replay")
     REQUIRE(DescribeReplayEvent(journal, 4).empty());
 }
 
+TEST_CASE("ReplayStatusLine", "[Dissasm]Replay")
+{
+    // the keys that work everywhere are always on the line (the command bar of a terminal hides the Alt keys)
+    REQUIRE(ReplayStatusLine(12, 57, false, "comment added at 0x401040") == "Replay 12/57 ([ ] step, { } start / end): comment added at 0x401040");
+    REQUIRE(ReplayStatusLine(0, 57, false, "") == "Replay 0/57 ([ ] step, { } start / end): at the start, press ] for the first step");
+    REQUIRE(ReplayStatusLine(0, 0, false, "") == "Replay 0/0 ([ ] step, { } start / end): the journal is empty");
+    REQUIRE(ReplayStatusLine(3, 57, true, "visit 0x401030") == "Replay 3/57 ([ ] step, { } start / end): wait, the analysis of the code is still running");
+}
+
 TEST_CASE("ReplayRecorderVisits", "[Dissasm]Replay")
 {
     RecorderView view;

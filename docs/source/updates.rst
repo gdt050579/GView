@@ -77,8 +77,8 @@ Limitations
 
 * GView must be able to write to its own folder. When it cannot (for example under ``Program Files`` or ``/opt``), the
   dialog only offers to copy the release link and the update has to be installed manually.
-* On Linux and macOS, the automatic check runs only with frontends that deliver frame updates (SDL). The terminal
-  (ncurses) frontend of the current AppCUI version does not, so only **Help > Check for updates** is available there.
+* The automatic check starts on the first frame update of the desktop. Every frontend delivers them (Windows console,
+  SDL, and the terminal / ncurses frontend since AppCUI 1.248.0), so it runs on Linux and macOS terminals too.
 * A release without ``SHA256SUMS`` cannot be installed automatically; download it from the release page instead.
 
 Testing with a local server

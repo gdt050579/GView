@@ -225,8 +225,8 @@ Fields (unknown top-level fields are ignored; a *present* field with a wrong typ
      - []
      - <= 256 names ``[A-Za-z0-9_.-]{1,64}``; applies when ``Plugins`` is disabled; matched case-insensitively
    * - ``storageMode``
-     - ``file``
-     - ``file`` or ``memory``
+     - ``file`` (``memory`` when absent and ``contentEncryption`` is set)
+     - ``file`` or ``memory``; an explicit value is always kept as sent
    * - ``watermark``
      - ""
      - <= 128 chars, shown in every file window title
@@ -271,7 +271,8 @@ Fields (unknown top-level fields are ignored; a *present* field with a wrong typ
      - clamped to [100, 100000]; ``GetNotes.maxChars`` (request time) replaces it once received
    * - ``contentEncryption``
      - ""
-     - "" or ``aes-256-gcm-hkdf-v1``; **required** when ``storageMode=memory``
+     - "" or ``aes-256-gcm-hkdf-v1``; present in every policy issued by current servers; **required** when
+       ``storageMode=memory``; when present, every content body must be encrypted (both delivery modes)
    * - ``contentKeyId``
      - ""
      - 16 lowercase hex; **required** with ``contentEncryption``
@@ -306,8 +307,16 @@ Effective mode = most restrictive of ``policy.storageMode``, the catalogue ``del
    aad   = UTF8(itemName) || 0x00 || UTF8(policy.id)
    blob  = "GVE1" || iv(12) || ciphertext || tag(16)
 
-Rules: an encrypted blob requires an active policy; a memory delivery that is **not** encrypted is refused when the
-policy declares ``contentEncryption``; the SHA-256 of the plaintext is verified in all v2 cases.
+Rules: an encrypted blob requires an active policy; a delivery that is **not** encrypted is refused (in both
+``memory`` and ``file`` mode) when the policy declares ``contentEncryption`` - only a policy without
+``contentEncryption`` (older servers) or a legacy session without a policy accepts a body in clear; the SHA-256 of
+the plaintext is verified in all v2 cases. A ``file`` item is decrypted in memory and only then written to the task
+folder.
+
+Current servers send every problem / file / text body encrypted, and answer ``403 POLICY_EXPIRED`` to a download made
+with a policy issued before content encryption (no ``contentEncryption``). The Learning window then reconnects once
+with the connection string it holds, refreshes the catalogue and retries the same item once (never in a loop); if the
+reconnect fails it asks the student to press Reconnect.
 
 Memory mode: the blob is decrypted directly into a ``LockedBuffer`` (``VirtualAlloc`` + ``VirtualLock`` - the
 working set is grown if needed - / ``mmap`` + ``mlock`` + ``MADV_DONTDUMP``), the HTTP buffers use an allocator that
@@ -501,6 +510,20 @@ them), items with invalid names, unknown ``kind``/``deliveryMode`` or non-http(s
 ``order`` then ``id``; items by ``order`` then ``name``. ``kind``: ``file`` and ``text`` are downloaded (text opens in
 the Text/Lexical viewer), ``link`` shows the URL read-only (Copy only if ``Clipboard`` is allowed).
 
+The window shows the weeks newest first by default (the student may switch to oldest first) and keeps the weeks the
+student folded folded. Both are client-side state, per server and per student: the section
+``[LearningCourse.<server folder>.<key>]`` of ``GView.ini`` holds ``WeekOrder`` (``newest`` / ``oldest``) and
+``FoldedWeeks`` (``<week id>:<hash>`` list). The key is ``hex(SHA-256("GView-Learning-View-v1" || 0x00 ||
+token))[0:16]``, deliberately not the policy ``subject``. The section is not secret (the web build mirrors
+``GView.ini`` in clear into the page's localStorage) and is kept after *End session*: it names the course server's host
+and a stable pseudonym of the student on this computer or browser. The hash is the first 16 hex characters of a SHA-256 over the week's
+``name``, ``title``, ``description`` and, for every problem and resource, ``kind``, ``name``, ``title``,
+``description``, ``order``, ``fileName``, ``sha256``, ``url``, ``size``, ``pointsMax``, ``pointsMin``,
+``requireExplanation``, ``solutionAvailable``, ``solutionHasReplay`` (``Learning/CatalogueView.cpp``); the fields of
+one student (``me``, ``pointsCurrent``) are left out. A folded week whose hash changed since it was folded is marked
+``[updated]`` until the student unfolds it. Week ``id`` must therefore be unique and stay the same for a week (a
+repeated id, or weeks without one, are shown but only the first of them is remembered); no server field is needed.
+
 Legacy servers: ``/GView/`` with an empty 200 => *Legacy* state: no restrictions are applied (there is nothing to
 verify), the catalogue comes from the flat ``GetProblems`` list as a single week, submissions use the legacy verdict.
 The window says so explicitly.
@@ -607,10 +630,11 @@ Limitations
   process-wide clipboard policy callback in ``AppCUI::OS::Clipboard`` (``SetText``/``GetText`` consult it), installed
   by GView on activation.
 * Screen capture cannot be prevented on the Windows console frontend, Linux or macOS (`8. Screen protection`_).
-* Frontends without frame updates (ncurses on Linux/macOS) run network operations synchronously on the UI thread,
-  bounded by the timeouts above. GView enables AppCUI's FPS mode so that the Windows console and SDL frontends
-  deliver ``OnFrameUpdate`` (~30 Hz, no repaint unless something changed); on those frontends the automatic connect
-  when the Learning window opens is deferred to its first frame so that it runs on the worker.
+* GView enables AppCUI's FPS mode, so every frontend (Windows console, SDL, the browser and, since AppCUI 1.248.0, the
+  ncurses terminal) delivers ``OnFrameUpdate`` (about 30 Hz, less on ncurses; no repaint unless something changed); the automatic connect
+  when the Learning window opens is deferred to its first frame so that it runs on the worker. Before the first frame,
+  and on a frontend that never delivers one (the test terminal), network operations run synchronously on the UI
+  thread, bounded by the timeouts above.
 * Idle/active time is derived from repaints (approximation).
 * ``Retry-After`` is shown to the user but telemetry retries simply wait for the next flush interval.
 * Plugins outside GViewCore can still write files through code paths not listed in the matrix; the plugin
@@ -627,7 +651,8 @@ All of these are additional strictness or clarifications; ``plans/LEARNING_MODE_
 2. Course-server policies must be ``schema: 2`` (schema 1 is only accepted by the file-based ``LoadPolicyFromFiles``).
 3. ``storageMode: memory`` requires ``contentEncryption`` and ``contentKeyId``; ``contentEncryption`` requires
    ``contentKeyId``; present fields with wrong JSON types are rejected (fail closed).
-4. Unencrypted ``memory`` deliveries are refused when the policy declares ``contentEncryption``; ``X-GView-SHA256``
+4. Unencrypted deliveries (``memory`` and ``file``) are refused when the policy declares ``contentEncryption``; a
+   schema 2 policy without ``storageMode`` that declares ``contentEncryption`` is treated as ``memory``; ``X-GView-SHA256``
    and ``X-GView-Delivery`` are mandatory in protocol 2.
 5. Telemetry: explicit per-event field whitelist (table above); ``note_add`` counter; ``eventLevel:false`` means
    counters only; item events only for catalogue windows; ``policy_rejected`` only with prior consent.
@@ -727,6 +752,39 @@ so its network jobs complete only when it becomes visible again.
 under a non-extractable key (*File > Stored files > Forget Learning connection*). Learning task files saved in
 ``file`` mode land in the home folder and are kept like any other file; ``memory`` content is never written to the
 file system and therefore never stored.
+
+**Downloads.** Every file GView hands to the browser (File dialog *Download*, the download that follows a *Save*,
+*Stored files > Download*) goes through the ``onDownload`` hook of the page, which asks GView first
+(``GViewCore/src/App/BrowserDownloadGate.cpp``). Refused:
+
+* everything while Learning and Evaluation Mode is in use: any session state but ``Disconnected`` (``Active``,
+  ``Expired``, ``Legacy``, ``Error``, ...) - *End session* first;
+* everything while the policy restricts ``Export``;
+* any file whose SHA-256 is in the **denylist** of delivered items: the SHA-256 of every Learning item delivered in
+  this browser (problems and file / text resources, any delivery mode, recorded before the item is opened; also a
+  local copy opened without a download), kept encrypted by the page as the secret ``learning.taskHashes`` (the newest
+  900 entries; clearing the site data removes it, together with every stored file);
+* any file whose bytes are those of a regular file (same size and SHA-256) under a task folder:
+  ``$HOME/Documents/GView``, the configured ``LearningDownloadFolder`` and every folder of the home folder that holds
+  a task manifest (``.gview-items.json``). Links are not followed; a scan of a task folder that fails or reaches its
+  bounds (20000 entries, depth 16) refuses; the search for manifests is best effort within the same bounds.
+
+*Stored files > Download* also refuses the paths under those folders, with or without a session.
+
+What this covers: the cleartext of a task file (or an identical copy, under any name) does not reach the file system
+of the machine through a browser download. It is not data loss prevention: a copy whose bytes were modified (a single
+byte is enough) is not recognised, and the screen, the clipboard and the developer tools of the browser are out of its
+scope.
+
+A refusal is shown only in the status line of the page: AppCUI hands the file to the page without waiting for an
+answer and reports the download as done to GView (an AppCUI change - a return value or a veto callback - is needed to
+show it inside GView; follow-up).
+
+Task files of earlier sessions restored from the storage of the browser are kept (encrypted at rest in OPFS, in clear
+only in the in-memory file system of the page) and are not downloadable through the rules above; they are not deleted
+automatically (the student can delete them in *Stored files*); *Open* from *Stored files* still works. Side effect:
+while Learning and Evaluation Mode is in use, no *Save As* export (annotations, ``.asm``, PDF text, ...) reaches the
+machine of the user; the file stays in the home folder (kept encrypted in OPFS).
 
 17. One-click launch of the web build
 -------------------------------------
@@ -876,8 +934,8 @@ answer is capped at 32 MiB (save/delete answers 64 KiB). Scope names sent by the
   closes, on *Save now*, and at *End session* / exit (bounded: 2 s per request, 5 s in total). Each note has at most
   one request at a time; the request carries the last ``revision`` the server returned (omitted for a create) and the
   answer's ``revision`` is stored. The session tick (run from every frame of the desktop) drives the autosave,
-  the retries and their answers also while the Notes window is closed. Frontends without frame updates (ncurses)
-  save on close, on *Save now* and at session end only.
+  the retries and their answers also while the Notes window is closed. A frontend without frame updates (only the
+  test terminal) saves on close, on *Save now* and at session end only.
 * *End session* / exit / switching to another account: a conflict that is still waiting for its ``GetNotes`` turns
   the local text into a ``"(local copy)"`` note and notes the server refused get one more attempt; then the notes
   are wiped. Text that still cannot be sent (no network, notes turned off) is lost with the session, and *End
@@ -1090,10 +1148,19 @@ not written at all: the course server is then the only persistence of the journa
 **User interface.**
 
 * *Course* menu (``F12``, ``[Keys.GView] LearningCourse``; on the command bar of every window of a problem of
-  the course; with no window opened, the same key is *SeeServerWindow*, the Learning and Evaluation Mode window): *Save work to course* (document size, replay steps), *Resume work from course* ("saved <time>", or
+  the course; with no window opened, the same key opens the Learning and Evaluation Mode window, connected or not): *Problem
+  list (server window)* (the Learning window with the problem of this window selected), *Save work to course* (document size, replay steps), *Resume work from course* ("saved <time>", or
   "(no saved work)"), *Compare with the teacher's solution* / *Replay the teacher's solution* (when the catalogue says
   a solution / a replay is published for the student), *Course note*, *Submit flag*; course staff add *Publish
-  solution...* and *Edit replay journal...*. In a solution window the only command is *Close solution window*.
+  solution...* and *Edit replay journal...*; the last row is *Reset the task file to the original* (file mode only; a
+  task kept in memory can not change: the row is disabled). It asks, runs the close prompt for unsaved course work,
+  saves the disassembly cache of the student's window, downloads the file again and, once it has arrived, closes the
+  windows of the task, replaces the local copy even when the student changed it and reopens it; a failed download
+  changes nothing. The work on the server is untouched (and offered again when the reopened window is empty); the local
+  names and comments stay in the cache when it is written (not for a policy that blocks ``Export``) and the change to
+  the file did not touch the code (the cache is checked against the code). In a solution window the only
+  other command is *Close solution window*. The
+  *Course* menu of the menu bar has *Problem list*, *Course commands of this task* and *Submit flag*.
   Disabled rows say why (disabled by the teacher, not connected, no disassembly view).
 * *Save work*: counts (names, comments, variables, zones, bookmarks), the checkbox "Include replay journal" (checked),
   the size against the limit (refused above it), then "Saved: revision N (size) at <time>"; the window is clean. On
@@ -1111,8 +1178,9 @@ not written at all: the course server is then the only persistence of the journa
   solution"): file mode opens the same local task file, memory mode a copy of the bytes in locked memory
   (memory-only). The two windows are tiled side by side (student left), the focus goes back to the student.
   *Replay* opens role *Replay* ("<name> - Teacher solution (replay)"): the window starts without the solution's
-  annotations and plays the journal back with ``Alt+Left`` / ``Alt+Right`` / ``Alt+Home`` / ``Alt+End`` (command bar
-  *Back*, *Forward*, *To start*, *To end*); the status line shows "Replay: step 12/57 - comment added at 0x401040";
+  annotations and plays the journal back with ``[`` / ``]`` / ``{`` / ``}`` (characters: every terminal and keyboard
+  layout that types them) or ``Alt+Left`` / ``Alt+Right`` / ``Alt+Home`` / ``Alt+End`` (command bar *Back*, *Forward*,
+  *To start*, *To end*); the status line shows "Replay 12/57 ([ ] step, { } start / end): comment added at 0x401040";
   a step first ends the pending analyses and prepares every code zone (as the other commands do); events whose place this analysis does not have are skipped.
   *Open solution* in the Learning window opens the same windows on their own (no tiling).
 * Solution windows are read only: no edit command, no undo / redo, no import / export / signatures, no assistant; a

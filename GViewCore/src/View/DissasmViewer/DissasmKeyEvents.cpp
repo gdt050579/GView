@@ -400,6 +400,39 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
 {
     ApplyPendingWorkDocument(); // the frontends without frame updates: the first key applies the document the window was opened with
+    if (replayController) {
+        // a window that plays a replay back: its keys (Alt+arrows by default, configurable) are handled here, by the view that has
+        // the focus. As command bar commands they never ran: the window takes the Alt+arrows first, to move the focus to the
+        // panel on that side (AppCUI Window::OnKeyEvent), before the command bar is asked.
+        for (const auto& cmd : config.ReplayCommands) {
+            if (cmd.get().Key != Key::None && cmd.get().Key == keyCode) {
+                RunReplayCommand(cmd.get().CommandId);
+                return true;
+            }
+        }
+    }
+    // [ ] one step back / forward, { } to the start / end. Characters (AppCUI has no key for them), so they work on every terminal
+    // and keyboard layout that types them - also on macOS, where Option+arrows are not Alt+arrows by default. Ctrl+Alt together is
+    // accepted: the Windows console reports AltGr (German, French, ... layouts type the brackets with it) as Ctrl+Alt.
+    const auto charModifiers = keyCode & (Key::Ctrl | Key::Alt);
+    if (replayController && (charModifiers == Key::None || charModifiers == (Key::Ctrl | Key::Alt))) {
+        switch (charCode) {
+        case '[':
+            RunReplayCommand(COMMAND_REPLAY_BACK);
+            return true;
+        case ']':
+            RunReplayCommand(COMMAND_REPLAY_FORWARD);
+            return true;
+        case '{':
+            RunReplayCommand(COMMAND_REPLAY_TO_START);
+            return true;
+        case '}':
+            RunReplayCommand(COMMAND_REPLAY_TO_END);
+            return true;
+        default:
+            break;
+        }
+    }
     const auto action = Config::Map.Resolve(keyCode);
     if (keyCode == Key::Escape && aiNaming.zone) {
         StopAINaming(); // the names received so far stay

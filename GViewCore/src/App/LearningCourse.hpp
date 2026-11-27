@@ -21,6 +21,7 @@ namespace GView::App::Course
 using GView::Security::Learning::WorkspaceRole;
 
 enum class CourseAction : uint8 {
+    ProblemList,         // Problem list (server window): the Learning window, this task selected
     SaveWork,            // Save work to course
     ResumeWork,          // Resume work from course
     CompareSolution,     // Compare with the teacher's solution
@@ -30,6 +31,7 @@ enum class CourseAction : uint8 {
     PublishSolution,     // course staff: Publish solution...
     EditReplayJournal,   // course staff: Edit replay journal... (the viewer command)
     CloseSolutionWindow, // a solution / replay window: Close solution window
+    ResetTaskFile,       // Reset the task file to the original (download it again, replace the local copy, reopen)
 };
 
 // the course work feature as seen by the menu
@@ -51,6 +53,8 @@ struct CourseMenuContext {
     bool courseStaff{ false };         // LearningSession::IsCourseStaff (the replay journal editor)
     bool notesAvailable{ false };
     bool canSubmit{ false };
+    bool canOpenItems{ false }; // LearningSession::CanOpenItems (a download is possible: Reset the task file)
+    bool memoryTask{ false };   // the task is kept in memory (delivery or policy): there is no file that could have changed
     uint64 documentSize{ 0 }; // the size of the work document of the window (0: not known / nothing analysed yet)
     uint32 replaySteps{ 0 };  // the events of the replay journal of the window
 };
@@ -62,9 +66,11 @@ struct CourseMenuRow {
     bool enabled{ true }; // a disabled row is shown grayed out; choosing it shows the detail
 };
 
-// The rows of the Course menu, in order. Student windows: Save / Resume (when the server has course work), Compare / Replay
-// (when a solution is published for the student / it has a replay), Course note (notes on), Submit flag (submissions on);
-// course staff add Publish solution... and Edit replay journal... Solution / Replay windows: Close solution window only.
+// The rows of the Course menu, in order. Every window starts with Problem list (back to the catalogue). Student windows:
+// Save / Resume (when the server has course work), Compare / Replay (when a solution is published for the student / it has a
+// replay), Course note (notes on), Submit flag (submissions on), Reset the task file (last; disabled while nothing can be
+// downloaded); course staff add Publish solution... and Edit replay journal... before it. Solution / Replay windows: Close
+// solution window.
 std::vector<CourseMenuRow> BuildCourseMenuRows(const CourseMenuContext& ctx);
 
 // The teacher's solution opened from the Learning window, without a student window: from the local task file (file mode,
@@ -82,4 +88,8 @@ bool OpenSolutionStandalone(const GView::Security::Learning::CatalogueItem& item
 //   ask = false (Open with work): loads the saved work without asking (import semantics: the document wins, nothing deleted).
 // The document is applied once the disassembly is analysed (the window is clean then).
 void OfferResumeCourseWork(std::string_view itemName, bool ask);
+
+// Saves the disassembly cache (names, comments, the replay journal) of a student's task window now: a window closed by GView
+// itself (Reset the task file) does not save it on its own
+void SaveTaskWindowCache(FileWindow* window);
 } // namespace GView::App::Course

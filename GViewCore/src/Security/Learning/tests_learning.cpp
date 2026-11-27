@@ -107,6 +107,8 @@ struct PolicyOptions {
     bool allowInTool{ true };
     std::string serverUrl{ std::string(TEST_SERVER) };
     std::string contentKeyId;
+    bool encrypt{ false };     // contentEncryption + contentKeyId also when storage is not "memory" (current servers)
+    bool omitStorage{ false }; // no "storageMode" field
     bool corruptDigest{ false };
     std::optional<json> notes; // the "notes" object (absent when empty)
     std::optional<json> work;  // the "work" object (absent when empty)
@@ -129,7 +131,8 @@ std::string BuildPolicy(PolicyOptions o)
     p["serverUrl"]               = o.serverUrl;
     p["disabledFeatures"]        = o.features;
     p["allowedPlugins"]          = o.plugins;
-    p["storageMode"]             = o.storage;
+    if (!o.omitStorage)
+        p["storageMode"] = o.storage;
     p["bestEffortScreenProtect"] = o.bestEffort;
     p["requireScreenProtect"]    = o.requireScreen;
     p["watermark"]               = "Student 17 - do not distribute";
@@ -140,8 +143,7 @@ std::string BuildPolicy(PolicyOptions o)
         p["notes"] = *o.notes;
     if (o.work.has_value())
         p["work"] = *o.work;
-    if (o.storage == "memory")
-    {
+    if (o.storage == "memory" || o.encrypt) {
         if (o.contentKeyId.empty())
         {
             LockedBuffer key;
@@ -779,6 +781,59 @@ TEST_CASE("Learning: policy verification (T1/T2/T3)", "[learning][policy]")
         const auto d2    = j.dump();
         REQUIRE(codeOf(verify(d2, key.Sign(d2), key.publicKey, NOW, p)) == "POLICY_MALFORMED");
     }
+    SECTION("storageMode default: memory when absent and contentEncryption is declared")
+    {
+        PolicyOptions o;
+        o.omitStorage = true;
+        o.encrypt     = true;
+        auto d2       = BuildPolicy(o);
+        REQUIRE(json::parse(d2).count("storageMode") == 0);
+        REQUIRE(verify(d2, key.Sign(d2), key.publicKey, NOW, p).ok);
+        REQUIRE(p.storageMode == RestrictedMode::StorageMode::Memory);
+        REQUIRE(p.contentEncryption == "aes-256-gcm-hkdf-v1");
+        REQUIRE(p.contentKeyId.size() == 8);
+
+        // a null storageMode counts as absent
+        json j           = json::parse(d2);
+        j["storageMode"] = nullptr;
+        j["digest"]      = "";
+        const auto blank = j.dump();
+        j["digest"]      = Sha256Hex(blank);
+        d2               = j.dump();
+        REQUIRE(verify(d2, key.Sign(d2), key.publicKey, NOW, p).ok);
+        REQUIRE(p.storageMode == RestrictedMode::StorageMode::Memory);
+    }
+    SECTION("storageMode default: file when absent without contentEncryption")
+    {
+        PolicyOptions o;
+        o.omitStorage = true;
+        const auto d2 = BuildPolicy(o);
+        REQUIRE(verify(d2, key.Sign(d2), key.publicKey, NOW, p).ok);
+        REQUIRE(p.storageMode == RestrictedMode::StorageMode::File);
+        REQUIRE(p.contentEncryption.empty());
+    }
+    SECTION("explicit storageMode file with contentEncryption stays file")
+    {
+        PolicyOptions o;
+        o.storage     = "file";
+        o.encrypt     = true;
+        const auto d2 = BuildPolicy(o);
+        REQUIRE(verify(d2, key.Sign(d2), key.publicKey, NOW, p).ok);
+        REQUIRE(p.storageMode == RestrictedMode::StorageMode::File);
+        REQUIRE(p.contentEncryption == "aes-256-gcm-hkdf-v1");
+    }
+    SECTION("explicit storageMode memory without content encryption is still malformed")
+    {
+        json j = json::parse(BuildPolicy({}));
+        REQUIRE(j.count("contentEncryption") == 0);
+        REQUIRE(j.count("contentKeyId") == 0);
+        j["storageMode"] = "memory";
+        j["digest"]      = "";
+        const auto blank = j.dump();
+        j["digest"]      = Sha256Hex(blank);
+        const auto d2    = j.dump();
+        REQUIRE(codeOf(verify(d2, key.Sign(d2), key.publicKey, NOW, p)) == "POLICY_MALFORMED");
+    }
 }
 
 TEST_CASE("Learning: policy activation and enforcement state (T4)", "[learning][policy]")
@@ -953,6 +1008,146 @@ TEST_CASE("Learning: download processing (T5)", "[learning][content]")
         REQUIRE(ProcessDownloadResponse(resp, item, legacy, c).ok);
         REQUIRE(c.mode == DeliveryMode::Memory);
         REQUIRE(c.sha256 == sha);
+    }
+}
+
+// current servers: every policy declares contentEncryption, also with storageMode file, and every body is GVE1
+TEST_CASE("Learning: download processing under a file policy that declares encryption", "[learning][content]")
+{
+    PolicyOptions o;
+    o.storage = "file";
+    o.encrypt = true;
+    Policy policy;
+    const auto doc = BuildPolicy(o);
+    REQUIRE(RestrictedMode::Internal::ParsePolicyDocument(BufferView(doc), true, policy).ok);
+    REQUIRE(policy.storageMode == RestrictedMode::StorageMode::File);
+    REQUIRE(policy.contentEncryption == "aes-256-gcm-hkdf-v1");
+    const SecureString token = Token();
+    DeliveryContext ctx{ &policy, &token };
+
+    CatalogueItem fileItem;
+    fileItem.name         = "w1_xor_key";
+    fileItem.kind         = ItemKind::Problem;
+    fileItem.deliveryMode = DeliveryMode::File;
+    CatalogueItem memoryItem;
+    memoryItem.name             = "w1_stack_var";
+    memoryItem.kind             = ItemKind::Problem;
+    memoryItem.deliveryMode     = DeliveryMode::Memory;
+    const std::string plaintext = std::string("MZ\x90\x00", 4) + "file-mode task content";
+    const auto sha              = Sha256Hex(plaintext);
+
+    auto encrypted = [&](const CatalogueItem& it, std::string_view mode) {
+        return Response(
+              200,
+              EncryptBlob(plaintext, it.name, policy.id, token),
+              { { "x-gview-delivery", std::string(mode) },
+                { "x-gview-encrypted", "1" },
+                { "x-gview-sha256", sha },
+                { "x-gview-filename", "task.exe" },
+                { "x-gview-item-version", "4" } });
+    };
+    auto inClear = [&](std::string_view mode) {
+        return Response(200, plaintext, { { "x-gview-delivery", std::string(mode) }, { "x-gview-encrypted", "0" }, { "x-gview-sha256", sha } });
+    };
+
+    SECTION("file item delivered unencrypted is refused")
+    {
+        auto resp = inClear("file");
+        DeliveredContent c;
+        auto st = ProcessDownloadResponse(resp, fileItem, ctx, c);
+        REQUIRE_FALSE(st.ok);
+        REQUIRE(st.message.find("unencrypted") != std::string::npos);
+        REQUIRE(resp.body.empty()); // the plaintext copy is released on the failure path too
+        REQUIRE(c.data.Size() == 0);
+    }
+    SECTION("memory item delivered unencrypted is refused")
+    {
+        auto resp = inClear("memory");
+        DeliveredContent c;
+        auto st = ProcessDownloadResponse(resp, memoryItem, ctx, c);
+        REQUIRE_FALSE(st.ok);
+        REQUIRE(st.message.find("unencrypted") != std::string::npos);
+    }
+    SECTION("file item, GVE1: decrypted, then written by the task file store exactly as the plaintext")
+    {
+        auto resp = encrypted(fileItem, "file");
+        DeliveredContent c;
+        REQUIRE(ProcessDownloadResponse(resp, fileItem, ctx, c).ok);
+        REQUIRE(c.mode == DeliveryMode::File);
+        REQUIRE(c.wasEncrypted);
+        REQUIRE(c.sha256 == sha);
+        REQUIRE(c.itemVersion == 4);
+        REQUIRE(std::string(reinterpret_cast<const char*>(c.data.Data()), c.data.Size()) == plaintext);
+
+        const auto dir = std::filesystem::temp_directory_path() / "gview_learning_test_encrypted_file";
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
+        {
+            TaskFileStore store(dir);
+            const auto plan = store.PlanFor(fileItem.name, c.fileName, c.sha256);
+            std::filesystem::path written;
+            REQUIRE(store.Store(plan, fileItem.name, c.data.View(), c.sha256, c.itemVersion, written).ok);
+            std::ifstream f(written, std::ios::binary);
+            REQUIRE(std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>()) == plaintext);
+        }
+        std::filesystem::remove_all(dir, ec);
+    }
+    SECTION("file item, GVE1: the content key id is still checked")
+    {
+        Policy other             = policy;
+        other.contentKeyId       = std::vector<uint8_t>{ 1, 2, 3, 4, 5, 6, 7, 8 };
+        DeliveryContext otherCtx = { &other, &token };
+        auto resp                = encrypted(fileItem, "file");
+        DeliveredContent c;
+        auto st = ProcessDownloadResponse(resp, fileItem, otherCtx, c);
+        REQUIRE_FALSE(st.ok);
+        REQUIRE(st.message.find("content key id mismatch") != std::string::npos);
+    }
+    SECTION("memory item under a file policy, GVE1: memory mode, read back from the locked buffer")
+    {
+        auto resp = encrypted(memoryItem, "memory");
+        DeliveredContent c;
+        REQUIRE(ProcessDownloadResponse(resp, memoryItem, ctx, c).ok);
+        REQUIRE(c.mode == DeliveryMode::Memory);
+        REQUIRE(c.wasEncrypted);
+        REQUIRE(std::string(reinterpret_cast<const char*>(c.data.Data()), c.data.Size()) == plaintext);
+        LockedMemoryDataObject obj(std::move(c.data));
+        REQUIRE(obj.GetSize() == plaintext.size());
+        std::vector<uint8> readBack(plaintext.size());
+        uint32 bytesRead = 0;
+        REQUIRE(obj.Read(0, readBack.data(), static_cast<uint32>(readBack.size()), bytesRead));
+        REQUIRE(bytesRead == plaintext.size());
+        REQUIRE(std::string(readBack.begin(), readBack.end()) == plaintext);
+    }
+    SECTION("a file item the server marks memory is kept in memory")
+    {
+        auto resp = encrypted(fileItem, "memory");
+        DeliveredContent c;
+        REQUIRE(ProcessDownloadResponse(resp, fileItem, ctx, c).ok);
+        REQUIRE(c.mode == DeliveryMode::Memory);
+    }
+    SECTION("older server: a policy without contentEncryption still accepts an unencrypted file item")
+    {
+        Policy old;
+        const auto oldDoc = BuildPolicy({});
+        REQUIRE(RestrictedMode::Internal::ParsePolicyDocument(BufferView(oldDoc), true, old).ok);
+        REQUIRE(old.contentEncryption.empty());
+        DeliveryContext oldCtx{ &old, &token };
+        auto resp = inClear("file");
+        DeliveredContent c;
+        REQUIRE(ProcessDownloadResponse(resp, fileItem, oldCtx, c).ok);
+        REQUIRE(c.mode == DeliveryMode::File);
+        REQUIRE_FALSE(c.wasEncrypted);
+        REQUIRE(c.sha256 == sha);
+    }
+    SECTION("legacy session without a policy: plain bytes still accepted, memory mode")
+    {
+        DeliveryContext legacy{ nullptr, &token };
+        auto resp = Response(200, plaintext);
+        DeliveredContent c;
+        REQUIRE(ProcessDownloadResponse(resp, fileItem, legacy, c).ok);
+        REQUIRE(c.mode == DeliveryMode::Memory);
+        REQUIRE_FALSE(c.wasEncrypted);
     }
 }
 
@@ -1572,6 +1767,86 @@ TEST_CASE("Learning: POLICY_EXPIRED from the server => Expired", "[learning][ses
     fx2.mono += 1000;
     fx2.session->Tick();
     REQUIRE(fx2.session->GetState() == SessionState::Expired);
+}
+
+// A current server answers 403 POLICY_EXPIRED to a download made with a policy issued before content encryption; the
+// Learning window then reconnects once and retries the same item (LearningModeWindow::StartDownload)
+TEST_CASE("Learning: POLICY_EXPIRED on a download, reconnect, same download succeeds", "[learning][session]")
+{
+    SessionFixture fx;
+    PolicyOptions old; // storageMode file, no contentEncryption
+    old.id = "pol_2026w1_old";
+    fx.ServePolicy(BuildPolicy(old));
+    REQUIRE(fx.Connect().ok);
+    REQUIRE(fx.session->GetPolicy()->contentEncryption.empty());
+
+    const std::string plaintext                 = "MZ...file mode task";
+    auto* transport                             = fx.transport.get();
+    fx.transport->routes["/GView/GetProblems/"] = [transport, &plaintext](const HttpRequest& r) {
+        // the route runs under the transport lock: policyId is the X-GView-Policy of this request
+        if (transport->policyId == "pol_2026w1_old")
+            return Response(
+                  403, R"({"status":"error","code":"POLICY_EXPIRED","details":"policy issued before content encryption; reconnect","retryable":false})");
+        const std::string name = r.path.substr(std::string("/GView/GetProblems/").size());
+        return Response(
+              200,
+              EncryptBlob(plaintext, name, transport->policyId, Token()),
+              { { "x-gview-delivery", "file" }, { "x-gview-encrypted", "1" }, { "x-gview-sha256", Sha256Hex(plaintext) }, { "x-gview-item-version", "1" } });
+    };
+    CatalogueItem item;
+    item.name         = "w1_xor_key";
+    item.kind         = ItemKind::Problem;
+    item.deliveryMode = DeliveryMode::File;
+
+    DownloadResult first;
+    bool called = false;
+    REQUIRE(fx.session
+                  ->Download(
+                        item,
+                        [&](DownloadResult& r) {
+                            called = true;
+                            first  = std::move(r);
+                        })
+                  .ok);
+    REQUIRE(called);
+    REQUIRE_FALSE(first.status.ok);
+    REQUIRE(first.error.code == ErrorCode::PolicyExpired);
+    REQUIRE(first.status.message.find("Reconnect") != std::string::npos);
+    REQUIRE(fx.session->GetState() == SessionState::Expired);
+    REQUIRE(fx.session->GetStatus().message.find("reconnect") != std::string::npos);
+    REQUIRE(fx.deactivations == 0);                        // restrictions stay applied (fail closed)
+    REQUIRE_FALSE(fx.session->Download(item, nullptr).ok); // nothing more until a new policy validates
+
+    // the window reconnects with the same connection string: the server now issues a policy with content encryption
+    PolicyOptions renewed;
+    renewed.id      = "pol_2026w1_new";
+    renewed.encrypt = true;
+    fx.ServePolicy(BuildPolicy(renewed));
+    REQUIRE(fx.Connect().ok);
+    REQUIRE(fx.session->GetState() == SessionState::Active);
+    REQUIRE(fx.session->GetPolicy()->id == "pol_2026w1_new");
+    REQUIRE(fx.session->GetPolicy()->contentEncryption == "aes-256-gcm-hkdf-v1");
+    REQUIRE(fx.session->GetPolicy()->storageMode == RestrictedMode::StorageMode::File);
+    REQUIRE(fx.activations == 2);
+
+    // ... and retries the same item once
+    DownloadResult second;
+    called = false;
+    REQUIRE(fx.session
+                  ->Download(
+                        item,
+                        [&](DownloadResult& r) {
+                            called = true;
+                            second = std::move(r);
+                        })
+                  .ok);
+    REQUIRE(called);
+    INFO(second.status.message);
+    REQUIRE(second.status.ok);
+    REQUIRE(second.content.mode == DeliveryMode::File);
+    REQUIRE(second.content.wasEncrypted);
+    REQUIRE(std::string(reinterpret_cast<const char*>(second.content.data.Data()), second.content.data.Size()) == plaintext);
+    REQUIRE(fx.transport->Count("/GView/GetProblems/w1_xor_key") == 2);
 }
 
 TEST_CASE("Learning: encrypted memory download through the session (T1/T5)", "[learning][session]")
