@@ -244,6 +244,9 @@ struct DissasmCodeZone : public ParseZone {
     DissasmXrefs xrefs;
     std::vector<uint64> functionStarts;
     std::unordered_map<uint64, std::string> thunkImports; // relative address of an import thunk (jmp [slot]) -> the import
+    // ARM64EC: the word before a function that x64 code may call, the offset of its entry thunk (LinkArm64ECEntryThunks): the relative address
+    // of the word -> the entry thunk. Recomputed by the deep scan, not saved
+    std::unordered_map<uint64, uint64> arm64ECEntryThunks;
     // the functions that never return (IDA: noreturn): by their name (exit, abort, ExitProcess, a thunk of one) or because no path of
     // theirs returns; relative starts, sorted. The calls to them (and to the imports that do not return): relative addresses
     std::vector<uint64> noReturnFunctions;

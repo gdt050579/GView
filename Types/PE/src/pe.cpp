@@ -1,6 +1,8 @@
 #include "pe.hpp"
 
 #include <algorithm>
+#include <array>
+#include <map>
 #include <set>
 #include <tuple>
 #include <unordered_map>
@@ -685,6 +687,7 @@ struct HybridCodeMap {
     std::vector<std::pair<uint32, uint32>> arm64ECRanges; // the code of the ARM64EC convention (x4 / x5 for the variadic arguments)
     uint32 x64ExceptionTable     = 0;
     uint32 x64ExceptionTableSize = 0;
+    uint32 auxiliaryIAT          = 0; // the RVA of the auxiliary IAT (the slots the ARM64EC code calls the imports through)
 };
 HybridCodeMap ReadHybridCodeMap(Reference<PE::PEFile> pe, GView::Utils::DataCache& data)
 {
@@ -725,7 +728,90 @@ HybridCodeMap ReadHybridCodeMap(Reference<PE::PEFile> pe, GView::Utils::DataCach
     std::sort(result.x64Ranges.begin(), result.x64Ranges.end());
     if (!data.Copy<uint32>(metadata + 64, result.x64ExceptionTable) || !data.Copy<uint32>(metadata + 68, result.x64ExceptionTableSize))
         result.x64ExceptionTable = result.x64ExceptionTableSize = 0;
+    if (!data.Copy<uint32>(metadata + 44, result.auxiliaryIAT))
+        result.auxiliaryIAT = 0;
     return result;
+}
+
+// ARM64X: the dynamic value relocations of ARM64X (symbol 6 of the DVRT the load config points to) change the image for its x64 view (the one
+// an x64 / ARM64EC process maps): the bytes each of them gives, by RVA (an entry of type 1 assigns the 1 << meta bytes after it, type 0 fills
+// 1 << meta bytes with zeros; the first one of an RVA kept); the deltas (type 2, pointers moved) are not kept. Empty when the image has none
+std::map<uint32, std::vector<uint8>> ReadArm64XAssignments(Reference<PE::PEFile> pe, GView::Utils::DataCache& data)
+{
+    constexpr uint32 DVRT_OFFSET        = 224; // DynamicValueRelocTableOffset, DynamicValueRelocTableSection of the 64 bit load config
+    constexpr uint32 DVRT_SECTION       = 228;
+    constexpr uint64 ARM64X_RELOCATIONS = 6; // IMAGE_DYNAMIC_RELOCATION_ARM64X
+    constexpr uint32 MAX_DVRT_SIZE      = 0x100000;
+    std::map<uint32, std::vector<uint8>> result;
+    if (!pe->hdr64 || static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine) != PE::MachineType::ARM64)
+        return result;
+    const auto& directory = pe->GetDirectory(PE::DirectoryType::Config);
+    const auto config     = directory.VirtualAddress != 0 ? pe->RVAToFA(directory.VirtualAddress) : PE_INVALID_ADDRESS;
+    uint32 configSize     = 0;
+    uint32 dvrtOffset     = 0;
+    uint16 dvrtSection    = 0;
+    if (config == PE_INVALID_ADDRESS || !data.Copy<uint32>(config, configSize) || configSize < DVRT_SECTION + 2 ||
+        !data.Copy<uint32>(config + DVRT_OFFSET, dvrtOffset) || !data.Copy<uint16>(config + DVRT_SECTION, dvrtSection) || dvrtSection == 0 ||
+        dvrtSection > pe->nrSections)
+        return result;
+    const auto table = pe->RVAToFA(static_cast<uint64>(pe->sect[dvrtSection - 1].VirtualAddress) + dvrtOffset);
+    uint32 version = 0, size = 0;
+    if (table == PE_INVALID_ADDRESS || !data.Copy<uint32>(table, version) || !data.Copy<uint32>(table + 4, size) || version != 1 || size > MAX_DVRT_SIZE)
+        return result;
+    const uint64 end = table + 8 + size;
+    for (uint64 position = table + 8; position + 12 <= end;) {
+        uint64 symbol      = 0;
+        uint32 relocations = 0;
+        if (!data.Copy<uint64>(position, symbol) || !data.Copy<uint32>(position + 8, relocations) || position + 12 + relocations > end)
+            return result;
+        const uint64 blocksEnd = position + 12 + relocations;
+        // the blocks of a base relocation: the RVA of a page, the size of the block, then 16 bit entries (the offset in the page, the type, a
+        // meta value)
+        for (uint64 block = position + 12; symbol == ARM64X_RELOCATIONS && block + 8 <= blocksEnd;) {
+            uint32 page = 0, blockSize = 0;
+            if (!data.Copy<uint32>(block, page) || !data.Copy<uint32>(block + 4, blockSize) || blockSize < 8 || block + blockSize > blocksEnd)
+                break;
+            for (uint64 entry = block + 8; entry + 2 <= block + blockSize;) {
+                uint16 value = 0;
+                if (!data.Copy<uint16>(entry, value))
+                    break;
+                entry += 2;
+                const uint32 type = (value >> 12) & 3, bytes = 1u << (value >> 14);
+                const uint32 rva  = page + (value & 0xFFF);
+                if (type == 0)
+                    result.try_emplace(rva, std::vector<uint8>(bytes, 0));
+                else if (type == 1) {
+                    std::vector<uint8> assigned(bytes, 0);
+                    bool read = true;
+                    for (uint32 index = 0; index < bytes && read; index++)
+                        read = data.Copy<uint8>(entry + index, assigned[index]);
+                    if (read)
+                        result.try_emplace(rva, std::move(assigned));
+                }
+                entry += type == 1 ? bytes : (type == 2 ? 4u : 0u);
+            }
+            block += blockSize;
+        }
+        position = blocksEnd;
+    }
+    return result;
+}
+
+// the bytes of the x64 view of an ARM64X image at an RVA: those of the file with the ones the ARM64X relocations give
+bool ReadX64ViewBytes(
+      Reference<PE::PEFile> pe, GView::Utils::DataCache& data, const std::map<uint32, std::vector<uint8>>& assignments, uint32 rva, uint8* bytes, uint32 size)
+{
+    const auto fa = pe->RVAToFA(rva);
+    if (fa == PE_INVALID_ADDRESS)
+        return false;
+    for (uint32 index = 0; index < size; index++)
+        if (!data.Copy<uint8>(fa + index, bytes[index]))
+            return false;
+    for (auto it = assignments.lower_bound(rva >= 8 ? rva - 8 : 0); it != assignments.end() && it->first < static_cast<uint64>(rva) + size; ++it)
+        for (uint32 index = 0; index < it->second.size(); index++)
+            if (const uint64 position = static_cast<uint64>(it->first) + index; position >= rva && position < static_cast<uint64>(rva) + size)
+                bytes[position - rva] = it->second[index];
+    return true;
 }
 } // namespace
 } // extern "C++"
@@ -1015,62 +1101,107 @@ void AddDissasmDelayImports(DissasmViewer::Settings& settings, Reference<PE::PEF
     }
 }
 
+// the RVA a data directory of the optional header (64 bit) has in the x64 view of an ARM64X image (ReadArm64XAssignments); 0 when the
+// relocations do not change it
+uint32 ReadArm64XDirectory(Reference<PE::PEFile> pe, const std::map<uint32, std::vector<uint8>>& assignments, PE::DirectoryType type)
+{
+    // the RVA of DataDirectory[type].VirtualAddress: the signature, the file header, 112 bytes of the 64 bit optional header before its
+    // directories
+    const uint64 directoryField = static_cast<uint64>(pe->dos.e_lfanew) + 4 + 20 + 112 + 8ull * static_cast<uint32>(type);
+    const auto assigned         = directoryField <= 0xFFFFFFFFu ? assignments.find(static_cast<uint32>(directoryField)) : assignments.end();
+    if (assigned == assignments.end() || assigned->second.size() != 4)
+        return 0;
+    const auto& bytes  = assigned->second;
+    const uint32 value = bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (static_cast<uint32>(bytes[3]) << 24);
+    return value != pe->GetDirectory(type).VirtualAddress ? value : 0;
+}
+
 // ARM64X: the load config of the x64 view of the image (the one an x64 process maps): the dynamic value relocations of ARM64X (symbol 6 of the
 // DVRT the load config points to) give the load config directory of the optional header another RVA in that view, a load config with the
 // CFG pointers its x64 code calls through (call cs:__guard_dispatch_icall_fptr) and its own tables; 0 when the image has none
-uint32 ReadArm64XLoadConfig(Reference<PE::PEFile> pe, GView::Utils::DataCache& data)
+uint32 ReadArm64XLoadConfig(Reference<PE::PEFile> pe, const std::map<uint32, std::vector<uint8>>& assignments)
 {
-    constexpr uint32 DVRT_OFFSET        = 224; // DynamicValueRelocTableOffset, DynamicValueRelocTableSection of the 64 bit load config
-    constexpr uint32 DVRT_SECTION       = 228;
-    constexpr uint64 ARM64X_RELOCATIONS = 6; // IMAGE_DYNAMIC_RELOCATION_ARM64X
-    constexpr uint32 MAX_DVRT_SIZE      = 0x100000;
+    return ReadArm64XDirectory(pe, assignments, PE::DirectoryType::Config);
+}
+
+// ARM64X: the imports of its x64 view (the imports of the ARM64EC code: free / malloc of the UCRT, RtlIsEcCode): the ARM64X relocations fill
+// the lookup tables of descriptors that are empty in the native view (DbgHelp: api-ms-win-crt-heap; 9 imports, free called 1756 times through
+// the stubs and veneers of the ARM64EC code). Their IAT slots named as the other imports (`importSlots`: the slots named, by RVA). The
+// auxiliary IAT of the CHPE metadata (__hybrid_auxiliary_iat: the ARM64EC code calls the imports through it, adrp x16, slot; ldr x16; br x16)
+// has the layout of the IAT: its slots get the names of the slots of the IAT, those in a section of data
+void AddDissasmArm64XImports(
+      DissasmViewer::Settings& settings,
+      Reference<PE::PEFile> pe,
+      GView::Utils::DataCache& data,
+      std::u16string_view filePath,
+      const std::map<uint32, std::vector<uint8>>& assignments,
+      uint32 auxiliaryIAT,
+      std::unordered_map<uint64, std::string>& importSlots)
+{
+    constexpr uint32 MAX_DESCRIPTORS = 4096;
+    constexpr uint32 MAX_FUNCTIONS   = 0x10000;
+    constexpr uint32 MAX_NAME_SIZE   = 512;
     if (!pe->hdr64 || static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine) != PE::MachineType::ARM64)
-        return 0;
-    const auto& directory = pe->GetDirectory(PE::DirectoryType::Config);
-    const auto config     = directory.VirtualAddress != 0 ? pe->RVAToFA(directory.VirtualAddress) : PE_INVALID_ADDRESS;
-    uint32 configSize     = 0;
-    uint32 dvrtOffset     = 0;
-    uint16 dvrtSection    = 0;
-    if (config == PE_INVALID_ADDRESS || !data.Copy<uint32>(config, configSize) || configSize < DVRT_SECTION + 2 ||
-        !data.Copy<uint32>(config + DVRT_OFFSET, dvrtOffset) || !data.Copy<uint16>(config + DVRT_SECTION, dvrtSection) || dvrtSection == 0 ||
-        dvrtSection > pe->nrSections)
-        return 0;
-    const auto table = pe->RVAToFA(static_cast<uint64>(pe->sect[dvrtSection - 1].VirtualAddress) + dvrtOffset);
-    uint32 version = 0, size = 0;
-    if (table == PE_INVALID_ADDRESS || !data.Copy<uint32>(table, version) || !data.Copy<uint32>(table + 4, size) || version != 1 || size > MAX_DVRT_SIZE)
-        return 0;
-    // the RVA of DataDirectory[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG].VirtualAddress: the signature, the file header, 112 bytes of the 64 bit
-    // optional header before its directories
-    const uint64 directoryField = static_cast<uint64>(pe->dos.e_lfanew) + 4 + 20 + 112 + 8 * 10;
-    const uint64 end            = table + 8 + size;
-    for (uint64 position = table + 8; position + 12 <= end;) {
-        uint64 symbol      = 0;
-        uint32 relocations = 0;
-        if (!data.Copy<uint64>(position, symbol) || !data.Copy<uint32>(position + 8, relocations) || position + 12 + relocations > end)
-            return 0;
-        const uint64 blocksEnd = position + 12 + relocations;
-        // the blocks of a base relocation: the RVA of a page, the size of the block, then 16 bit entries (the offset in the page, the type, a
-        // meta value): 0 zero fills, 1 assigns the value of 1 << meta bytes after it, 2 adds the delta of 4 bytes after it
-        for (uint64 block = position + 12; symbol == ARM64X_RELOCATIONS && block + 8 <= blocksEnd;) {
-            uint32 page = 0, blockSize = 0;
-            if (!data.Copy<uint32>(block, page) || !data.Copy<uint32>(block + 4, blockSize) || blockSize < 8 || block + blockSize > blocksEnd)
+        return;
+    const auto read32 = [](const uint8* bytes) { return bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (static_cast<uint32>(bytes[3]) << 24); };
+    uint32 directory  = ReadArm64XDirectory(pe, assignments, PE::DirectoryType::Import);
+    if (directory == 0)
+        directory = pe->GetDirectory(PE::DirectoryType::Import).VirtualAddress;
+    LocalString<64> text;
+    for (uint32 index = 0; !assignments.empty() && directory != 0 && index < MAX_DESCRIPTORS; index++) {
+        // IMAGE_IMPORT_DESCRIPTOR {OriginalFirstThunk, TimeDateStamp, ForwarderChain, Name, FirstThunk}
+        std::array<uint8, 20> descriptor{};
+        if (!ReadX64ViewBytes(pe, data, assignments, directory + 20 * index, descriptor.data(), 20))
+            break;
+        const uint32 lookupTable = read32(&descriptor[0]), nameRVA = read32(&descriptor[12]), firstThunk = read32(&descriptor[16]);
+        if (lookupTable == 0 && nameRVA == 0 && firstThunk == 0)
+            break;
+        const std::string dllName(pe->ReadString(nameRVA, MAX_NAME_SIZE));
+        const uint32 lookup = lookupTable != 0 ? lookupTable : firstThunk;
+        for (uint32 entry = 0; firstThunk != 0 && entry < MAX_FUNCTIONS; entry++) {
+            std::array<uint8, 8> bytes{};
+            if (!ReadX64ViewBytes(pe, data, assignments, lookup + 8 * entry, bytes.data(), 8))
                 break;
-            for (uint64 entry = block + 8; entry + 2 <= block + blockSize;) {
-                uint16 value = 0;
-                if (!data.Copy<uint16>(entry, value))
-                    break;
-                entry += 2;
-                const uint32 type = (value >> 12) & 3, meta = value >> 14;
-                uint32 assigned   = 0;
-                if (type == 1 && meta == 2 && static_cast<uint64>(page) + (value & 0xFFF) == directoryField && data.Copy<uint32>(entry, assigned))
-                    return assigned != directory.VirtualAddress ? assigned : 0;
-                entry += type == 1 ? (1u << meta) : (type == 2 ? 4u : 0u);
+            const uint64 value = read32(&bytes[0]) | (static_cast<uint64>(read32(&bytes[4])) << 32);
+            if (value == 0)
+                break;
+            const uint64 slot = firstThunk + 8ull * entry;
+            if (importSlots.contains(slot))
+                continue;
+            std::string name;
+            if (value >> 63) { // by ordinal
+                text.SetFormat("Ordinal:%u", static_cast<uint32>(value & 0xFFFF));
+                name = ResolveOrdinalImport(settings, dllName, text.ToStringView(), filePath, false);
+                if (name.empty())
+                    name = text.GetText();
+            } else {
+                const std::string rawName(pe->ReadString(static_cast<uint32>(value & 0x7FFFFFFF) + 2, MAX_NAME_SIZE)); // after the hint
+                String demangled;
+                if (rawName.empty())
+                    continue;
+                name = GView::Utils::Demangle(rawName.c_str(), demangled) ? std::string(demangled.GetText()) : rawName;
             }
-            block += blockSize;
+            settings.AddMemoryMapping(slot, name, DissasmViewer::MemoryMappingType::FunctionMapping);
+            importSlots.emplace(slot, std::move(name));
         }
-        position = blocksEnd;
     }
-    return 0;
+    // the auxiliary IAT: its slot n is the one of the slot n of the IAT
+    const auto& iat           = pe->GetDirectory(PE::DirectoryType::IAT);
+    const auto inDataSection  = [&pe](uint64 begin, uint64 end) {
+        for (uint32 index = 0; index < pe->nrSections; index++) {
+            const auto& section = pe->sect[index];
+            if (begin >= section.VirtualAddress && end <= static_cast<uint64>(section.VirtualAddress) + std::max(section.Misc.VirtualSize, section.SizeOfRawData))
+                return (section.Characteristics & (__IMAGE_SCN_MEM_EXECUTE | __IMAGE_SCN_CNT_CODE)) == 0;
+        }
+        return false;
+    };
+    // (each slot: the size of the IAT directory may pass the end of the section of the auxiliary IAT, d3dcompiler)
+    if (auxiliaryIAT == 0 || iat.VirtualAddress == 0 || iat.Size == 0)
+        return;
+    for (const auto& [slot, name] : importSlots)
+        if (const uint64 auxiliarySlot = auxiliaryIAT + (slot - iat.VirtualAddress);
+            slot >= iat.VirtualAddress && slot - iat.VirtualAddress < iat.Size && inDataSection(auxiliarySlot, auxiliarySlot + 8))
+            settings.AddMemoryMapping(auxiliarySlot, name, DissasmViewer::MemoryMappingType::FunctionMapping);
 }
 
 // The CHPE metadata of an ARM64X image (IMAGE_ARM64EC_METADATA of ntimage.h, `metadataVA`: __chpe_metadata): its fields (RVAs, counts), the
@@ -1359,6 +1490,16 @@ void AddDissasmDirectoryFields(DissasmViewer::Settings& settings, Reference<PE::
         }
         return text;
     };
+    // an RVA in a section of data (not executable): the lookup tables and the hint / name entries of the imports are there; a descriptor
+    // whose lookup table is in the code (a corrupted one) would type every 8 bytes of the code (cmd: 28000 fields, minutes to count the lines)
+    const auto inDataSection = [&pe](uint64 rva) {
+        for (uint32 index = 0; index < pe->nrSections; index++) {
+            const auto& section = pe->sect[index];
+            if (rva >= section.VirtualAddress && rva - section.VirtualAddress < std::max(section.Misc.VirtualSize, section.SizeOfRawData))
+                return (section.Characteristics & (__IMAGE_SCN_MEM_EXECUTE | __IMAGE_SCN_CNT_CODE)) == 0;
+        }
+        return false;
+    };
     const auto addFields = [&](uint64 rva, std::initializer_list<std::tuple<uint32, Type, std::string_view>> fields) {
         uint64 offset = 0;
         for (const auto& [size, type, name] : fields) {
@@ -1392,7 +1533,7 @@ void AddDissasmDirectoryFields(DissasmViewer::Settings& settings, Reference<PE::
                 const uint64 slotRVA = fields[0] + static_cast<uint64>(entry) * pointerSize;
                 const auto slotFa    = pe->RVAToFA(slotRVA);
                 uint64 value         = 0;
-                if (slotFa == PE_INVALID_ADDRESS || !ReadImagePointer(data, slotFa, is64, value) || value == 0)
+                if (slotFa == PE_INVALID_ADDRESS || !inDataSection(slotRVA) || !ReadImagePointer(data, slotFa, is64, value) || value == 0)
                     break;
                 const bool byOrdinal = (value >> (is64 ? 63 : 31)) != 0;
                 if (byOrdinal) {
@@ -1402,6 +1543,8 @@ void AddDissasmDirectoryFields(DissasmViewer::Settings& settings, Reference<PE::
                 const uint64 hintRVA   = value & 0x7FFFFFFF;
                 const std::string name = readString(hintRVA + 2);
                 settings.AddDataField(base + slotRVA, pointerSize, Type::RVA, name);
+                if (!inDataSection(hintRVA))
+                    continue;
                 settings.AddDataField(base + hintRVA, 2, Type::Value, "hint");
                 if (!name.empty())
                     settings.AddDataField(base + hintRVA + 2, static_cast<uint32>(name.size() + 1), Type::String, "name");
@@ -1687,6 +1830,7 @@ UInt16 e_res[4];)");
 
     // the imports by ordinal named after the export of their DLL (the prototypes and the names of the arguments of the APIs apply)
     const std::u16string_view filePath = win->GetObject()->GetPath();
+    std::unordered_map<uint64, std::string> importSlots; // the slots named, by RVA (the auxiliary IAT of an ARM64X image)
     for (const auto& [RVA, dllIndex, Name] : pe->impFunc) {
         // processedName.SetFormat("%s:%s", pe->impDLL[dllIndex].Name.GetText(), Name.GetText());
         const auto ordinalName = dllIndex < pe->impDLL.size()
@@ -1696,13 +1840,17 @@ UInt16 e_res[4];)");
             settings.AddMemoryMapping(RVA, ordinalName, DissasmViewer::MemoryMappingType::FunctionMapping);
         else
             settings.AddMemoryMapping(RVA, Name, DissasmViewer::MemoryMappingType::FunctionMapping);
+        importSlots.try_emplace(RVA, !ordinalName.empty() ? ordinalName : std::string(Name.ToStringView()));
     }
+    const auto arm64XAssignments = ReadArm64XAssignments(pe, win->GetObject()->GetData()); // ARM64X: the changes of its x64 view
+    AddDissasmArm64XImports(
+          settings, pe, win->GetObject()->GetData(), filePath, arm64XAssignments, ReadHybridCodeMap(pe, win->GetObject()->GetData()).auxiliaryIAT, importSlots);
     AddDissasmFunctionEntries(settings, pe, win->GetObject()->GetData());
     AddDissasmDelayImports(settings, pe, win->GetObject()->GetData(), filePath);
     std::unordered_set<uint64> configVariables;
     AddDissasmLoadConfig(
           settings, pe, win->GetObject()->GetData(), pe->GetDirectory(PE::DirectoryType::Config).VirtualAddress, "_load_config_used", {}, configVariables);
-    if (const uint32 x64Config = ReadArm64XLoadConfig(pe, win->GetObject()->GetData()); x64Config != 0) // ARM64X: the one of its x64 code
+    if (const uint32 x64Config = ReadArm64XLoadConfig(pe, arm64XAssignments); x64Config != 0) // ARM64X: the one of its x64 code
         AddDissasmLoadConfig(settings, pe, win->GetObject()->GetData(), x64Config, "_load_config_used_x64", "_x64", configVariables);
     AddDissasmDirectoryFields(settings, pe, win->GetObject()->GetData());
 
